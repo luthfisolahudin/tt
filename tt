@@ -1,0 +1,552 @@
+#!/usr/bin/env bash
+# tt — tmux team: per-project tmux session with a pi worker pool.
+# See `tt --help` for the full reference.
+set -euo pipefail
+
+VERSION="0.1.0"
+NATO=(alfa bravo charlie delta echo)
+IMMORTALS=(alfa bravo charlie)
+MAX_PI=5
+PI_HISTORY_LIMIT=50000
+PI_DEFAULT_TIER=low
+PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
+TT_STATE_DIR_BASE="${TT_STATE_DIR:-/tmp/tt}"
+
+# ---------- helpers ----------
+
+die() { printf 'tt: %s\n' "$*" >&2; exit 1; }
+note() { printf '[tt] %s\n' "$*" >&2; }
+
+session_name() {
+  local base hash
+  base=$(basename "$PWD" | tr -c 'A-Za-z0-9_-' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')
+  hash=$(printf '%s' "$PWD" | sha1sum | cut -c1-4)
+  printf '%s-%s' "$base" "$hash"
+}
+
+state_dir() {
+  local d="$TT_STATE_DIR_BASE/$(session_name)"
+  mkdir -p "$d"
+  printf '%s' "$d"
+}
+
+session_exists() { tmux has-session -t "=$(session_name)" 2>/dev/null; }
+
+# Enter the project session: switch-client when already inside tmux
+# (attach refuses to nest), attach otherwise.
+enter_session() {
+  if [[ -n "${TMUX:-}" ]]; then
+    tmux switch-client -t "=$(session_name)"
+  else
+    tmux attach -t "=$(session_name)"
+  fi
+}
+
+is_immortal() {
+  local n=$1; for i in "${IMMORTALS[@]}"; do [[ $i == "$n" ]] && return 0; done; return 1
+}
+
+valid_callsign() {
+  local n=$1; for i in "${NATO[@]}"; do [[ $i == "$n" ]] && return 0; done; return 1
+}
+
+window_exists() {
+  local name=$1
+  tmux list-windows -t "=$(session_name)" -F '#W' 2>/dev/null | grep -Fxq "$name"
+}
+
+require_session() {
+  session_exists || die "no session for $PWD; run \`tt up\` first"
+}
+
+# ---------- session lifecycle ----------
+
+create_session() {
+  local s; s=$(session_name)
+  tmux new-session -d -s "$s" -n dev -c "$PWD"
+  # set-option does not accept the `=` exact-match prefix; use the
+  # bare-name + colon target form instead.
+  tmux set-option -t "$s:" history-limit "$PI_HISTORY_LIMIT" >/dev/null
+  tmux new-window -t "=$s:" -n claude -c "$PWD"
+  for n in "${IMMORTALS[@]}"; do spawn_pi_window "$n"; done
+  tmux select-window -t "=$s:claude"
+}
+
+spawn_pi_window() {
+  local name=$1
+  local s; s=$(session_name)
+  tmux new-window -t "=$s:" -n "pi-$name" -c "$PWD"
+  printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
+  printf '0' > "$(state_dir)/$name.gen"
+  : > "$(state_dir)/$name.tasks.jsonl"
+}
+
+up_cmd() {
+  if session_exists; then
+    if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
+      return 0
+    fi
+    enter_session
+  else
+    create_session
+    enter_session
+  fi
+}
+
+attach_cmd() {
+  require_session
+  enter_session
+}
+
+down_cmd() {
+  require_session
+  printf 'tt: kill session %s? [y/N] ' "$(session_name)" >&2
+  local ans; read -r ans
+  [[ $ans == y || $ans == Y ]] || return 0
+  tmux kill-session -t "=$(session_name)"
+  rm -rf "$(state_dir)"
+}
+
+# ---------- pi state ----------
+
+current_tier() { cat "$(state_dir)/$1.tier" 2>/dev/null || printf '%s' "$PI_DEFAULT_TIER"; }
+current_gen()  { cat "$(state_dir)/$1.gen"  2>/dev/null || printf '0'; }
+
+bump_gen() {
+  local name=$1 g
+  g=$(current_gen "$name")
+  printf '%d' $((g + 1)) > "$(state_dir)/$name.gen"
+}
+
+pi_session_dir() {
+  local name=$1
+  printf '%s/pi-sessions/%s/g%s' "$(state_dir)" "$name" "$(current_gen "$name")"
+}
+
+pane_current_command() {
+  tmux list-panes -t "=$(session_name):pi-$1" -F '#{pane_current_command}' 2>/dev/null | head -n1
+}
+
+pane_capture() {
+  tmux capture-pane -p -J -S -"$PI_HISTORY_LIMIT" -t "=$(session_name):pi-$1" 2>/dev/null
+}
+
+# Watermark = index of the last non-blank line. `capture-pane` pads its
+# output with blank lines down to the pane height, so a raw `wc -l`
+# would count the empty bottom of the screen and place the watermark
+# *past* any content pi later prints. Counting to the last non-blank
+# line pins the watermark to real content instead.
+pane_line_count() {
+  pane_capture "$1" | awk '{ if ($0 ~ /[^[:space:]]/) n = NR } END { print n + 0 }'
+}
+
+last_task_row() {
+  local f="$(state_dir)/$1.tasks.jsonl"
+  [[ -s $f ]] || return 1
+  tail -n1 "$f"
+}
+
+worker_state() {
+  local name=$1
+  if ! window_exists "pi-$name"; then printf 'missing'; return; fi
+  local cmd; cmd=$(pane_current_command "$name")
+  if [[ $cmd == pi ]]; then printf 'busy'; return; fi
+  local row; row=$(last_task_row "$name") || { printf 'idle'; return; }
+  local line; line=$(printf '%s' "$row" | sed -n 's/.*"line":\([0-9]*\).*/\1/p')
+  local tail; tail=$(pane_capture "$name" | sed -n "$((line + 1)),\$p")
+  if grep -qE '^BLOCKED:' <<<"$tail"; then printf 'blocked'; return; fi
+  printf 'idle'
+}
+
+ensure_idle_or_blocked() {
+  local s; s=$(worker_state "$1")
+  [[ $s == idle || $s == blocked ]]
+}
+
+# ---------- pi verbs ----------
+
+pi_add_cmd() {
+  require_session
+  for n in "${NATO[@]}"; do
+    if ! window_exists "pi-$n"; then
+      spawn_pi_window "$n"
+      printf '%s\n' "$n"
+      return 0
+    fi
+  done
+  die "pi worker cap of $MAX_PI reached"
+}
+
+pi_clear_cmd() {
+  local name="" force=0
+  while (( $# )); do
+    case $1 in
+      --force) force=1; shift ;;
+      -*) die "unknown flag for clear: $1" ;;
+      *)  [[ -z $name ]] && name=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  [[ -n $name ]] || die "clear: callsign required"
+  valid_callsign "$name" || die "invalid callsign: $name"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+
+  if (( ! force )) && ! ensure_idle_or_blocked "$name"; then
+    die "pi-$name is busy; use --force to clear anyway"
+  fi
+  if [[ $(worker_state "$name") == busy ]]; then
+    note "interrupting running pi turn on pi-$name"
+    tmux send-keys -t "=$(session_name):pi-$name" C-c
+    sleep 1
+    tmux send-keys -t "=$(session_name):pi-$name" C-c
+    sleep 1
+  fi
+  bump_gen "$name"
+  : > "$(state_dir)/$name.tasks.jsonl"
+  printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
+  # Visual marker in the pane so attach-watchers see the boundary
+  tmux send-keys -t "=$(session_name):pi-$name" "clear && echo '[tt] pi-$name cleared (gen $(current_gen "$name"))'" Enter
+}
+
+pi_send_cmd() {
+  local name="" req_tier="" src=""
+  while (( $# )); do
+    case $1 in
+      --low)    req_tier=low;    shift ;;
+      --medium) req_tier=medium; shift ;;
+      -)        src=-;           shift ;;
+      -*)       die "unknown flag for send: $1" ;;
+      *)
+        if [[ -z $name ]]; then name=$1
+        elif [[ -z $src ]]; then src=$1
+        else die "extra arg: $1"; fi
+        shift ;;
+    esac
+  done
+  [[ -n $name ]] || die "send: callsign required"
+  [[ -n $src ]]  || die "send: prompt source required (file path or -)"
+  valid_callsign "$name" || die "invalid callsign: $name"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+
+  if [[ $(worker_state "$name") == busy ]]; then
+    die "pi-$name is busy; wait for current task or \`tt pi clear $name --force\`"
+  fi
+
+  local tier="${req_tier:-$(current_tier "$name")}"
+  printf '%s' "$tier" > "$(state_dir)/$name.tier"
+
+  local f="$(state_dir)/$name.tasks.jsonl"
+  local turn=1
+  if [[ -s $f ]]; then turn=$(($(wc -l <"$f") + 1)); fi
+
+  local promptfile="$(state_dir)/$name.in.$turn.txt"
+  if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
+
+  local sdir; sdir=$(pi_session_dir "$name")
+  mkdir -p "$sdir"
+
+  local line; line=$(pane_line_count "$name")
+  local sent; sent=$(date +%s)
+  printf '{"turn":%d,"line":%d,"sent_at":%d,"tier":"%s","sdir":"%s"}\n' \
+    "$turn" "$line" "$sent" "$tier" "$sdir" >> "$f"
+
+  local cont=""
+  (( turn > 1 )) && cont="--continue"
+
+  # Single-line shell command sent into the pi-$name window.
+  local cmd
+  cmd="pi -p --session-dir $(printf %q "$sdir") $cont --model ${PI_MODEL_PROVIDER}:${tier} < $(printf %q "$promptfile")"
+  tmux send-keys -t "=$(session_name):pi-$name" "$cmd" Enter
+
+  # send-keys is asynchronous: the keystrokes are queued and the shell
+  # needs a moment to read the line and exec pi. If `send` returned
+  # immediately, the pane would still show `bash` — a back-to-back
+  # `send` would misjudge the worker as idle and a `wait` would
+  # misjudge pi as already exited. Block until pi is confirmed running
+  # (or has already finished with a marker, for very fast turns).
+  local launch_deadline=$(( $(date +%s) + 15 ))
+  while (( $(date +%s) < launch_deadline )); do
+    [[ $(pane_current_command "$name") == pi ]] && break
+    local probe; probe=$(pane_capture "$name" | sed -n "$((line + 1)),\$p")
+    grep -qE '^(WORKER_DONE|BLOCKED:)' <<<"$probe" && break
+    sleep 0.3
+  done
+  if [[ $(pane_current_command "$name") != pi ]]; then
+    local probe; probe=$(pane_capture "$name" | sed -n "$((line + 1)),\$p")
+    grep -qE '^(WORKER_DONE|BLOCKED:)' <<<"$probe" \
+      || die "pi failed to launch on pi-$name (no process, no marker after 15s)"
+  fi
+
+  printf '%s-%d\n' "$name" "$turn"
+}
+
+pi_wait_cmd() {
+  local name="" task_id="" timeout=600
+  while (( $# )); do
+    case $1 in
+      --timeout) timeout=$2; shift 2 ;;
+      -*) die "unknown flag for wait: $1" ;;
+      *)
+        if [[ -z $name ]]; then name=$1
+        elif [[ -z $task_id ]]; then task_id=$1
+        else die "extra arg: $1"; fi
+        shift ;;
+    esac
+  done
+  [[ -n $name && -n $task_id ]] || die "wait: callsign and task-id required"
+  valid_callsign "$name" || die "invalid callsign: $name"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+
+  local expected_callsign="${task_id%-*}" expected_turn="${task_id##*-}"
+  [[ $expected_callsign == "$name" ]] || die "task-id callsign mismatch ($expected_callsign vs $name)"
+
+  local f="$(state_dir)/$name.tasks.jsonl"
+  [[ -s $f ]] || die "no task records for pi-$name"
+  local row; row=$(awk -v t="$expected_turn" 'NR==t' "$f")
+  [[ -n $row ]] || die "no task record for $task_id"
+  local watermark; watermark=$(printf '%s' "$row" | sed -n 's/.*"line":\([0-9]*\).*/\1/p')
+
+  local deadline=$(( $(date +%s) + timeout ))
+  while (( $(date +%s) < deadline )); do
+    local cmd; cmd=$(pane_current_command "$name")
+    local cap; cap=$(pane_capture "$name")
+    local tail; tail=$(printf '%s\n' "$cap" | sed -n "$((watermark + 1)),\$p")
+
+    if grep -qE '^WORKER_DONE$' <<<"$tail"; then
+      # Print from WORKER_DONE to end (strip ANSI).
+      printf '%s\n' "$tail" \
+        | sed -n '/^WORKER_DONE$/,$p' \
+        | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+      return 0
+    fi
+    if grep -qE '^BLOCKED:' <<<"$tail"; then
+      printf '%s\n' "$tail" \
+        | grep -E '^BLOCKED:' | head -n1 \
+        | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+      return 0
+    fi
+    # If pi exited without the markers, surface that too.
+    if [[ $cmd != pi ]]; then
+      # Brief grace window — pi may have just exited and the markers may
+      # still be flushing.
+      sleep 1
+      cap=$(pane_capture "$name")
+      tail=$(printf '%s\n' "$cap" | sed -n "$((watermark + 1)),\$p")
+      if grep -qE '^WORKER_DONE$' <<<"$tail"; then
+        printf '%s\n' "$tail" | sed -n '/^WORKER_DONE$/,$p' \
+          | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+        return 0
+      fi
+      if grep -qE '^BLOCKED:' <<<"$tail"; then
+        printf '%s\n' "$tail" | grep -E '^BLOCKED:' | head -n1 \
+          | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+        return 0
+      fi
+      printf '%s\n' "$tail" | tail -n 40 \
+        | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' >&2
+      die "pi exited without WORKER_DONE/BLOCKED on $task_id (tail above)"
+    fi
+    sleep 2
+  done
+  die "wait timeout for $task_id (${timeout}s)"
+}
+
+pi_status_cmd() {
+  require_session
+  printf '%-9s  %-7s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    local s tier gen last_id="-"
+    s=$(worker_state "$n")
+    tier=$(current_tier "$n")
+    gen=$(current_gen "$n")
+    local f="$(state_dir)/$n.tasks.jsonl"
+    if [[ -s $f ]]; then
+      local lt; lt=$(wc -l <"$f" | tr -d ' ')
+      last_id="$n-$lt"
+    fi
+    printf '%-9s  %-7s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
+  done
+}
+
+pi_down_cmd() {
+  local name="" force=0
+  while (( $# )); do
+    case $1 in
+      --force) force=1; shift ;;
+      -*) die "unknown flag for down: $1" ;;
+      *)  [[ -z $name ]] && name=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  [[ -n $name ]] || die "down: callsign required"
+  valid_callsign "$name" || die "invalid callsign: $name"
+  is_immortal "$name" && die "pi-$name is immortal; cannot remove"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+
+  if (( ! force )) && ! ensure_idle_or_blocked "$name"; then
+    die "pi-$name is busy; use --force"
+  fi
+  tmux kill-window -t "=$(session_name):pi-$name"
+  rm -f "$(state_dir)/$name.tasks.jsonl" "$(state_dir)/$name.tier" "$(state_dir)/$name.gen"
+  rm -rf "$(state_dir)/pi-sessions/$name"
+}
+
+pi_popidle_cmd() {
+  require_session
+  # Highest NATO first, only non-immortals.
+  for n in echo delta; do
+    window_exists "pi-$n" || continue
+    if ensure_idle_or_blocked "$n"; then
+      tmux kill-window -t "=$(session_name):pi-$n"
+      rm -f "$(state_dir)/$n.tasks.jsonl" "$(state_dir)/$n.tier" "$(state_dir)/$n.gen"
+      rm -rf "$(state_dir)/pi-sessions/$n"
+      printf '%s\n' "$n"
+      return 0
+    fi
+  done
+  return 0
+}
+
+# ---------- help ----------
+
+print_help() {
+  cat <<'HELP'
+tt — tmux team: per-project tmux session with a pi worker pool
+
+USAGE
+  tt [VERB] [ARGS...]
+
+SESSION VERBS
+  tt                       Alias for `tt up`.
+  tt up                    Idempotent. Compute session name from $PWD;
+                           create the session and standard windows if
+                           missing; attach.
+  tt a, tt attach          Attach without creating. Errors if missing.
+  tt name                  Print computed session name (for scripts).
+  tt down                  Kill the session for $PWD (with confirmation).
+  tt --help, -h            This help.
+  tt --version, -v         Print version.
+
+PI WORKER VERBS
+  tt pi add
+      Spawn the next pi worker in NATO order
+      (alfa→bravo→charlie→delta→echo). Auto-assigned, no callsign arg.
+      Errors at cap of 5. Prints the new callsign.
+
+  tt pi clear <callsign> [--force]
+      Wipe the worker's pi-session context (bumps an internal generation
+      counter; next `send` starts fresh — no `--continue`). Refuses
+      unless idle or blocked; --force interrupts a busy turn first.
+      Works on immortals (alfa/bravo/charlie) too.
+
+  tt pi send <callsign> [--low|--medium] (FILE | -)
+      Send a prompt to the worker. Source is a file path, or `-` for
+      stdin. Use process substitution to skip temp files:
+      `tt pi send alfa <(printf 'TASK: ...\n')`.
+      --low/--medium selects pi thinking effort. The chosen tier sticks
+      until the next --low/--medium switch or `clear`.
+      Refuses if the worker is busy. Prints task-id (e.g. "alfa-3").
+
+  tt pi wait <callsign> <task-id> [--timeout SECONDS]
+      Block until WORKER_DONE or BLOCKED: appears in pane content past
+      the watermark recorded by the matching `send`. Default timeout
+      600s. Prints the captured block, ANSI-stripped. Exit 0 on
+      done/blocked, non-zero on timeout / unexpected pi exit.
+
+  tt pi status
+      One row per existing worker: CALLSIGN, STATE
+      (idle/busy/blocked/missing), LAST-TASK, TIER, GEN.
+
+  tt pi down <callsign> [--force]
+      Remove a non-immortal worker. Refuses unless idle without --force.
+      Refuses on alfa/bravo/charlie unconditionally.
+
+  tt pi popidle
+      Remove the highest-NATO idle non-immortal worker (echo, then
+      delta). No-op if none idle. Prints the removed callsign.
+
+WINDOW LAYOUT (created by `tt up`)
+  0  dev          Empty shell in $PWD. Run the dev server here.
+  1  claude       Empty shell. Type `claude` to launch the orchestrator.
+  2  pi-alfa      Pi worker shell (immortal).
+  3  pi-bravo     Pi worker shell (immortal).
+  4  pi-charlie   Pi worker shell (immortal).
+  5+ pi-delta/echo  Optional, on-demand via `tt pi add`. Hard cap 5 pi.
+  +  user windows Ad-hoc, created with Ctrl-b c. Not managed by tt.
+
+  Pi windows host plain shells, not a continuously-running pi REPL.
+  `tt pi send` invokes `pi -p --session-dir … --continue` inside the
+  shell, so output streams to the pane (visible if you attach), and
+  context persists across turns via pi's session files.
+
+SESSION NAMING
+  <basename($PWD)>-<sha1($PWD)[:4]>     e.g. /home/me/proj/foo → foo-a3f1
+
+STATE
+  /tmp/tt/<session>/<callsign>.tasks.jsonl   per-worker task watermarks
+  /tmp/tt/<session>/<callsign>.tier          current pi thinking tier
+  /tmp/tt/<session>/<callsign>.gen           current context generation
+  /tmp/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
+  /tmp/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
+
+EXIT CODES
+  0   success
+  1   invalid usage / refused operation / pi exited unexpectedly
+  >1  wait timeout
+
+EXAMPLES
+  # Open / attach the project session
+  tt
+
+  # Send a heredoc to alfa
+  tt pi send alfa <(cat <<'PROMPT'
+TASK: rename `foo` to `bar` in app/root.tsx
+FILES: app/root.tsx
+CHANGE: rename the local variable only; do not touch other identifiers.
+SUCCESS: `pnpm typecheck` passes; no other diffs.
+PROMPT
+)
+
+  # Capture id, then wait
+  TID=$(tt pi send bravo <(printf 'TASK: ...\n'))
+  tt pi wait bravo "$TID"
+
+  # See who's free
+  tt pi status
+
+  # Add a 4th worker, run a safety-critical task on medium, drop it
+  CS=$(tt pi add)
+  TID=$(tt pi send "$CS" --medium <(printf 'TASK: ...\n'))
+  tt pi wait "$CS" "$TID"
+  tt pi popidle
+HELP
+}
+
+# ---------- dispatch ----------
+
+cmd=${1:-}; (( $# > 0 )) && shift || true
+case "$cmd" in
+  ""|up)            up_cmd ;;
+  a|attach)         attach_cmd ;;
+  name)             printf '%s\n' "$(session_name)" ;;
+  down)             down_cmd ;;
+  -h|--help)        print_help ;;
+  -v|--version)     printf 'tt %s\n' "$VERSION" ;;
+  pi)
+    sub=${1:-}; (( $# > 0 )) && shift || true
+    case "$sub" in
+      add)      pi_add_cmd "$@" ;;
+      clear)    pi_clear_cmd "$@" ;;
+      send)     pi_send_cmd "$@" ;;
+      wait)     pi_wait_cmd "$@" ;;
+      status)   pi_status_cmd "$@" ;;
+      down)     pi_down_cmd "$@" ;;
+      popidle)  pi_popidle_cmd "$@" ;;
+      "")       die "pi: subcommand required (try \`tt --help\`)" ;;
+      *)        die "unknown pi subcommand '$sub' (try \`tt --help\`)" ;;
+    esac ;;
+  *) die "unknown verb '$cmd' (try \`tt --help\`)" ;;
+esac

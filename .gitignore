@@ -1,0 +1,2 @@
+# tt runtime state lives under /tmp/tt/<session>/ — never in the repo.
+*.swp

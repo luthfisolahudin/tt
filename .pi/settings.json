@@ -1,0 +1,6 @@
+{
+  "skills": [
+    "!../.agents/skills/delegating-to-pi",
+    "!../.agents/skills/delegating-to-pi/**"
+  ]
+}
