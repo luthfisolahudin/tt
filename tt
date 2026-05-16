@@ -771,6 +771,7 @@ PI WORKER VERBS
       (idle/busy/blocked/down/missing), LAST-TASK, TIER, GEN.
 
   tt pi rm <callsign> [--force]
+  tt pi remove <callsign> [--force]
       Remove a non-immortal worker. Refuses unless idle without --force.
       Refuses on alfa/bravo/charlie unconditionally.
 
@@ -879,7 +880,7 @@ case "$cmd" in
       send)     pi_send_cmd "$@" ;;
       wait)     pi_wait_cmd "$@" ;;
       status)   pi_status_cmd "$@" ;;
-      rm)       pi_rm_cmd "$@" ;;
+      rm|remove) pi_rm_cmd "$@" ;;
       popidle)  pi_popidle_cmd "$@" ;;
       "")       die "pi: subcommand required (try \`tt --help\`)" ;;
       *)        die "unknown pi subcommand '$sub' (try \`tt --help\`)" ;;

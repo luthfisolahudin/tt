@@ -135,7 +135,7 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 9. **Runtime tier switch** — `send alfa --medium` after `--low`; no
    respawn; codeword recalled across tier boundary. ✅
 10. **`tt pi add` / cap** — spawns `delta`, `echo`; third add refused. ✅
-11. **`tt pi rm` / `popidle`** — removes non-immortal; `popidle` drops
+11. **`tt pi rm` (alias `remove`) / `popidle`** — removes non-immortal; `popidle` drops
     highest-NATO idle non-immortal. ✅
 
 ## Verification — control-channel hardening (2026-05-16, v0.3.3)

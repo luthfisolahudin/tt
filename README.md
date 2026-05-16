@@ -66,7 +66,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi send <cs> [--low\|--medium] (FILE\|-)` | Send a prompt; print task ID. |
 | `tt pi wait <cs> <task-id> [--timeout N]` | Block until `WORKER_DONE`/`BLOCKED:`. |
 | `tt pi status` | One row per worker: state, last task, tier, generation. |
-| `tt pi rm <cs> [--force]` | Remove a non-immortal worker. |
+| `tt pi rm <cs> [--force]`, `tt pi remove <cs> [--force]` | Remove a non-immortal worker. |
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |
 | `tt x send <session-id> (FILE\|-)` | Send + submit a message to another tt session's orchestrator (send-only, async). |
 | `tt x list [--all]`, `tt x ls [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
