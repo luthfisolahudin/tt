@@ -73,11 +73,45 @@ create_session() {
   tmux select-window -t "=$s:claude"
 }
 
-# Create any standard window that is missing. Idempotent — this is what
-# makes `tt up` able to heal a session left degraded by a crash or an
-# aborted teardown, not just build one from cold.
+# Collapse duplicate standard windows. A tmux-resurrect/continuum restore
+# racing with `tt up` can recreate the session, leaving two `pi-bravo`
+# windows etc.; a duplicated name makes every `tmux ... -t <name>` target
+# ambiguous ("can't find window"). A duplicated pi window is dropped and
+# respawned clean; for dev/claude one copy is kept (never the window tt
+# is being run from). Only tt's own standard names are touched — ad-hoc
+# user windows are left alone even if they collide.
+dedup_windows() {
+  local s; s=$(session_name)
+  local cur; cur=$(tmux display-message -p '#{window_id}' 2>/dev/null) || cur=""
+  local allwin
+  allwin=$(tmux list-windows -t "=$s" -F '#{window_id} #{window_name}' 2>/dev/null) || return 0
+  local name
+  for name in dev claude "${NATO[@]/#/pi-}"; do
+    local -a ids=()
+    ids=( $(printf '%s\n' "$allwin" | awk -v n="$name" '$2==n{print $1}') )
+    (( ${#ids[@]} > 1 )) || continue
+    note "collapsing ${#ids[@]} duplicate '$name' windows"
+    local id
+    if [[ $name == pi-* ]]; then
+      for id in "${ids[@]}"; do tmux kill-window -t "$id" 2>/dev/null || true; done
+      spawn_pi_window "${name#pi-}"
+    else
+      local kept=""
+      for id in "${ids[@]}"; do
+        if [[ -z $kept ]]; then kept=$id; continue; fi
+        [[ $id == "$cur" ]] && continue
+        tmux kill-window -t "$id" 2>/dev/null || true
+      done
+    fi
+  done
+}
+
+# Bring the session to the standard layout. Idempotent — this is what
+# makes `tt up` able to heal a session degraded by a crash, an aborted
+# teardown, or a tmux-resurrect restore, not just build one from cold.
 ensure_standard_windows() {
   local s; s=$(session_name)
+  dedup_windows
   window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
   window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
   for n in "${IMMORTALS[@]}"; do
