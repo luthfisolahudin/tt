@@ -68,23 +68,30 @@ The extension and tt exchange two plain files under
 `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, both in a trivial line format so the bash side
 needs no JSON parser:
 
-- **`<cs>.trigger`** — tt writes it: line 1 is `<task id> <tier> <nonce>`, the
-  rest is the prompt body. The extension's `fs.watchFile` fires, it
-  applies the tier (`pi.setThinkingLevel`), the body is sent to the REPL
-  as a user message (`pi.sendUserMessage`, steered if pi is mid-turn),
-  and the file is truncated.
-- **`<cs>.result`** — the extension writes it on every `agent_end`:
+- **`<cs>.trigger`** — tt writes it (atomic `mv`): line 1 is
+  `<task id> <tier> <nonce>`, the rest is the prompt body. The
+  extension's `fs.watchFile` fires; it **consumes the trigger by
+  renaming it** to `<cs>.trigger.consuming`, reads that private path,
+  and deletes it — so a concurrent tt write is never clobbered by a
+  truncate. It then writes a `running` result, applies the tier
+  (`pi.setThinkingLevel`), and sends the body to the REPL as a user
+  message (`pi.sendUserMessage`, steered if pi is mid-turn).
+- **`<cs>.result`** — a lifecycle file the extension writes atomically:
   ```
   id: <task id | ->
-  status: done|blocked|other
+  status: running|done|blocked|other|error
   ---
-  <last assistant text, verbatim>
+  <text>
   ```
-  `id` is the trigger's id for a tt-injected turn, or `-` for a
-  human-typed one — so a person typing into the REPL never confuses
-  tt's `wait`.
+  `running` is written the instant a trigger is consumed (empty text);
+  `done`/`blocked`/`other` on `agent_end`; `error` when the extension
+  catches an internal exception (text = the message). `id` is the
+  trigger's id for a tt-injected turn, or `-` for a human-typed one — so
+  a person typing into the REPL never confuses tt's `wait`.
 - **`<cs>.ready`** — the extension touches it once its trigger watch is
   live, so `launch_repl` knows when it is safe to write a trigger.
+- **`<cs>.log`** — append-only, timestamped diagnostics for failures
+  that have no result to attach to (watch setup, trigger read).
 
 ## Task IDs & completion
 
@@ -92,10 +99,14 @@ needs no JSON parser:
    count of `tasks.jsonl` + 1), writes the trigger, and appends
    `{turn,id,sent_at,tier}` to `tasks.jsonl`.
 2. `tt pi wait <cs> <task-id>` polls `<cs>.result` until its `id` field
-   equals the task-id, then prints the assistant text. `status` of
-   `done`/`blocked` exits 0; `other` (pi answered without a marker) is
-   an error. `BLOCKED` is classified ahead of `WORKER_DONE` so a real
-   block is never masked by a trailing wrapper.
+   equals the task-id. `status` of `done`/`blocked` prints the assistant
+   text and exits 0; `other` (pi answered without a marker) and `error`
+   (extension exception) exit 1; `running` keeps polling. `BLOCKED` is
+   classified ahead of `WORKER_DONE` so a real block is never masked by
+   a trailing wrapper.
+3. If the trigger is still sitting unconsumed 20 s after dispatch (the
+   worker is wedged or its watch is dead), `wait` fails fast with a
+   diagnostic instead of silently burning the full timeout.
 
 ## Send → wait flow
 
@@ -108,10 +119,11 @@ orchestrator
 
 tt-worker.ts  (inside the pi REPL)
   fs.watchFile fires on <cs>.trigger
+    → renames <cs>.trigger → <cs>.trigger.consuming, reads, deletes it
+    → writes <cs>.result  (status: running)
     → applies tier via pi.setThinkingLevel
     → stores nonce for completion validation
     → sends prompt body as a user message (pi.sendUserMessage)
-    → truncates <cs>.trigger
 
   on agent_end:
     → validates: WORKER_DONE at terminal position AND nonce matches
@@ -120,7 +132,8 @@ tt-worker.ts  (inside the pi REPL)
 orchestrator
   tt pi wait <cs> <task-id>
     → polls <cs>.result until id matches task-id
-    → exits 0 on done/blocked; exits 1 on other/timeout
+    → exits 0 on done/blocked; exits 1 on other/error/timeout
+    → fast-fails if the trigger is unconsumed 20s after dispatch
 ```
 
 ## Worker state detection
@@ -131,10 +144,12 @@ State is derived from the window plus the control files:
 - `down` — window exists but no pi process is alive for it (matched by
   the worker's unique `--session-dir` path via `pgrep -f`; tmux's
   `pane_current_command` is unreliable because pi runs as a grandchild).
-- `busy` — the last task id in `tasks.jsonl` has no matching id in
-  `<cs>.result` yet.
+- `busy` — the last task id in `tasks.jsonl` has no matching terminal
+  result yet, or the matching result's status is `running`.
 - `blocked` — the last result's status is `blocked`.
-- `interrupted` — the last result's status is `other`; the worker did not produce a valid completion marker. Requires `tt pi clear` before the next dispatch.
+- `interrupted` — the last result's status is `other` (no valid
+  completion marker) or `error` (extension exception). Requires
+  `tt pi clear` before the next dispatch.
 - `idle` — anything else.
 
 ## Model tiers
@@ -151,7 +166,10 @@ sticks (remembered in `<callsign>.tier`) until the next explicit
 
 `tt pi clear` bumps `<callsign>.gen` and respawns the REPL on a new
 `--session-dir` (`pi-sessions/<cs>/g<N>/`). A fresh session-dir is a
-fresh pi session — no `--continue`, no leftover context.
+fresh pi session — no `--continue`, no leftover context. `clear`
+appends a `{"clear":<gen>}` marker line to `tasks.jsonl` rather than
+truncating it, so the turn counter stays monotonic and task ids
+(`<cs>-<turn>`) never recur across generations.
 
 ## State files
 
@@ -159,13 +177,15 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 | File | Contents |
 |------|----------|
-| `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier}`. |
+| `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier,nonce}`; plus a `{"clear":<gen>}` marker line per `clear`. |
 | `<cs>.tier` | Current pi thinking tier. |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
 | `<cs>.trigger` | Prompt handed to the REPL (id line + body). |
+| `<cs>.trigger.consuming` | Transient: the trigger mid-consumption (renamed by the extension). |
 | `<cs>.result` | Latest turn result (id / status / text). |
 | `<cs>.ready` | Marker: the REPL's trigger watch is live. |
+| `<cs>.log` | Append-only extension diagnostics for failures with no result. |
 | `pi-sessions/<cs>/g<N>/` | pi `--session-dir` for generation N. |
 
 ## What does NOT change vs the old `pi -p` flow

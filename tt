@@ -168,7 +168,7 @@ launch_repl() {
   tier=$(current_tier "$name")
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
   rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
-        "$(state_dir)/$name.ready"
+        "$(state_dir)/$name.trigger.consuming" "$(state_dir)/$name.ready"
   local global_append="${XDG_DATA_HOME:-$HOME/.local/share}/tt/.pi/APPEND_SYSTEM.md"
   local append_flag=""
   if [[ ! -f "$PWD/.pi/APPEND_SYSTEM.md" && -f "$global_append" ]]; then
@@ -205,8 +205,15 @@ auto_launch_claude() {
 }
 
 # Fields of the worker's result file (written by the tt-worker extension).
-result_id()     { sed -n 's/^id: //p'     "$(state_dir)/$1.result" 2>/dev/null | head -n1; }
-result_status() { sed -n 's/^status: //p' "$(state_dir)/$1.result" 2>/dev/null | head -n1; }
+result_head() {
+  local f="$(state_dir)/$1.result" content id status
+  [[ -f $f ]] || return 1
+  content=$(cat "$f" 2>/dev/null) || return 1
+  id=$(printf '%s\n' "$content" | sed -n 's/^id: //p' | head -n1)
+  status=$(printf '%s\n' "$content" | sed -n 's/^status: //p' | head -n1)
+  [[ -n $id ]] || id=-
+  printf '%s %s\n' "$id" "$status"
+}
 result_text()   { sed -n '/^---$/,$p'     "$(state_dir)/$1.result" 2>/dev/null | sed '1d'; }
 
 last_task_row() {
@@ -216,17 +223,20 @@ last_task_row() {
 }
 
 last_task_id() {
-  local row; row=$(last_task_row "$1") || return 1
-  printf '%s' "$row" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'
+  local row id
+  row=$(last_task_row "$1") || return 1
+  id=$(printf '%s' "$row" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  [[ -n $id ]] || return 1
+  printf '%s' "$id"
 }
 
 # State is derived from the worker's window + control files:
 #   missing     — no window
 #   down        — window exists but the REPL process is not running
-#   busy        — the last task sent has no matching result yet
+#   busy        — the last task sent has no matching terminal result yet
 #   blocked     — the last task's result status is `blocked`
-#   interrupted — last task ended without a valid WORKER_DONE footer
-#                 (manual Esc, stale marker, or nonce mismatch); requires
+#   interrupted — last task ended without a valid WORKER_DONE/BLOCKED footer,
+#                 or the worker reported an internal error; requires
 #                 `tt pi clear` before the next dispatch
 #   idle        — anything else
 worker_state() {
@@ -234,11 +244,15 @@ worker_state() {
   window_exists "pi-$name" || { printf 'missing'; return; }
   repl_running "$name"     || { printf 'down'; return; }
   local tid; tid=$(last_task_id "$name") || { printf 'idle'; return; }
-  [[ $tid == "$(result_id "$name")" ]] || { printf 'busy'; return; }
-  case "$(result_status "$name")" in
-    blocked)          printf 'blocked'     ;;
-    other|interrupted) printf 'interrupted' ;;
-    *)                printf 'idle'        ;;
+  local head rid rst
+  head=$(result_head "$name") || { printf 'busy'; return; }
+  if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
+  [[ $tid == "$rid" ]] || { printf 'busy'; return; }
+  case "$rst" in
+    running)     printf 'busy'        ;;
+    blocked)     printf 'blocked'     ;;
+    other|error) printf 'interrupted' ;;
+    *)           printf 'idle'        ;;
   esac
 }
 
@@ -281,7 +295,7 @@ pi_clear_cmd() {
   (( force )) && [[ $(worker_state "$name") == busy ]] && \
     note "interrupting running pi turn on pi-$name"
   bump_gen "$name"
-  : > "$(state_dir)/$name.tasks.jsonl"
+  printf '{"clear":%d,"at":%d}\n' "$(current_gen "$name")" "$(date +%s)" >> "$(state_dir)/$name.tasks.jsonl"
   rm -f "$(state_dir)/$name".in.*.txt
   printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
   # Respawn the REPL on the new generation's session-dir → fresh context.
@@ -374,18 +388,37 @@ pi_wait_cmd() {
 
   # Block until the tt-worker extension records this task's result.
   local deadline=$(( $(date +%s) + timeout ))
+  local grace_deadline=$(( $(date +%s) + 20 ))
+  local consumed=0
+  local tf="$(state_dir)/$name.trigger"
   while (( $(date +%s) < deadline )); do
-    if [[ "$(result_id "$name")" == "$task_id" ]]; then
-      local st; st=$(result_status "$name")
-      if [[ $st == done || $st == blocked ]]; then
-        result_text "$name"
-        return 0
+    local head="" rid="" rst=""
+    head=$(result_head "$name") || true
+    if [[ -n $head ]]; then
+      if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
+      if [[ $rid == "$task_id" ]]; then
+        case "$rst" in
+          running) consumed=1 ;;
+          done|blocked)
+            result_text "$name"
+            return 0
+            ;;
+          error)
+            result_text "$name" >&2
+            die "pi-$name reported an internal error for $task_id"
+            ;;
+          other)
+            result_text "$name" >&2
+            die "pi finished $task_id without WORKER_DONE/BLOCKED (text above)"
+            ;;
+        esac
       fi
-      result_text "$name" >&2
-      die "pi finished $task_id without WORKER_DONE/BLOCKED (text above)"
     fi
     repl_running "$name" \
       || die "pi REPL on pi-$name stopped before $task_id completed"
+    if (( ! consumed && $(date +%s) >= grace_deadline )) && [[ -s $tf ]]; then
+      die "pi-$name never consumed the trigger for $task_id (worker stuck or trigger watch dead)"
+    fi
     sleep 1
   done
   die "wait timeout for $task_id (${timeout}s)"
@@ -400,10 +433,9 @@ pi_status_cmd() {
     s=$(worker_state "$n")
     tier=$(current_tier "$n")
     gen=$(current_gen "$n")
-    local f="$(state_dir)/$n.tasks.jsonl"
-    if [[ -s $f ]]; then
-      local lt; lt=$(wc -l <"$f" | tr -d ' ')
-      last_id="$n-$lt"
+    local lt
+    if lt=$(last_task_id "$n"); then
+      last_id="$lt"
     fi
     printf '%-9s  %-7s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
   done

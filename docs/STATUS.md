@@ -1,14 +1,27 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.2)._
+_Last updated: 2026-05-16 (v0.3.3)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.2, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.3, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+- **Control-channel hardening** (2026-05-16). The trigger is now
+  consumed by **rename** (`<cs>.trigger` → `<cs>.trigger.consuming`),
+  not read-then-truncate, so a concurrent tt write is never clobbered.
+  `<cs>.result` became a lifecycle file (`running`→`done`/`blocked`/
+  `other`/`error`): the extension writes `running` the instant it
+  consumes a trigger, so `tt pi wait` can tell "not picked up" from
+  "in progress" and **fast-fails after 20 s** on an unconsumed trigger
+  instead of burning the full timeout. Extension exceptions surface as
+  `status: error` (or `<cs>.log` when there is no result yet) rather
+  than a silent hang. tt reads the result in a single snapshot to avoid
+  torn reads. `clear` appends a `{"clear":<gen>}` marker to
+  `tasks.jsonl` instead of truncating it, so task ids never recur
+  across generations.
 - **State dir moved to XDG** (2026-05-16). State now lives under
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` instead of
   `/tmp/tt/`. State (task logs, pi session-dirs) survives reboots.
@@ -58,10 +71,12 @@ This is the "pick up where we left off" document. Read it before touching
 ## The rewrite — what changed
 
 - `tt-worker.ts` — pi extension. Watches `<cs>.trigger` (prompt in),
-  writes `<cs>.result` on `agent_end` (result out), touches `<cs>.ready`.
-  Inert unless `TT_WORKER_CS` is set. Trigger line 1 is `<id> <tier> <nonce>`;
-  the extension applies the tier with `pi.setThinkingLevel` and stores
-  the nonce for completion validation before sending the turn.
+  consumes it by rename, writes a `running` result, then a terminal
+  result on `agent_end` (result out), touches `<cs>.ready`, logs
+  failures to `<cs>.log`. Inert unless `TT_WORKER_CS` is set. Trigger
+  line 1 is `<id> <tier> <nonce>`; the extension applies the tier with
+  `pi.setThinkingLevel` and stores the nonce for completion validation
+  before sending the turn.
 - `~/.pi/agent/settings.json` — installs `tt-worker.ts` globally via
   `extensions`, and excludes the `delegating-to-pi` skill via `skills`.
   The skill is also symlinked into `~/.agents/skills/` + `~/.claude/skills/`
@@ -99,6 +114,18 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 10. **`tt pi add` / cap** — spawns `delta`, `echo`; third add refused. ✅
 11. **`tt pi down` / `popidle`** — removes non-immortal; `popidle` drops
     highest-NATO idle non-immortal. ✅
+
+## Verification — control-channel hardening (2026-05-16, v0.3.3)
+
+- `bash -n tt` passes; `tt-worker.ts` passes `bun --check`.
+- Happy path — `clear charlie` (loads the new extension) → trivial
+  read-only task → `<cs>.result` transits `running` → `done`, `wait`
+  exits 0, no `<cs>.log`. ✅
+- Task-id uniqueness — after `clear`, `tasks.jsonl` keeps the old turn
+  line plus a `{"clear":3}` marker; the next `send` is `charlie-3`,
+  not a recurring `charlie-1`. ✅
+- **Not yet exercised live:** the 20 s fast-fail on an unconsumed
+  trigger and the `status: error` channel — reviewed by code only.
 
 ## Bugs found & fixed
 
