@@ -135,7 +135,7 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 9. **Runtime tier switch** — `send alfa --medium` after `--low`; no
    respawn; codeword recalled across tier boundary. ✅
 10. **`tt pi add` / cap** — spawns `delta`, `echo`; third add refused. ✅
-11. **`tt pi down` / `popidle`** — removes non-immortal; `popidle` drops
+11. **`tt pi rm` / `popidle`** — removes non-immortal; `popidle` drops
     highest-NATO idle non-immortal. ✅
 
 ## Verification — control-channel hardening (2026-05-16, v0.3.3)
@@ -233,7 +233,7 @@ had only been code-reviewed are now exercised live.
   causing "can't find window: pi-charlie" on `tt up`. Fixed by calling
   `set-window-option automatic-rename off` in `spawn_pi_window`
   immediately after `new-window`.
-- **`kill-window` races in `down_cmd`, `pi_down_cmd`, `pi_popidle_cmd`**
+- **`kill-window` races in `down_cmd`, `pi_rm_cmd`, `pi_popidle_cmd`**
   — a pi window could disappear between the `window_exists` guard and
   the `tmux kill-window` call, producing a spurious "can't find window"
   error. Fixed with `2>/dev/null || true` on all three kill-window calls.

@@ -430,7 +430,7 @@ pi_send_cmd() {
   done
   [[ -n $name ]] || die "send: callsign required"
   [[ -n $src ]]  || die "send: prompt source required (file path or -)"
-  if [[ $src != - && ! -f $src ]]; then
+  if [[ $src != - && ! -r $src ]]; then
     die "send: '$src' is not a readable file. Source must be a FILE path or '-' for stdin.
   echo text:   printf 'TASK: ...\n' | tt pi send <callsign> -
   from a file: tt pi send <callsign> ./task.txt"
@@ -558,16 +558,16 @@ pi_status_cmd() {
   done
 }
 
-pi_down_cmd() {
+pi_rm_cmd() {
   local name="" force=0
   while (( $# )); do
     case $1 in
       --force) force=1; shift ;;
-      -*) die "unknown flag for down: $1" ;;
+      -*) die "unknown flag for rm: $1" ;;
       *)  [[ -z $name ]] && name=$1 || die "extra arg: $1"; shift ;;
     esac
   done
-  [[ -n $name ]] || die "down: callsign required"
+  [[ -n $name ]] || die "rm: callsign required"
   valid_callsign "$name" || die "invalid callsign: $name"
   is_immortal "$name" && die "pi-$name is immortal; cannot remove"
   require_session
@@ -619,7 +619,7 @@ x_send_cmd() {
   done
   [[ -n $target ]] || die "x send: session id required"
   [[ -n $src ]]    || die "x send: message source required (file path or -)"
-  if [[ $src != - && ! -f $src ]]; then
+  if [[ $src != - && ! -r $src ]]; then
     die "x send: '$src' is not a readable file. Source must be a FILE path or '-' for stdin.
   echo text:   printf 'hello\n' | tt x send <id> -
   from a file: tt x send <id> ./msg.txt"
@@ -705,7 +705,7 @@ PI WORKER VERBS
       One row per existing worker: CALLSIGN, STATE
       (idle/busy/blocked/down/missing), LAST-TASK, TIER, GEN.
 
-  tt pi down <callsign> [--force]
+  tt pi rm <callsign> [--force]
       Remove a non-immortal worker. Refuses unless idle without --force.
       Refuses on alfa/bravo/charlie unconditionally.
 
@@ -807,7 +807,7 @@ case "$cmd" in
       send)     pi_send_cmd "$@" ;;
       wait)     pi_wait_cmd "$@" ;;
       status)   pi_status_cmd "$@" ;;
-      down)     pi_down_cmd "$@" ;;
+      rm)       pi_rm_cmd "$@" ;;
       popidle)  pi_popidle_cmd "$@" ;;
       "")       die "pi: subcommand required (try \`tt --help\`)" ;;
       *)        die "unknown pi subcommand '$sub' (try \`tt --help\`)" ;;
