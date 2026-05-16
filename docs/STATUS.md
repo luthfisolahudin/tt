@@ -122,11 +122,12 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 
 ```sh
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
-mkdir .pi && cp ~/code/tt/.pi/APPEND_SYSTEM.md .pi/ 2>/dev/null || true
+# No need to copy APPEND_SYSTEM.md — tt up injects global one via --append-system-prompt
 env -u TMUX tt up                       # attach fails harmlessly off-tty
 TID=$(tt pi send alfa <(printf 'TASK: reply WORKER_DONE\nSUCCESS: done\n'))
 tt pi wait alfa "$TID"
-tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "/tmp/tt/$(tt name)"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)"
+tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
 ```
 
 Editing `tt-worker.ts` only takes effect on a freshly launched REPL —
