@@ -36,6 +36,11 @@ a pool of `pi` code workers. This file orients an AI agent working **on**
   process and tmux reports the foreground command inconsistently.
 - **`tt-worker.ts` must stay inert unless `TT_WORKER_CS` is set** — it
   is installed globally, so it loads into every pi session.
+- **The `delegating-to-pi` skill must stay excluded from pi workers at
+  both levels** — `~/.pi/agent/settings.json` (global-discovered copies)
+  *and* `.pi/settings.json` (this repo's `.agents/skills/` copy). pi
+  scopes skill `!`-excludes to the discovery location, so one level is
+  not enough. A worker is the delegate, never the orchestrator.
 - `alfa`/`bravo`/`charlie` are immortal; hard cap of 5 pi workers.
 
 ## Testing

@@ -27,6 +27,11 @@ This is the "pick up where we left off" document. Read it before touching
   sending the turn.
 - `~/.pi/agent/settings.json` — installs `tt-worker.ts` globally via
   `extensions`, and excludes the `delegating-to-pi` skill via `skills`.
+  The skill is also symlinked into `~/.agents/skills/` + `~/.claude/skills/`
+  so Claude sees it globally; pi scopes skill `!`-excludes to the
+  discovery location, so the exclude is repeated in this repo's
+  `.pi/settings.json` to cover the project-discovered copy under
+  `.agents/skills/`.
 - `tt` — `spawn_pi_window` launches a REPL; `launch_repl`/`ensure_repl`/
   `repl_running` manage it; `pi_send`/`pi_wait`/`pi_clear` use the
   trigger/result files; all `capture-pane`/watermark code deleted.
