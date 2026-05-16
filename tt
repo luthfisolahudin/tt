@@ -69,9 +69,20 @@ create_session() {
   # set-option does not accept the `=` exact-match prefix; use the
   # bare-name + colon target form instead.
   tmux set-option -t "$s:" history-limit "$PI_HISTORY_LIMIT" >/dev/null
-  tmux new-window -t "=$s:" -n claude -c "$PWD"
-  for n in "${IMMORTALS[@]}"; do spawn_pi_window "$n"; done
+  ensure_standard_windows
   tmux select-window -t "=$s:claude"
+}
+
+# Create any standard window that is missing. Idempotent — this is what
+# makes `tt up` able to heal a session left degraded by a crash or an
+# aborted teardown, not just build one from cold.
+ensure_standard_windows() {
+  local s; s=$(session_name)
+  window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
+  window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
+  for n in "${IMMORTALS[@]}"; do
+    window_exists "pi-$n" || spawn_pi_window "$n"
+  done
 }
 
 spawn_pi_window() {
@@ -87,16 +98,16 @@ spawn_pi_window() {
 
 up_cmd() {
   if session_exists; then
-    if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
-      return 0
-    fi
-    auto_launch_claude
-    enter_session "claude"
+    ensure_standard_windows   # heal any windows lost to a crash/aborted down
   else
     create_session
-    auto_launch_claude
-    enter_session "claude"
   fi
+  auto_launch_claude
+  # Already attached to this session — healing is done, nothing to switch to.
+  if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
+    return 0
+  fi
+  enter_session "claude"
 }
 
 attach_cmd() {
@@ -123,7 +134,10 @@ down_cmd() {
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
     local sdir; sdir=$(pi_session_dir "$n")
-    local pid; pid=$(pgrep -f "$sdir" 2>/dev/null | head -1)
+    # `|| true` is required: under `set -euo pipefail` a standalone
+    # assignment whose pipeline fails aborts the script — and pgrep
+    # exits non-zero on no match, head closes the pipe early (SIGPIPE).
+    local pid; pid=$(pgrep -f "$sdir" 2>/dev/null | head -1) || true
     [[ -n $pid ]] && kill "$pid" 2>/dev/null || true
     tmux kill-window -t "=$s:pi-$n" 2>/dev/null || true
   done
