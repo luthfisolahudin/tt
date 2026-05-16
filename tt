@@ -430,6 +430,11 @@ pi_send_cmd() {
   done
   [[ -n $name ]] || die "send: callsign required"
   [[ -n $src ]]  || die "send: prompt source required (file path or -)"
+  if [[ $src != - && ! -f $src ]]; then
+    die "send: '$src' is not a readable file. Source must be a FILE path or '-' for stdin.
+  echo text:   printf 'TASK: ...\n' | tt pi send <callsign> -
+  from a file: tt pi send <callsign> ./task.txt"
+  fi
   valid_callsign "$name" || die "invalid callsign: $name"
   require_session
   window_exists "pi-$name" || die "pi-$name does not exist"
@@ -614,7 +619,11 @@ x_send_cmd() {
   done
   [[ -n $target ]] || die "x send: session id required"
   [[ -n $src ]]    || die "x send: message source required (file path or -)"
-  [[ $src == - || -f $src ]] || die "x send: no such file: $src"
+  if [[ $src != - && ! -f $src ]]; then
+    die "x send: '$src' is not a readable file. Source must be a FILE path or '-' for stdin.
+  echo text:   printf 'hello\n' | tt x send <id> -
+  from a file: tt x send <id> ./msg.txt"
+  fi
 
   tmux has-session -t "=$target" 2>/dev/null \
     || die "x send: no tmux session: $target"
@@ -715,6 +724,9 @@ CROSS-SESSION VERBS
       <sender>]` so the receiver sees it is cross-session traffic.
       Refuses if the session is missing or its orchestrator is not
       running.
+      Send-only and asynchronous: there is no `tt x receive`. The other
+      session replies by running its own `tt x send` back to you, which
+      arrives as a new turn in your session.
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
