@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.3.6"
+VERSION="0.3.7"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -592,6 +592,61 @@ pi_popidle_cmd() {
   return 0
 }
 
+# ---------- cross-session messaging ----------
+
+# Send a message to another tt session's orchestrator (the Claude Code
+# TUI in its `claude` window) and submit it. Unlike pi workers, the
+# orchestrator has no file/trigger channel — delivery is a tmux
+# bracketed paste (multiline-safe) followed by Enter, the same primitive
+# auto_launch_claude uses to drive that pane.
+x_send_cmd() {
+  local target="" src=""
+  while (( $# )); do
+    case $1 in
+      -)  src=-; shift ;;
+      -*) die "unknown flag for x send: $1" ;;
+      *)
+        if [[ -z $target ]]; then target=$1
+        elif [[ -z $src ]]; then src=$1
+        else die "extra arg: $1"; fi
+        shift ;;
+    esac
+  done
+  [[ -n $target ]] || die "x send: session id required"
+  [[ -n $src ]]    || die "x send: message source required (file path or -)"
+  [[ $src == - || -f $src ]] || die "x send: no such file: $src"
+
+  tmux has-session -t "=$target" 2>/dev/null \
+    || die "x send: no tmux session: $target"
+  tmux list-windows -t "=$target" -F '#W' 2>/dev/null | grep -Fxq claude \
+    || die "x send: session $target has no claude window"
+
+  # Refuse if the orchestrator is not actually running (bare shell).
+  local cmd
+  cmd=$(tmux display-message -t "=$target:claude" -p '#{pane_current_command}' 2>/dev/null) \
+    || die "x send: cannot inspect $target:claude"
+  case "$cmd" in
+    bash|zsh|sh|fish) die "x send: orchestrator not running in $target (bare shell)" ;;
+  esac
+
+  local body
+  if [[ $src == - ]]; then body=$(cat); else body=$(cat "$src"); fi
+  [[ -n $body ]] || die "x send: empty message"
+
+  # Prepend an attribution header so the receiver knows it is
+  # cross-session traffic and who it came from.
+  local msg
+  msg=$(printf '[tt x from %s]\n%s' "$(session_name)" "$body")
+
+  # Deliver via a uniquely-named tmux buffer + bracketed paste so
+  # embedded newlines do not submit early; then Enter submits once.
+  local buf="tt-x-$$"
+  printf '%s' "$msg" | tmux load-buffer -b "$buf" -
+  tmux paste-buffer -d -p -b "$buf" -t "=$target:claude"
+  sleep 0.3
+  tmux send-keys -t "=$target:claude" Enter
+}
+
 # ---------- help ----------
 
 print_help() {
@@ -648,6 +703,16 @@ PI WORKER VERBS
   tt pi popidle
       Remove the highest-NATO idle non-immortal worker (echo, then
       delta). No-op if none idle. Prints the removed callsign.
+
+CROSS-SESSION VERBS
+  tt x send <session-id> (FILE | -)
+      Send a message to another tt session's orchestrator (the Claude
+      Code TUI in its `claude` window) and submit it as one turn.
+      <session-id> is the exact tmux session name — run `tt name` in
+      the other project to get it. Source is a file path, or `-` for
+      stdin. The delivered message is prefixed `[tt x from <sender>]`.
+      Refuses if the session is missing or its orchestrator is not
+      running. Example: `echo hi | tt x send brainstorm-a3f1 -`.
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
@@ -732,6 +797,13 @@ case "$cmd" in
       popidle)  pi_popidle_cmd "$@" ;;
       "")       die "pi: subcommand required (try \`tt --help\`)" ;;
       *)        die "unknown pi subcommand '$sub' (try \`tt --help\`)" ;;
+    esac ;;
+  x)
+    sub=${1:-}; (( $# > 0 )) && shift || true
+    case "$sub" in
+      send)     x_send_cmd "$@" ;;
+      "")       die "x: subcommand required (try \`tt --help\`)" ;;
+      *)        die "unknown x subcommand '$sub' (try \`tt --help\`)" ;;
     esac ;;
   *) die "unknown verb '$cmd' (try \`tt --help\`)" ;;
 esac

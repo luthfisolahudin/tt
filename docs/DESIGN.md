@@ -230,6 +230,24 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 - The model ladder (`gpt-5.5:low` default, `:medium` for safety-critical).
 - The `tt pi send` / `wait` interface — same verbs, same task-ids.
 
+## Cross-session messaging — `tt x send`
+
+`tt x send <session-id> (FILE|-)` lets one project's orchestrator push a
+message into another tt session's orchestrator and submit it.
+
+Unlike pi workers, the orchestrator is a live Claude Code TUI with no
+file/trigger control channel — the trigger files are pi-worker-only.
+Delivery therefore uses tmux directly: the message (prefixed with an
+`[tt x from <sender>]` attribution header) is loaded into a uniquely
+named tmux buffer (`tt-x-$$`), pasted into the target `claude` pane with
+`paste-buffer -p` (bracketed paste, so embedded newlines do not submit
+early), then submitted with a single `send-keys Enter`. This is the same
+primitive `auto_launch_claude` uses to drive that pane.
+
+`<session-id>` is the exact tmux session name (`tt name` in the other
+project). `tt x send` refuses if the session is missing, has no `claude`
+window, or its orchestrator pane is a bare shell.
+
 ## Out of scope (deliberately)
 
 - Auto-starting the dev server (`dev` window stays an empty shell).

@@ -1,13 +1,13 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.6)._
+_Last updated: 2026-05-16 (v0.3.7)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.6, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.7, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
 - **`tt up` no longer black-screens during boot** (2026-05-16, v0.3.6).
   Async startup (v0.3.5) made `tt up` attach instantly — but the user
@@ -237,6 +237,26 @@ had only been code-reviewed are now exercised live.
   — a pi window could disappear between the `window_exists` guard and
   the `tmux kill-window` call, producing a spurious "can't find window"
   error. Fixed with `2>/dev/null || true` on all three kill-window calls.
+
+## Verification — cross-session messaging (2026-05-16, v0.3.7)
+
+New verb `tt x send <session-id> (FILE|-)` delivers a message to another
+tt session's orchestrator via tmux bracketed paste + `sleep 0.3` +
+Enter. See DESIGN.md "Cross-session messaging". Staged test, all PASS:
+
+- **Guard paths** — non-existent session, missing args, missing source,
+  unreadable file, unknown `x` subcommand, session with no `claude`
+  window, `claude` window at a bare shell, empty message: each rejected
+  with a clear `tt: x send: …` error, exit 1.
+- **Delivery mechanics** (against a plain `cat` target): single-line,
+  3-line multiline, shell metacharacters (`` ` `` `$()` `"` `'` `\` `|`
+  `;`), leading newlines, 4 KB body, FILE and `-` (stdin) sources — all
+  arrive byte-intact with the `[tt x from <sender>]` header. `$(cat)`
+  strips the *trailing* newline (harmless; Enter re-adds one).
+- **Live orchestrator** (Sonnet 4.6, medium): a 2-line message landed as
+  exactly one user turn, header preserved, submitted cleanly — the
+  `sleep 0.3` was sufficient. Two rapid back-to-back sends arrived as two
+  distinct turns, no clobber/interleave (per-process `tt-x-$$` buffers).
 
 ## Known limitations / not yet tested
 
