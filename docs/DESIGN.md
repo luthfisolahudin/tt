@@ -68,7 +68,7 @@ The extension and tt exchange two plain files under
 `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, both in a trivial line format so the bash side
 needs no JSON parser:
 
-- **`<cs>.trigger`** — tt writes it: line 1 is `<task id> <tier>`, the
+- **`<cs>.trigger`** — tt writes it: line 1 is `<task id> <tier> <nonce>`, the
   rest is the prompt body. The extension's `fs.watchFile` fires, it
   applies the tier (`pi.setThinkingLevel`), the body is sent to the REPL
   as a user message (`pi.sendUserMessage`, steered if pi is mid-turn),
@@ -97,6 +97,32 @@ needs no JSON parser:
    an error. `BLOCKED` is classified ahead of `WORKER_DONE` so a real
    block is never masked by a trailing wrapper.
 
+## Send → wait flow
+
+```
+orchestrator
+  tt pi send <cs> <prompt-file>
+    → writes <cs>.trigger  (line 1: <id> <tier> <nonce>; rest: prompt body)
+    → appends to <cs>.tasks.jsonl
+    → prints task-id
+
+tt-worker.ts  (inside the pi REPL)
+  fs.watchFile fires on <cs>.trigger
+    → applies tier via pi.setThinkingLevel
+    → stores nonce for completion validation
+    → sends prompt body as a user message (pi.sendUserMessage)
+    → truncates <cs>.trigger
+
+  on agent_end:
+    → validates: WORKER_DONE at terminal position AND nonce matches
+    → writes <cs>.result  (id / status / text)
+
+orchestrator
+  tt pi wait <cs> <task-id>
+    → polls <cs>.result until id matches task-id
+    → exits 0 on done/blocked; exits 1 on other/timeout
+```
+
 ## Worker state detection
 
 State is derived from the window plus the control files:
@@ -108,6 +134,7 @@ State is derived from the window plus the control files:
 - `busy` — the last task id in `tasks.jsonl` has no matching id in
   `<cs>.result` yet.
 - `blocked` — the last result's status is `blocked`.
+- `interrupted` — the last result's status is `other`; the worker did not produce a valid completion marker. Requires `tt pi clear` before the next dispatch.
 - `idle` — anything else.
 
 ## Model tiers
@@ -153,3 +180,16 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 - Auto-starting the dev server (`dev` window stays an empty shell).
 - Per-project `tt` config (custom dev command / default tier).
+
+## Files and external state
+
+| Location | Purpose |
+|----------|---------|
+| `~/code/tt/tt` | The tool itself (symlinked from `~/.local/bin/tt`). |
+| `~/code/tt/tt-worker.ts` | The pi extension; loaded globally via `~/.pi/agent/settings.json`. |
+| `~/.local/share/tt/` | XDG data dir: symlinks to `.pi/`, `.agents/`, `tt-worker.ts`. |
+| `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker. Override with `TT_STATE_DIR`. |
+| `~/.pi/agent/settings.json` | Registers `tt-worker.ts` as a global extension; excludes `delegating-to-pi` skill. |
+| `.pi/settings.json` | Project-local pi settings: repeats the skill exclusion for the project-discovered copy. |
+| `.pi/APPEND_SYSTEM.md` | Project-local worker protocol injected into every pi REPL. If absent, the global `~/.local/share/tt/.pi/APPEND_SYSTEM.md` is used. |
+| `.agents/skills/delegating-to-pi/` | Consumer-facing skill telling the orchestrator how to use `tt pi send`/`wait`. |

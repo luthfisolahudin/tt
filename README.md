@@ -4,12 +4,15 @@ A single-file bash tool that gives every project **one tmux session** hosting
 the dev server, the orchestrator (Claude Code), and a pool of **pi** code
 workers — so there is one place to attach and watch everything.
 
-`tt` is the substrate for delegating work to **pi** (a one-shot code worker
-wired to OpenAI Codex). Instead of the orchestrator firing blind `pi -p`
-calls, each worker runs in a visible tmux window you can attach to.
+`tt` is the substrate for delegating work to **pi** (a live REPL worker
+wired to OpenAI Codex). Each worker runs a persistent, interactive pi REPL
+in a visible tmux window — the orchestrator steers it via trigger files
+rather than one-shot `pi -p` calls.
 
 - **Tool:** `~/code/tt/tt` (this repo) — symlinked from `~/.local/bin/tt`.
 - **Design & rationale:** `docs/DESIGN.md`.
+
+> **Contributors & AI agents:** read `CLAUDE.md` first, then `docs/STATUS.md`, before editing anything.
 
 ## Install
 
@@ -29,8 +32,8 @@ tt                       # create + attach the project's tmux session
 
 This creates a session named `<basename($PWD)>-<sha1($PWD)[:4]>` with five
 windows: `dev`, `claude`, `pi-alfa`, `pi-bravo`, `pi-charlie`. Run the dev
-server in `dev`; launch `claude` in `claude`; the three `pi-*` windows are
-immortal pre-spawned workers.
+server in `dev`; the orchestrator (Claude Code) is auto-launched in `claude`;
+the three `pi-*` windows are immortal pre-spawned workers.
 
 ## Delegating to a pi worker
 
