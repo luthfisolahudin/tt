@@ -9,7 +9,6 @@ wired to OpenAI Codex). Instead of the orchestrator firing blind `pi -p`
 calls, each worker runs in a visible tmux window you can attach to.
 
 - **Tool:** `~/code/tt/tt` (this repo) — symlinked from `~/.local/bin/tt`.
-- **Status:** v0.2.0. Full retest passes (12 steps) — see `docs/STATUS.md`.
 - **Design & rationale:** `docs/DESIGN.md`.
 
 ## Install
