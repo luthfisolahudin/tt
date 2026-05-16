@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.3.5"
+VERSION="0.3.6"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -114,9 +114,15 @@ ensure_standard_windows() {
   dedup_windows
   window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
   window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
-  # Fire the immortal REPLs without waiting — they boot in the background
-  # while up_cmd attaches the user. start_repl returns at once; readiness
-  # is awaited lazily by `tt pi send`.
+}
+
+# Fire the immortal pi REPLs without waiting — they boot in the
+# background while up_cmd has already attached the user. start_repl
+# returns at once; readiness is awaited lazily by `tt pi send`. Called
+# *after* auto_launch_claude so claude's process wins the CPU race for
+# its first paint (the niced pi `node` startups would otherwise starve
+# it, leaving the claude window black until the workers settle).
+ensure_pi_repls() {
   for n in "${IMMORTALS[@]}"; do
     if ! window_exists "pi-$n"; then
       spawn_pi_window "$n"
@@ -144,7 +150,11 @@ up_cmd() {
   else
     create_session
   fi
+  # Launch claude first, then the pi REPLs — claude's process gets a
+  # clean head start so its TUI paints immediately instead of starving
+  # behind the three concurrent (niced) pi `node` startups.
   auto_launch_claude
+  ensure_pi_repls
   # Already attached to this session — healing is done, nothing to switch to.
   if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
     return 0
@@ -223,7 +233,7 @@ repl_running() {
 # boots in the background — `<cs>.starting` stamps the boot for
 # `repl_starting`; readiness is awaited later by `wait_repl_ready`.
 start_repl() {
-  local name=$1 s sdir tier launch
+  local name=$1 s sdir tier launch nice_prefix
   s=$(session_name)
   tier=$(current_tier "$name")
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
@@ -234,7 +244,15 @@ start_repl() {
   if [[ ! -f "$PWD/.pi/APPEND_SYSTEM.md" && -f "$global_append" ]]; then
     append_flag="--append-system-prompt '$global_append'"
   fi
-  launch="env TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
+  # Run pi at low CPU/IO priority — claude is the interactive
+  # orchestrator and must keep scheduler priority (so its TUI paints
+  # without starving behind the concurrent pi `node` startups); pi
+  # workers are background and API-I/O bound, so the nice costs them
+  # little. The nice/ionice prefix wraps only the `env … pi …` clause —
+  # the `; exec bash` fallback shell stays at normal priority.
+  nice_prefix="nice -n 19"
+  command -v ionice >/dev/null 2>&1 && nice_prefix="ionice -c3 $nice_prefix"
+  launch="$nice_prefix env TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
 pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   date +%s > "$(state_dir)/$name.starting"

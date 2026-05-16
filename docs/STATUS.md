@@ -1,14 +1,25 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.5)._
+_Last updated: 2026-05-16 (v0.3.6)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.5, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.6, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+- **`tt up` no longer black-screens during boot** (2026-05-16, v0.3.6).
+  Async startup (v0.3.5) made `tt up` attach instantly — but the user
+  then watched the `claude` window stay black until the workers were
+  ready. Cause: claude's TUI clears the screen on launch, and its first
+  paint was CPU-starved behind three concurrent pi `node` startups; the
+  old order even spawned the pi REPLs *before* `auto_launch_claude`.
+  Fixes: `up_cmd` now runs `auto_launch_claude` *before* `ensure_pi_repls`
+  (pi-spawning split out of `ensure_standard_windows`), and `start_repl`
+  launches pi under `nice -n 19` (+ `ionice -c3` where available) so the
+  interactive claude TUI keeps scheduler priority. pi workers are
+  API-I/O bound, so the low priority costs them little.
 - **`tt up` is now instant — async REPL startup** (2026-05-16, v0.3.5).
   `tt up` previously revived the three immortal pi REPLs serially, each
   `launch_repl` blocking up to 40 s on a `pgrep` + `<cs>.ready`

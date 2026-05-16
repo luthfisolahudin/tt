@@ -59,10 +59,21 @@ git history.)
 ### `tt up` starts the REPLs asynchronously
 
 `tt up` does not block on REPL readiness. It creates/heals the windows,
-fires `start_repl` for every immortal (each just `respawn-pane`s the
-pane and stamps `<cs>.starting`), launches the orchestrator, and
-attaches the user immediately — the user lands in the `claude` window in
-well under a second. The pi REPLs finish booting in the background.
+launches the orchestrator, fires `start_repl` for every immortal (each
+just `respawn-pane`s the pane and stamps `<cs>.starting`), and attaches
+the user immediately — the user lands in the `claude` window in well
+under a second. The pi REPLs finish booting in the background.
+
+**Order matters: claude first, then the pi REPLs.** `up_cmd` calls
+`auto_launch_claude` *before* `ensure_pi_repls` (the pi spawn loop is
+kept out of `ensure_standard_windows` for exactly this reason). claude
+is an alternate-screen TUI that blanks the pane on launch; if its first
+paint were starved behind three concurrent pi `node` startups the
+`claude` window would sit black until the workers settled. So claude's
+process gets a clean head start, and `start_repl` launches pi under
+`nice -n 19` (plus `ionice -c3` where available) so the interactive
+claude TUI keeps CPU/IO priority. pi workers are background and
+API-I/O bound, so the low priority costs them little.
 
 The 40 s readiness wait is **lazy**: `tt pi send` calls
 `ensure_repl_ready`, which waits for *that* worker's `<cs>.ready` only
