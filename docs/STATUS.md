@@ -147,8 +147,8 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 - Task-id uniqueness — after `clear`, `tasks.jsonl` keeps the old turn
   line plus a `{"clear":3}` marker; the next `send` is `charlie-3`,
   not a recurring `charlie-1`. ✅
-- **Not yet exercised live:** the 20 s fast-fail on an unconsumed
-  trigger and the `status: error` channel — reviewed by code only.
+- The 20 s fast-fail on an unconsumed trigger and the `status: error`
+  channel are now exercised live — see "closed test gaps" below.
 
 ## Verification — session lifecycle (2026-05-16, v0.3.4)
 
@@ -163,6 +163,29 @@ Run against throwaway `/tmp/tt-test-*` projects.
   the whole process group). ✅
 - `tt down` — completes, session + state dir removed; with 3 live
   REPLs (9 processes incl. pi grandchildren) it leaves 0 survivors. ✅
+
+## Verification — closed test gaps (2026-05-16, v0.3.6)
+
+Run against a throwaway `/tmp/tt-test-*` project; three mechanisms that
+had only been code-reviewed are now exercised live.
+
+- **20 s fast-fail on an unconsumed trigger** — the worker's grandchild
+  `pi` REPL process was `kill -STOP`ed (bash+node parents stay alive, so
+  `repl_running` still matches), then a task was dispatched. `tt pi wait`
+  fast-failed at **exactly 20 s**, exit 1, with `pi-alfa never consumed
+  the trigger for alfa-2 (worker stuck or trigger watch dead)` — not the
+  full timeout. `kill -CONT` resumed the REPL and it consumed the
+  pending trigger normally. ✅
+- **`status: error` channel** — `id/status: error/---/<text>` injected
+  into `<cs>.result`; `tt pi wait` printed the `---` body to stderr and
+  died with `pi-bravo reported an internal error for bravo-1`, exit 1
+  (`tt:518-520`). The extension-side writes (`tt-worker.ts:127-134,
+  184-186`) remain code-reviewed only. ✅
+- **Persistent multi-turn chain (4 turns)** — `charlie` ran turns 1–4:
+  store codeword `orbit` → append `-7` (`orbit-7`) → reverse (`7-tibro`)
+  → recall the original. Turn 4 correctly returned `orbit`, proving
+  context held across 4 turns with no respawn (`gen` stayed `g0`,
+  `tasks.jsonl` held ids `charlie-1..4`). ✅
 
 ## Bugs found & fixed
 
