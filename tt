@@ -78,6 +78,7 @@ spawn_pi_window() {
   local name=$1
   local s; s=$(session_name)
   tmux new-window -t "=$s:" -n "pi-$name" -c "$PWD"
+  tmux set-window-option -t "=$s:pi-$name" automatic-rename off
   printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
   printf '0' > "$(state_dir)/$name.gen"
   : > "$(state_dir)/$name.tasks.jsonl"
@@ -124,7 +125,7 @@ down_cmd() {
     local sdir; sdir=$(pi_session_dir "$n")
     local pid; pid=$(pgrep -f "$sdir" 2>/dev/null | head -1)
     [[ -n $pid ]] && kill "$pid" 2>/dev/null || true
-    tmux kill-window -t "=$s:pi-$n"
+    tmux kill-window -t "=$s:pi-$n" 2>/dev/null || true
   done
   sleep 0.5
   tmux kill-session -t "=$s" 2>/dev/null || true
@@ -426,7 +427,7 @@ pi_down_cmd() {
   if (( ! force )) && ! ensure_idle_or_blocked "$name"; then
     die "pi-$name is busy; use --force"
   fi
-  tmux kill-window -t "=$(session_name):pi-$name"
+  tmux kill-window -t "=$(session_name):pi-$name" 2>/dev/null || true
   rm -f "$(state_dir)/$name."*
   rm -rf "$(state_dir)/pi-sessions/$name"
 }
@@ -437,7 +438,7 @@ pi_popidle_cmd() {
   for n in echo delta; do
     window_exists "pi-$n" || continue
     if ensure_idle_or_blocked "$n"; then
-      tmux kill-window -t "=$(session_name):pi-$n"
+      tmux kill-window -t "=$(session_name):pi-$n" 2>/dev/null || true
       rm -f "$(state_dir)/$n."*
       rm -rf "$(state_dir)/pi-sessions/$n"
       printf '%s\n' "$n"
