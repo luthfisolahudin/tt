@@ -1,6 +1,6 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.3)._
+_Last updated: 2026-05-16 (v0.3.4)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
@@ -127,7 +127,34 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 - **Not yet exercised live:** the 20 s fast-fail on an unconsumed
   trigger and the `status: error` channel — reviewed by code only.
 
+## Verification — session lifecycle (2026-05-16, v0.3.4)
+
+Run against throwaway `/tmp/tt-test-*` projects.
+
+- Cold `tt up` — session + `dev`/`claude`/`pi-{alfa,bravo,charlie}`. ✅
+- `tt up` heals — kill `pi-bravo`, `tt up` recreates it; a second
+  `tt up` on a healthy session is a no-op (no duplicates). ✅
+- `send`/`wait` — `<cs>.result` transits `running`→`done`. ✅
+- `clear` marker + id uniqueness — next id is `alfa-3`, not `alfa-1`. ✅
+- `tt pi clear` does not orphan the old REPL (`respawn-pane -k` reaps
+  the whole process group). ✅
+- `tt down` — completes, session + state dir removed; with 3 live
+  REPLs (9 processes incl. pi grandchildren) it leaves 0 survivors. ✅
+
 ## Bugs found & fixed
+
+- **`tt down` aborted mid-teardown** (v0.3.4) — `down_cmd`'s
+  `pid=$(pgrep … | head -1)` aborted under `set -euo pipefail`: pgrep
+  exits non-zero on no match, and `head` closing the pipe SIGPIPEs
+  pgrep even on a match. `tt down` died before `kill-session`/`rm`,
+  leaving a half-torn-down session. Now `down_cmd` SIGTERMs each pi
+  window's whole process group via the pane pid — no pgrep pipeline,
+  and no orphaned pi grandchild.
+- **`tt up` was not idempotent** (v0.3.4) — it built standard windows
+  only via `create_session` on a cold session, so it could not heal a
+  session that existed but lost windows (the state `tt down`'s abort
+  left behind). Added `ensure_standard_windows`, called on every
+  `tt up`.
 
 - **`pane_current_command` is unreliable** — pi runs as a grandchild
   (`bash → node → pi`); `repl_running` matches the live pi process by
