@@ -73,7 +73,7 @@ tt pi clear alfa               # wipe context; required before reuse
 bash -n tt                     # syntax-check after editing tt
 ```
 
-Worker states: `idle` · `busy` · `blocked` · `interrupted` · `down` · `missing`
+Worker states: `idle` · `busy` · `blocked` · `interrupted` · `starting` · `down` · `missing`
 
 ## Commit etiquette
 

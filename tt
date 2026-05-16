@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.3.4"
+VERSION="0.3.5"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -114,12 +114,15 @@ ensure_standard_windows() {
   dedup_windows
   window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
   window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
+  # Fire the immortal REPLs without waiting — they boot in the background
+  # while up_cmd attaches the user. start_repl returns at once; readiness
+  # is awaited lazily by `tt pi send`.
   for n in "${IMMORTALS[@]}"; do
-    if window_exists "pi-$n"; then
-      ensure_repl "$n"        # window exists but the REPL may be dead
-                              # (crash, or a tmux-resurrect restore)
-    else
+    if ! window_exists "pi-$n"; then
       spawn_pi_window "$n"
+    elif ! repl_running "$n" && ! repl_starting "$n"; then
+      start_repl "$n"         # window exists but the REPL is dead
+                              # (crash, or a tmux-resurrect restore)
     fi
   done
 }
@@ -132,7 +135,7 @@ spawn_pi_window() {
   printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
   printf '0' > "$(state_dir)/$name.gen"
   : > "$(state_dir)/$name.tasks.jsonl"
-  launch_repl "$name"
+  start_repl "$name"
 }
 
 up_cmd() {
@@ -211,13 +214,15 @@ repl_running() {
   pgrep -f -- "$(state_dir)/pi-sessions/$1/" >/dev/null 2>&1
 }
 
-# (Re)launch the pi REPL in the worker's window. `respawn-pane -k` kills
-# whatever is there (a shell, or a stale/crashed pi) and starts fresh on
-# the worker's current-generation session-dir. The extension is loaded
-# globally via ~/.pi/agent/settings.json; TT_WORKER_CS/STATE wire it to
-# this worker's control files. `; exec bash` keeps the pane alive (as a
-# shell) if pi ever exits, so the window is never lost.
-launch_repl() {
+# Start the pi REPL in the worker's window — non-blocking. `respawn-pane
+# -k` kills whatever is there (a shell, or a stale/crashed pi) and starts
+# fresh on the worker's current-generation session-dir. The extension is
+# loaded globally via ~/.pi/agent/settings.json; TT_WORKER_CS/STATE wire
+# it to this worker's control files. `; exec bash` keeps the pane alive
+# (as a shell) if pi ever exits, so the window is never lost. The REPL
+# boots in the background — `<cs>.starting` stamps the boot for
+# `repl_starting`; readiness is awaited later by `wait_repl_ready`.
+start_repl() {
   local name=$1 s sdir tier launch
   s=$(session_name)
   tier=$(current_tier "$name")
@@ -232,7 +237,23 @@ launch_repl() {
   launch="env TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
 pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
-  # Wait for the REPL process and the extension's trigger watch.
+  date +%s > "$(state_dir)/$name.starting"
+}
+
+# Is the worker's REPL within its boot window? `<cs>.starting` is stamped
+# by start_repl; treat it as booting for 45s (a hair past wait_repl_ready's
+# 40s deadline), after which a still-processless worker is genuinely down.
+repl_starting() {
+  local f="$(state_dir)/$1.starting" t
+  [[ -f $f ]] || return 1
+  t=$(cat "$f" 2>/dev/null) || return 1
+  [[ -n $t ]] && (( $(date +%s) - t < 45 ))
+}
+
+# Block until the worker's REPL process is alive and the extension's
+# trigger watch is live (`<cs>.ready`). Returns at once if already ready.
+wait_repl_ready() {
+  local name=$1
   local deadline=$(( $(date +%s) + 40 ))
   while (( $(date +%s) < deadline )); do
     if repl_running "$name" && [[ -f "$(state_dir)/$name.ready" ]]; then
@@ -243,7 +264,16 @@ pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier${append_flag:+ $append
   die "pi REPL failed to start on pi-$name"
 }
 
-ensure_repl() { repl_running "$1" || launch_repl "$1"; }
+# Ensure the worker's REPL is ready for a dispatch — the lazy wait.
+# Re-starts only a genuinely-dead worker (not one still booting from
+# `tt up`), then blocks for readiness.
+ensure_repl_ready() {
+  local name=$1
+  if ! repl_running "$name" && ! repl_starting "$name"; then
+    start_repl "$name"
+  fi
+  wait_repl_ready "$name"
+}
 
 # Auto-launch claude in the claude window if the pane is running a bare
 # shell. Called by up_cmd so the orchestrator starts automatically on
@@ -287,6 +317,8 @@ last_task_id() {
 
 # State is derived from the worker's window + control files:
 #   missing     — no window
+#   starting    — REPL is within its boot window (process or trigger
+#                 watch not yet up); becomes idle/down once it settles
 #   down        — window exists but the REPL process is not running
 #   busy        — the last task sent has no matching terminal result yet
 #   blocked     — the last task's result status is `blocked`
@@ -297,7 +329,11 @@ last_task_id() {
 worker_state() {
   local name=$1
   window_exists "pi-$name" || { printf 'missing'; return; }
-  repl_running "$name"     || { printf 'down'; return; }
+  if ! repl_running "$name"; then
+    repl_starting "$name" && { printf 'starting'; return; }
+    printf 'down'; return
+  fi
+  [[ -f "$(state_dir)/$name.ready" ]] || { printf 'starting'; return; }
   local tid; tid=$(last_task_id "$name") || { printf 'idle'; return; }
   local head rid rst
   head=$(result_head "$name") || { printf 'busy'; return; }
@@ -354,7 +390,8 @@ pi_clear_cmd() {
   rm -f "$(state_dir)/$name".in.*.txt
   printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
   # Respawn the REPL on the new generation's session-dir → fresh context.
-  launch_repl "$name"
+  # Non-blocking; the next `tt pi send` waits for readiness lazily.
+  start_repl "$name"
   note "pi-$name cleared (gen $(current_gen "$name"))"
 }
 
@@ -381,11 +418,13 @@ pi_send_cmd() {
 
   # Reasoning effort is a runtime knob: the tier travels in the trigger
   # and the tt-worker extension applies it via setThinkingLevel — no
-  # respawn, pi context is preserved. ensure_repl only relaunches a REPL
-  # that has actually died.
+  # respawn, pi context is preserved. ensure_repl_ready waits for the
+  # REPL to be ready (relaunching only one that has actually died), so a
+  # send issued while `tt up`'s background boot is still in flight just
+  # blocks here until the worker is up.
   local cur_tier; cur_tier=$(current_tier "$name")
   local tier="${req_tier:-$cur_tier}"
-  ensure_repl "$name"
+  ensure_repl_ready "$name"
   [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
     printf '%s' "$tier" > "$(state_dir)/$name.tier"
 
@@ -481,7 +520,7 @@ pi_wait_cmd() {
 
 pi_status_cmd() {
   require_session
-  printf '%-9s  %-7s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
+  printf '%-9s  %-11s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
     local s tier gen last_id="-"
@@ -492,7 +531,7 @@ pi_status_cmd() {
     if lt=$(last_task_id "$n"); then
       last_id="$lt"
     fi
-    printf '%-9s  %-7s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
+    printf '%-9s  %-11s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
   done
 }
 

@@ -57,7 +57,7 @@ Run `tt --help` for the full block. Summary:
 
 | Verb | Effect |
 |------|--------|
-| `tt` / `tt up` | Create (if missing) + attach the project session. Idempotent. |
+| `tt` / `tt up` | Create (if missing) + attach the project session. Idempotent. Attaches at once; pi REPLs boot in the background. |
 | `tt a` / `tt attach` | Attach without creating. |
 | `tt name` | Print the computed session name. |
 | `tt down` | Kill the project session (with confirmation). |

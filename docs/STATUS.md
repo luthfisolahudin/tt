@@ -1,14 +1,26 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.4)._
+_Last updated: 2026-05-16 (v0.3.5)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.3, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.5, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+- **`tt up` is now instant — async REPL startup** (2026-05-16, v0.3.5).
+  `tt up` previously revived the three immortal pi REPLs serially, each
+  `launch_repl` blocking up to 40 s on a `pgrep` + `<cs>.ready`
+  handshake — so a cold `tt up` paid `3 ×` pi-boot time before the user
+  could do anything. The blocking is gone: `launch_repl` is split into
+  `start_repl` (non-blocking `respawn-pane`, stamps `<cs>.starting`) and
+  `wait_repl_ready` (the poll loop). `tt up` fires `start_repl` for
+  every immortal, launches claude, and attaches at once; the REPLs boot
+  in the background. The 40 s wait moved to `tt pi send` via
+  `ensure_repl_ready` — lazy, per-target-worker, and hidden behind the
+  user's think-time before the first delegation. New `starting` worker
+  state covers a REPL still inside its boot window.
 - **Control-channel hardening** (2026-05-16). The trigger is now
   consumed by **rename** (`<cs>.trigger` → `<cs>.trigger.consuming`),
   not read-then-truncate, so a concurrent tt write is never clobbered.

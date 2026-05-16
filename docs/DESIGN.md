@@ -56,6 +56,22 @@ pi ever exits. Rationale:
 (The original `pi -p` shell model is retired. It is preserved only in
 git history.)
 
+### `tt up` starts the REPLs asynchronously
+
+`tt up` does not block on REPL readiness. It creates/heals the windows,
+fires `start_repl` for every immortal (each just `respawn-pane`s the
+pane and stamps `<cs>.starting`), launches the orchestrator, and
+attaches the user immediately — the user lands in the `claude` window in
+well under a second. The pi REPLs finish booting in the background.
+
+The 40 s readiness wait is **lazy**: `tt pi send` calls
+`ensure_repl_ready`, which waits for *that* worker's `<cs>.ready` only
+when a task is actually dispatched. A `send` issued while the boot is
+still in flight simply blocks until the worker is up — and because the
+trigger is still written only after `<cs>.ready` is confirmed, the
+startup trigger race stays closed. A `send` to a genuinely-dead worker
+(no process, no recent `<cs>.starting`) re-starts it first.
+
 ## The tt-worker extension — control channel
 
 tt talks to each REPL through **`tt-worker.ts`**, a pi extension
@@ -141,9 +157,15 @@ orchestrator
 State is derived from the window plus the control files:
 
 - `missing` — the window does not exist.
+- `starting` — the REPL is still within its boot window: either no pi
+  process is alive yet but `<cs>.starting` (stamped by `start_repl`) is
+  recent (< 45 s), or the process is up but `<cs>.ready` has not been
+  written. `tt up` starts the REPLs asynchronously, so `tt pi status`
+  run right after will show this until each worker settles.
 - `down` — window exists but no pi process is alive for it (matched by
   the worker's unique `--session-dir` path via `pgrep -f`; tmux's
-  `pane_current_command` is unreliable because pi runs as a grandchild).
+  `pane_current_command` is unreliable because pi runs as a grandchild)
+  and it is past the boot window.
 - `busy` — the last task id in `tasks.jsonl` has no matching terminal
   result yet, or the matching result's status is `running`.
 - `blocked` — the last result's status is `blocked`.
@@ -184,6 +206,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `<cs>.trigger` | Prompt handed to the REPL (id line + body). |
 | `<cs>.trigger.consuming` | Transient: the trigger mid-consumption (renamed by the extension). |
 | `<cs>.result` | Latest turn result (id / status / text). |
+| `<cs>.starting` | Boot stamp (`date +%s`) written by `start_repl`; marks the REPL's async boot window for `repl_starting`. |
 | `<cs>.ready` | Marker: the REPL's trigger watch is live. |
 | `<cs>.log` | Append-only extension diagnostics for failures with no result. |
 | `pi-sessions/<cs>/g<N>/` | pi `--session-dir` for generation N. |
