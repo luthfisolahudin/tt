@@ -315,10 +315,9 @@ pi_send_cmd() {
 
   local promptfile="$(state_dir)/$name.in.$turn.txt"
   if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
-  # Inject nonce so tt-worker.ts can confirm this specific dispatch triggered
-  # the completion (prevents stale-marker false positives from interrupted turns).
-  printf '\n\nIMPORTANT: In the notes field of your WORKER_DONE block, include this token verbatim: nonce=%s\n' \
-    "$nonce" >> "$promptfile"
+  # Inject the per-dispatch nonce. The model copies it into the nonce: field
+  # of the WORKER_DONE/BLOCKED block; tt-worker.ts validates it on agent_end.
+  printf '\nnonce: %s\n' "$nonce" >> "$promptfile"
 
   printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s"}\n' \
     "$turn" "$id" "$(date +%s)" "$tier" "$nonce" >> "$f"

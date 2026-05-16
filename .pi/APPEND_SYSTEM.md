@@ -13,8 +13,8 @@ invocation is one bounded task with a defined scope.
 - Abstract targets are allowed when SUCCESS gives a verifiable check. Work
   them out — do not BLOCK just because the mechanism is open.
 - BLOCK only when the task is genuinely impossible, has contradictory
-  instructions, or has no verifiable success criterion. Output
-  `BLOCKED: <reason>` and stop.
+  instructions, or has no verifiable success criterion. Use the BLOCKED
+  block format shown below and stop.
 - Before deleting any export, function, or file, search for references
   across the WHOLE repo — not just the directory you are editing.
   Config files, build scripts, server entry points, and test harnesses
@@ -25,11 +25,17 @@ invocation is one bounded task with a defined scope.
   callers without flagging it.
 
 ### Output
-Always end with this plain-text block (no code fence, no other content after):
+Always end with one of these plain-text blocks (no code fence, no other content after):
 
 ```
 WORKER_DONE
 files_changed: <comma-separated relative paths, or "none">
 summary: <one sentence, imperative mood>
 notes: <anything the orchestrator must know, or "none">
+nonce: <token provided in the task — copy it exactly>
+```
+
+```
+BLOCKED: <reason>
+nonce: <token provided in the task — copy it exactly>
 ```

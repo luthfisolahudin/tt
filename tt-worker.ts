@@ -105,26 +105,39 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", async (event: any, _ctx) => {
 		const text = lastAssistantText(event?.messages);
-		// BLOCKED takes precedence over everything.
-		// For done (approaches 2+3):
-		//   - terminal-position: WORKER_DONE block must be the last thing in the
-		//     response (only `field: value` lines after it, then whitespace)
-		//   - nonce: the per-dispatch token must appear inside that block,
-		//     preventing stale-marker false positives from interrupted turns
+		// For both done and blocked: require matching nonce as a dedicated field
+		// (approach 2) and verify terminal position (approach 3).
+		//   - nonce: field must appear in the terminal block — prevents stale
+		//     markers from prior context causing false positives on manual Esc
+		//   - terminal: the block must be the last thing in the response;
+		//     fenced or mid-response occurrences are ignored
+		const nonceField = `nonce: ${pendingNonce}`;
 		let status = "other";
-		if (/^BLOCKED:/m.test(text)) {
-			status = "blocked";
-		} else if (pendingNonce) {
-			// Find the last WORKER_DONE line
-			const wdPos = text.lastIndexOf("\nWORKER_DONE\n");
-			const wdStart =
-				wdPos >= 0 ? wdPos + 1 : text.startsWith("WORKER_DONE\n") ? 0 : -1;
-			if (wdStart >= 0) {
-				const block = text.slice(wdStart).trimEnd();
-				// Terminal: only `field: value` lines after WORKER_DONE (pi block format)
-				const isTerminal = /^WORKER_DONE(\n[\w][\w_-]*:[^\n]*)*$/.test(block);
-				const hasNonce = block.includes(pendingNonce);
-				if (isTerminal && hasNonce) status = "done";
+		if (pendingNonce) {
+			// BLOCKED: `BLOCKED: <reason>\nnonce: <N>` at end of response
+			const blockedPos = text.lastIndexOf("\nBLOCKED:");
+			const blockedStart =
+				blockedPos >= 0 ? blockedPos + 1 : text.startsWith("BLOCKED:") ? 0 : -1;
+			if (blockedStart >= 0) {
+				const block = text.slice(blockedStart).trimEnd();
+				// Terminal BLOCKED block: BLOCKED: line + optional `nonce:` field
+				const isTerminal = /^BLOCKED:[^\n]*(\nnonce:[^\n]*)?$/.test(block);
+				if (isTerminal && block.includes(nonceField)) {
+					status = "blocked";
+				}
+			}
+			// WORKER_DONE block: `WORKER_DONE\nfield: value\n...nonce: <N>` at end
+			if (status === "other") {
+				const wdPos = text.lastIndexOf("\nWORKER_DONE\n");
+				const wdStart =
+					wdPos >= 0 ? wdPos + 1 : text.startsWith("WORKER_DONE\n") ? 0 : -1;
+				if (wdStart >= 0) {
+					const block = text.slice(wdStart).trimEnd();
+					// Terminal: only `field: value` lines after WORKER_DONE
+					const isTerminal =
+						/^WORKER_DONE(\n[\w][\w_-]*:[^\n]*)*$/.test(block);
+					if (isTerminal && block.includes(nonceField)) status = "done";
+				}
 			}
 		}
 		atomicWrite(resultFile, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
