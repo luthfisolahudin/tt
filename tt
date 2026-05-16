@@ -105,10 +105,29 @@ attach_cmd() {
 
 down_cmd() {
   require_session
-  printf 'tt: kill session %s? [y/N] ' "$(session_name)" >&2
+  local s; s=$(session_name)
+  local busy=()
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    [[ $(worker_state "$n") == busy ]] && busy+=("$n")
+  done
+  if (( ${#busy[@]} )); then
+    printf 'tt: workers busy: %s\n' "${busy[*]}" >&2
+    printf 'tt: their in-flight tasks will be lost.\n' >&2
+  fi
+  printf 'tt: kill session %s? [y/N] ' "$s" >&2
   local ans; read -r ans
   [[ $ans == y || $ans == Y ]] || return 0
-  tmux kill-session -t "=$(session_name)"
+  # SIGTERM the live REPL process in each pi window, then kill the window.
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    local sdir; sdir=$(pi_session_dir "$n")
+    local pid; pid=$(pgrep -f "$sdir" 2>/dev/null | head -1)
+    [[ -n $pid ]] && kill "$pid" 2>/dev/null || true
+    tmux kill-window -t "=$s:pi-$n"
+  done
+  sleep 0.5
+  tmux kill-session -t "=$s" 2>/dev/null || true
   rm -rf "$(state_dir)"
 }
 
@@ -470,7 +489,7 @@ PI WORKER VERBS
   tt pi wait <callsign> <task-id> [--timeout SECONDS]
       Block until the tt-worker extension records the matching task's
       result. Default timeout 600s. Prints the last assistant message
-      (the WORKER_DONE / BLOCKED: block). Exit 0 on done/blocked,
+      (the WORKER_DONE / BLOCKED block). Exit 0 on done/blocked,
       non-zero on timeout / unexpected completion.
 
   tt pi status

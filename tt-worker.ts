@@ -114,14 +114,14 @@ export default function (pi: ExtensionAPI) {
 		const nonceField = `nonce: ${pendingNonce}`;
 		let status = "other";
 		if (pendingNonce) {
-			// BLOCKED: `BLOCKED: <reason>\nnonce: <N>` at end of response
-			const blockedPos = text.lastIndexOf("\nBLOCKED:");
+			// BLOCKED block: `BLOCKED\nnonce: <N>\nreason: <...>` at end of response
+			const blockedPos = text.lastIndexOf("\nBLOCKED\n");
 			const blockedStart =
-				blockedPos >= 0 ? blockedPos + 1 : text.startsWith("BLOCKED:") ? 0 : -1;
+				blockedPos >= 0 ? blockedPos + 1 : text.startsWith("BLOCKED\n") ? 0 : -1;
 			if (blockedStart >= 0) {
 				const block = text.slice(blockedStart).trimEnd();
-				// Terminal BLOCKED block: BLOCKED: line + optional `nonce:` field
-				const isTerminal = /^BLOCKED:[^\n]*(\nnonce:[^\n]*)?$/.test(block);
+				// Terminal: only `field: value` lines after BLOCKED
+				const isTerminal = /^BLOCKED(\n[\w][\w_-]*:[^\n]*)*$/.test(block);
 				if (isTerminal && block.includes(nonceField)) {
 					status = "blocked";
 				}

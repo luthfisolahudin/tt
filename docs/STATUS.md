@@ -1,13 +1,13 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.1)._
+_Last updated: 2026-05-16 (v0.3.2)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.1, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.2, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
 - **State dir moved to XDG** (2026-05-16). State now lives under
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` instead of
@@ -75,36 +75,30 @@ This is the "pick up where we left off" document. Read it before touching
   `pi_send` no longer respawns on a tier change — it only writes the
   tier into the trigger and the `.tier` file.
 
-## Verification — full retest (2026-05-16)
+## Verification — full retest (2026-05-16, v0.3.2)
 
 Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 
 1. **`tt up`** — `dev claude pi-alfa pi-bravo pi-charlie`; all three
    REPLs idle. ✅
-2. **`tt pi status`** — idle/busy/blocked/down/missing rows. ✅
-3. **`send` + `wait`** — `bravo-1`, returned `WORKER_DONE`, exit 0. ✅
-4. **Persistent turn** — `bravo-2` on the same worker, same
-   session-dir. ✅
-5. **Long persistent chain** — `bravo-3/4/5`; turn numbering stays
-   monotonic, session-dir unchanged across all 5 turns. ✅
-6. **`clear`** — bumps gen, respawns the REPL on a new session-dir,
-   resets the task log; next `send` starts at turn 1. ✅
-7. **Parallel** — `alfa`, `bravo`, `charlie` each ran a turn
-   independently. ✅
-8. **BLOCKED path** — contradictory task → result `status: blocked`,
-   `wait` surfaced the `BLOCKED:` line, exit 0. ✅
-9. **`tt pi add` / cap** — spawns `delta` then `echo`; a third `add`
-   is refused at the cap of 5. ✅
-10. **`tt pi down` / `popidle`** — removes a non-immortal worker;
-    immortals are refused; `popidle` drops the highest-NATO idle
-    non-immortal. ✅
-11. **Runtime tier switch** — `send alfa --medium` after a `--low`
-    turn: the pi process did **not** respawn, the turn completed
-    `WORKER_DONE` exit 0, `alfa.tier` became `medium`, `alfa.result`
-    was never deleted. Back-to-back `--medium` also did not respawn. ✅
-12. **Context preserved across a tier switch** — turn 1 (`--low`) noted
-    a codeword; turn 2 (`--medium`) recalled it correctly, proving the
-    pi session survived the tier change. ✅
+2. **`tt pi status`** — idle/busy/blocked/interrupted/down/missing rows. ✅
+3. **Normal completion** — nonce as first field in WORKER_DONE block,
+   exit 0. ✅
+4. **Persistent turn** — second task on same worker recalls prior context. ✅
+5. **Stale WORKER_DONE in code fence** — terminal-position check ignores
+   fenced example; real terminal block classified `done`. ✅
+6. **BLOCKED path** — contradictory task → `BLOCKED` block with nonce +
+   reason fields, `wait` exit 0. ✅
+7. **Interrupted quarantine (tmux Escape)** — Escape sent to pi pane
+   mid-task; worker landed `interrupted`; `send` refused; `clear`
+   recovered. ✅
+8. **Interrupted quarantine (injected `status=other`)** — same flow via
+   direct file injection. ✅
+9. **Runtime tier switch** — `send alfa --medium` after `--low`; no
+   respawn; codeword recalled across tier boundary. ✅
+10. **`tt pi add` / cap** — spawns `delta`, `echo`; third add refused. ✅
+11. **`tt pi down` / `popidle`** — removes non-immortal; `popidle` drops
+    highest-NATO idle non-immortal. ✅
 
 ## Bugs found & fixed
 
