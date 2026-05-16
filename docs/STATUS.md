@@ -1,13 +1,13 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.7)._
+_Last updated: 2026-05-17 (v0.3.8)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.7, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.8, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
 - **`tt up` no longer black-screens during boot** (2026-05-16, v0.3.6).
   Async startup (v0.3.5) made `tt up` attach instantly — but the user
@@ -237,6 +237,24 @@ had only been code-reviewed are now exercised live.
   — a pi window could disappear between the `window_exists` guard and
   the `tmux kill-window` call, producing a spurious "can't find window"
   error. Fixed with `2>/dev/null || true` on all three kill-window calls.
+
+## Verification — session discovery (2026-05-17, v0.3.8)
+
+New verbs `tt x list [--all]` / `tt x ls [--all]` enumerate tt sessions
+available to message. `tt up` now writes `$PWD` to `$(state_dir)/project`
+so each session's working directory is recoverable without visiting it.
+
+- **`tt x list`** — reads `~/.local/state/tt/*/`, cross-checks each subdir
+  with `tmux has-session`, then tests the `claude` window's foreground
+  command. Prints only `ready` sessions (orchestrator running) with their
+  path. ✅
+- **`tt x ls --all`** — same sweep with a STATUS column: `ready` /
+  `no-orchestrator` / `down` (state dir exists but no tmux session). ✅
+- **Empty case** — no sessions matching the filter prints a clear
+  `(no tt sessions …)` message, exit 0. ✅
+- **`project` file** — `tt up` writes it unconditionally (new and
+  existing sessions); `tt x list` falls back to `-` if absent (pre-v0.3.8
+  state dirs). ✅
 
 ## Verification — cross-session messaging (2026-05-16, v0.3.7)
 

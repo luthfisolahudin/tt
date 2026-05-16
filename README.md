@@ -69,6 +69,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi rm <cs> [--force]` | Remove a non-immortal worker. |
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |
 | `tt x send <session-id> (FILE\|-)` | Send + submit a message to another tt session's orchestrator (send-only, async). |
+| `tt x list [--all]`, `tt x ls [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
 
 Workers: `alfa`, `bravo`, `charlie` are immortal (always present); `delta`,
 `echo` are optional. Hard cap of 5.

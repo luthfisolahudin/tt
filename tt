@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.3.7"
+VERSION="0.3.8"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -155,6 +155,7 @@ up_cmd() {
   # behind the three concurrent (niced) pi `node` startups.
   auto_launch_claude
   ensure_pi_repls
+  printf '%s\n' "$PWD" > "$(state_dir)/project"
   # Already attached to this session — healing is done, nothing to switch to.
   if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
     return 0
@@ -656,6 +657,70 @@ x_send_cmd() {
   tmux send-keys -t "=$target:claude" Enter
 }
 
+x_list_cmd() {
+  local show_all=0
+  while (( $# )); do
+    case $1 in
+      --all) show_all=1; shift ;;
+      -*) die "unknown flag for x list: $1" ;;
+      *) die "x list: unexpected argument: $1" ;;
+    esac
+  done
+
+  local base="${TT_STATE_DIR_BASE}"
+  local found=0
+
+  if (( show_all )); then
+    printf '%-20s  %-15s  %s\n' SESSION STATUS PWD
+  else
+    printf '%-20s  %s\n' SESSION PWD
+  fi
+
+  for dir in "$base"/*/; do
+    [[ -d $dir ]] || continue
+    local sname
+    sname=$(basename "$dir")
+    local pwd_val
+    pwd_val=$(cat "$dir/project" 2>/dev/null || printf '%s' '-')
+
+    # Check tmux session liveness
+    if ! tmux has-session -t "=$sname" 2>/dev/null; then
+      if (( show_all )); then
+        printf '%-20s  %-15s  %s\n' "$sname" "down" "$pwd_val"
+        found=1
+      fi
+      continue
+    fi
+
+    # Check if claude window exists and orchestrator is running
+    local status="no-orchestrator"
+    if tmux list-windows -t "=$sname" -F '#W' 2>/dev/null | grep -Fxq claude; then
+      local pane_cmd
+      pane_cmd=$(tmux display-message -t "=$sname:claude" -p '#{pane_current_command}' 2>/dev/null) || true
+      case "${pane_cmd:-}" in
+        bash|zsh|sh|fish|"") status="no-orchestrator" ;;
+        *) status="ready" ;;
+      esac
+    fi
+
+    if (( show_all )); then
+      printf '%-20s  %-15s  %s\n' "$sname" "$status" "$pwd_val"
+      found=1
+    elif [[ $status == ready ]]; then
+      printf '%-20s  %s\n' "$sname" "$pwd_val"
+      found=1
+    fi
+  done
+
+  if (( ! found )); then
+    if (( show_all )); then
+      printf '(no tt sessions found)\n'
+    else
+      printf '(no tt sessions with a live orchestrator)\n'
+    fi
+  fi
+}
+
 # ---------- help ----------
 
 print_help() {
@@ -727,6 +792,13 @@ CROSS-SESSION VERBS
       Send-only and asynchronous: there is no `tt x receive`. The other
       session replies by running its own `tt x send` back to you, which
       arrives as a new turn in your session.
+
+  tt x list [--all]
+  tt x ls [--all]
+      List tt sessions available to message. By default shows only sessions
+      where the orchestrator (Claude Code TUI) is actively running. With
+      --all, shows every session whose state dir exists, with a STATUS
+      column (ready / no-orchestrator / down).
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
@@ -816,6 +888,7 @@ case "$cmd" in
     sub=${1:-}; (( $# > 0 )) && shift || true
     case "$sub" in
       send)     x_send_cmd "$@" ;;
+      list|ls)  x_list_cmd "$@" ;;
       "")       die "x: subcommand required (try \`tt --help\`)" ;;
       *)        die "unknown x subcommand '$sub' (try \`tt --help\`)" ;;
     esac ;;
