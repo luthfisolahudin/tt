@@ -113,9 +113,11 @@ SUCCESS: <one-line check>
 
 ## Worker pool
 
-Workers live in tmux windows of the project session. The `tt` tool
-(`tt --help` for the full reference) is the only way the orchestrator
-talks to them — never call `pi -p` directly anymore.
+Each worker is a **live interactive pi REPL** in a tmux window of the
+project session — the user can attach, watch, type into, and steer it by
+hand at any time. The `tt` tool (`tt --help` for the full reference) is
+the orchestrator's channel to them; drive workers only through `tt pi`
+verbs, never by calling `pi` directly.
 
 ### Pick a worker
 

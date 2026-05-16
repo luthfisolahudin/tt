@@ -3,15 +3,16 @@
 ## Why it exists
 
 The orchestrator (Claude Code) delegates mechanical subtasks to **pi**, a
-one-shot code worker wired to OpenAI Codex (ChatGPT Plus, flat-rate).
-Originally the orchestrator ran `pi -p "..."` directly in Bash. Two problems:
+code worker wired to OpenAI Codex (ChatGPT Plus, flat-rate). Running
+`pi -p "..."` directly in Bash had two problems:
 
-1. **No visibility** — the user could not watch pi work in real time.
-2. **No parallelism / no iteration** — every call was ephemeral and serial.
+1. **No visibility / no control** — the user could not watch pi work, let
+   alone stop or steer it mid-task.
+2. **No parallelism** — every call was ephemeral and serial.
 
-`tt` solves both by giving each project one tmux session that hosts the dev
-server, the orchestrator, and a pool of pi workers. One place to attach; one
-place to see everything.
+`tt` solves both by giving each project one tmux session that hosts the
+dev server, the orchestrator, and a pool of pi workers. One place to
+attach; one place to see everything.
 
 ## Session model
 
@@ -24,86 +25,99 @@ place to see everything.
   |-----|------|----------|
   | 0 | `dev` | Empty shell in `$PWD`. Run the dev server here. |
   | 1 | `claude` | Empty shell. Launch the orchestrator here. |
-  | 2 | `pi-alfa` | Pi worker shell. **Immortal.** |
-  | 3 | `pi-bravo` | Pi worker shell. **Immortal.** |
-  | 4 | `pi-charlie` | Pi worker shell. **Immortal.** |
+  | 2 | `pi-alfa` | Live pi REPL. **Immortal.** |
+  | 3 | `pi-bravo` | Live pi REPL. **Immortal.** |
+  | 4 | `pi-charlie` | Live pi REPL. **Immortal.** |
   | 5+ | `pi-delta` / `pi-echo` | Optional, on-demand. Hard cap of 5 pi. |
   | tail | user windows | Ad-hoc, created with `Ctrl-b c`. Not managed by tt. |
 
 - Attach lands on `claude`.
-- `history-limit` is set to `50000` so `capture-pane` sees full transcripts.
 
-## Pi windows are SHELLS, not a running pi REPL
+## Pi windows host a LIVE pi REPL
 
-The most important design decision. Each `pi-*` window hosts a plain bash
-shell. `tt pi send` runs
+The central design decision. Each `pi-*` window runs a genuine
+interactive pi REPL (`pi --session-dir <dir> --model …`), launched via
+`tmux respawn-pane -k` with a `; exec bash` tail so the pane survives if
+pi ever exits. Rationale:
 
-```
-pi -p --session-dir <dir> [--continue] --model openai-codex/gpt-5.5:<tier> < <promptfile>
-```
+- **Visible, steerable.** The user can attach to any `pi-*` window and
+  watch the turn stream, type a message, hit Esc to interrupt — exactly
+  as if they had run `pi` themselves. tt's control channel and the
+  human's keystrokes coexist on the same REPL.
+- **No pane scraping.** An earlier design ran `pi -p` in a shell and
+  recovered output by `capture-pane` + a line "watermark". That was the
+  source of every hard bug tt ever had (blank-padding miscounts,
+  scrollback roll-past, launch-detection races). It is gone.
 
-inside that shell. Rationale:
+(The original `pi -p` shell model is retired. It is preserved only in
+git history.)
 
-- **No REPL input-quoting hell.** Feeding a multi-line TASK/FILES/CHANGE
-  prompt into an interactive pi REPL via `tmux send-keys` is fragile
-  (bracketed paste, multi-line submit ambiguity). A shell + file redirect
-  is unambiguous.
-- **Visibility is preserved** — pi's output streams to the pane; attach and
-  watch.
-- **Persistence is preserved** — `--session-dir` + `--continue` keep context
-  across turns via pi's own session files. No need for a live process.
+## The tt-worker extension — control channel
 
-So a "worker" is really: a window + a pi session-dir + tt's bookkeeping.
+tt talks to each REPL through **`tt-worker.ts`**, a pi extension
+installed globally in `~/.pi/agent/settings.json`. It is inert unless
+`TT_WORKER_CS` is set, so it has no effect on the user's ordinary pi
+sessions; tt sets that env var (and `TT_WORKER_STATE`) only for the
+workers it spawns.
 
-## Worker flavors
+The extension and tt exchange two plain files under
+`/tmp/tt/<session>/`, both in a trivial line format so the bash side
+needs no JSON parser:
 
-- **Ephemeral** (default): `tt pi clear` → `send` → `wait`. `clear` wipes
-  prior context (bumps a generation counter → new session-dir, no
-  `--continue`).
-- **Persistent**: skip `clear`. Reuse the worker for a short chain of
-  bounded follow-ups; context accumulates via `--continue`.
+- **`<cs>.trigger`** — tt writes it: line 1 is the task id, the rest is
+  the prompt body. The extension's `fs.watchFile` fires, the body is
+  sent to the REPL as a user message (`pi.sendUserMessage`, steered if
+  pi is mid-turn), and the file is truncated.
+- **`<cs>.result`** — the extension writes it on every `agent_end`:
+  ```
+  id: <task id | ->
+  status: done|blocked|other
+  ---
+  <last assistant text, verbatim>
+  ```
+  `id` is the trigger's id for a tt-injected turn, or `-` for a
+  human-typed one — so a person typing into the REPL never confuses
+  tt's `wait`.
+- **`<cs>.ready`** — the extension touches it once its trigger watch is
+  live, so `launch_repl` knows when it is safe to write a trigger.
 
-## Task IDs & the watermark mechanism
+## Task IDs & completion
 
-`wait` must not false-positive on a stale `WORKER_DONE` from an earlier turn
-in the same pane. Solution — a **watermark**, with no injection into pi's
-input:
-
-1. `tt pi send` captures the pane and records the **index of the last
-   non-blank line** as the watermark, plus turn/tier/session-dir, into
-   `/tmp/tt/<session>/<callsign>.tasks.jsonl`.
-2. The task ID returned is `<callsign>-<turn>` (e.g. `bravo-3`).
-3. `tt pi wait <cs> <task-id>` looks up that watermark and scans **only
-   pane content past it** for `WORKER_DONE` / `BLOCKED:`.
-
-pi never sees an extra marker or comment — the mechanism is entirely on the
-tmux side.
-
-> Two subtle bugs in this area were found and fixed during verification —
-> see `docs/STATUS.md` ("Bugs found & fixed"). The watermark MUST count to
-> the last non-blank line (not `wc -l`), and `send` MUST block until pi has
-> actually launched. Do not regress these.
+1. `tt pi send` assigns the task id `<callsign>-<turn>` (turn = line
+   count of `tasks.jsonl` + 1), writes the trigger, and appends
+   `{turn,id,sent_at,tier}` to `tasks.jsonl`.
+2. `tt pi wait <cs> <task-id>` polls `<cs>.result` until its `id` field
+   equals the task-id, then prints the assistant text. `status` of
+   `done`/`blocked` exits 0; `other` (pi answered without a marker) is
+   an error. `BLOCKED` is classified ahead of `WORKER_DONE` so a real
+   block is never masked by a trailing wrapper.
 
 ## Worker state detection
 
-State is derived, no extra state file:
+State is derived from the window plus the control files:
 
-- `busy` — `tmux pane_current_command` for the window is `pi`.
-- `blocked` — not busy, and pane tail past the last watermark has `BLOCKED:`.
-- `idle` — anything else (incl. no task ever sent).
 - `missing` — the window does not exist.
+- `down` — window exists but no pi process is alive for it (matched by
+  the worker's unique `--session-dir` path via `pgrep -f`; tmux's
+  `pane_current_command` is unreliable because pi runs as a grandchild).
+- `busy` — the last task id in `tasks.jsonl` has no matching id in
+  `<cs>.result` yet.
+- `blocked` — the last result's status is `blocked`.
+- `idle` — anything else.
 
 ## Model tiers
 
-Default tier is `low`. `--medium` on `send` is for safety-critical work.
-Because pi windows are shells, switching tiers needs no respawn or probe —
-`send` simply passes a different `--model openai-codex/gpt-5.5:<tier>` for
-that turn. The tier is remembered in `<callsign>.tier` and sticks until the
-next `--low`/`--medium` or a `clear`.
+Default tier is `low`; `--medium` on `send` is for safety-critical work.
+The model is fixed when the REPL launches, so a tier change makes `send`
+respawn the REPL — which wipes context. This is rare and acceptable; a
+run of same-tier turns never respawns. The tier is remembered in
+`<callsign>.tier`.
 
-(An earlier plan described probing pi for a `/thinking` slash command and a
-respawn fallback. The shell model made all of that unnecessary — it was
-never implemented and is not needed.)
+## Context reset
+
+`tt pi clear` bumps `<callsign>.gen` and respawns the REPL on a new
+`--session-dir` (`pi-sessions/<cs>/g<N>/`). A fresh session-dir is a
+fresh pi session — no `--continue`, no leftover context.
 
 ## State files
 
@@ -111,10 +125,13 @@ Under `/tmp/tt/<session>/`:
 
 | File | Contents |
 |------|----------|
-| `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,line,sent_at,tier,sdir}`. |
+| `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier}`. |
 | `<cs>.tier` | Current pi thinking tier. |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
+| `<cs>.trigger` | Prompt handed to the REPL (id line + body). |
+| `<cs>.result` | Latest turn result (id / status / text). |
+| `<cs>.ready` | Marker: the REPL's trigger watch is live. |
 | `pi-sessions/<cs>/g<N>/` | pi `--session-dir` for generation N. |
 
 ## What does NOT change vs the old `pi -p` flow
@@ -123,10 +140,10 @@ Under `/tmp/tt/<session>/`:
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
 - The model ladder (`gpt-5.5:low` default, `:medium` for safety-critical).
+- The `tt pi send` / `wait` interface — same verbs, same task-ids.
 
 ## Out of scope (deliberately)
 
 - Auto-starting the dev server (`dev` window stays an empty shell).
 - Auto-launching `claude` on `tt up`.
-- Streaming pi events over `--mode json` / JSON-RPC — tmux capture suffices.
 - Per-project `tt` config (custom dev command / default tier).

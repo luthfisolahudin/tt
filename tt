@@ -79,6 +79,7 @@ spawn_pi_window() {
   printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
   printf '0' > "$(state_dir)/$name.gen"
   : > "$(state_dir)/$name.tasks.jsonl"
+  launch_repl "$name"
 }
 
 up_cmd() {
@@ -123,22 +124,47 @@ pi_session_dir() {
   printf '%s/pi-sessions/%s/g%s' "$(state_dir)" "$name" "$(current_gen "$name")"
 }
 
-pane_current_command() {
-  tmux list-panes -t "=$(session_name):pi-$1" -F '#{pane_current_command}' 2>/dev/null | head -n1
+# Is the worker's pi REPL process alive? `pane_current_command` is
+# unreliable here — pi runs as a grandchild (bash → node → pi) and tmux
+# reports the foreground command inconsistently. Instead match the live
+# pi process by its unique `--session-dir` path on the command line.
+repl_running() {
+  pgrep -f -- "$(state_dir)/pi-sessions/$1/" >/dev/null 2>&1
 }
 
-pane_capture() {
-  tmux capture-pane -p -J -S -"$PI_HISTORY_LIMIT" -t "=$(session_name):pi-$1" 2>/dev/null
+# (Re)launch the pi REPL in the worker's window. `respawn-pane -k` kills
+# whatever is there (a shell, or a stale/crashed pi) and starts fresh on
+# the worker's current-generation session-dir. The extension is loaded
+# globally via ~/.pi/agent/settings.json; TT_WORKER_CS/STATE wire it to
+# this worker's control files. `; exec bash` keeps the pane alive (as a
+# shell) if pi ever exits, so the window is never lost.
+launch_repl() {
+  local name=$1 s sdir tier launch
+  s=$(session_name)
+  tier=$(current_tier "$name")
+  sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
+  rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
+        "$(state_dir)/$name.ready"
+  launch="env TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
+pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier; exec bash"
+  tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
+  # Wait for the REPL process and the extension's trigger watch.
+  local deadline=$(( $(date +%s) + 40 ))
+  while (( $(date +%s) < deadline )); do
+    if repl_running "$name" && [[ -f "$(state_dir)/$name.ready" ]]; then
+      return 0
+    fi
+    sleep 0.3
+  done
+  die "pi REPL failed to start on pi-$name"
 }
 
-# Watermark = index of the last non-blank line. `capture-pane` pads its
-# output with blank lines down to the pane height, so a raw `wc -l`
-# would count the empty bottom of the screen and place the watermark
-# *past* any content pi later prints. Counting to the last non-blank
-# line pins the watermark to real content instead.
-pane_line_count() {
-  pane_capture "$1" | awk '{ if ($0 ~ /[^[:space:]]/) n = NR } END { print n + 0 }'
-}
+ensure_repl() { repl_running "$1" || launch_repl "$1"; }
+
+# Fields of the worker's result file (written by the tt-worker extension).
+result_id()     { sed -n 's/^id: //p'     "$(state_dir)/$1.result" 2>/dev/null | head -n1; }
+result_status() { sed -n 's/^status: //p' "$(state_dir)/$1.result" 2>/dev/null | head -n1; }
+result_text()   { sed -n '/^---$/,$p'     "$(state_dir)/$1.result" 2>/dev/null | sed '1d'; }
 
 last_task_row() {
   local f="$(state_dir)/$1.tasks.jsonl"
@@ -146,21 +172,30 @@ last_task_row() {
   tail -n1 "$f"
 }
 
+last_task_id() {
+  local row; row=$(last_task_row "$1") || return 1
+  printf '%s' "$row" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p'
+}
+
+# State is derived from the worker's window + control files:
+#   missing — no window
+#   down    — window exists but the REPL process is not running
+#   busy    — the last task sent has no matching result yet
+#   blocked — the last task's result status is `blocked`
+#   idle    — anything else
 worker_state() {
   local name=$1
-  if ! window_exists "pi-$name"; then printf 'missing'; return; fi
-  local cmd; cmd=$(pane_current_command "$name")
-  if [[ $cmd == pi ]]; then printf 'busy'; return; fi
-  local row; row=$(last_task_row "$name") || { printf 'idle'; return; }
-  local line; line=$(printf '%s' "$row" | sed -n 's/.*"line":\([0-9]*\).*/\1/p')
-  local tail; tail=$(pane_capture "$name" | sed -n "$((line + 1)),\$p")
-  if grep -qE '^BLOCKED:' <<<"$tail"; then printf 'blocked'; return; fi
+  window_exists "pi-$name" || { printf 'missing'; return; }
+  repl_running "$name"     || { printf 'down'; return; }
+  local tid; tid=$(last_task_id "$name") || { printf 'idle'; return; }
+  [[ $tid == "$(result_id "$name")" ]] || { printf 'busy'; return; }
+  [[ $(result_status "$name") == blocked ]] && { printf 'blocked'; return; }
   printf 'idle'
 }
 
+# Clearable / removable when not actively running a task.
 ensure_idle_or_blocked() {
-  local s; s=$(worker_state "$1")
-  [[ $s == idle || $s == blocked ]]
+  [[ $(worker_state "$1") != busy ]]
 }
 
 # ---------- pi verbs ----------
@@ -194,18 +229,15 @@ pi_clear_cmd() {
   if (( ! force )) && ! ensure_idle_or_blocked "$name"; then
     die "pi-$name is busy; use --force to clear anyway"
   fi
-  if [[ $(worker_state "$name") == busy ]]; then
+  (( force )) && [[ $(worker_state "$name") == busy ]] && \
     note "interrupting running pi turn on pi-$name"
-    tmux send-keys -t "=$(session_name):pi-$name" C-c
-    sleep 1
-    tmux send-keys -t "=$(session_name):pi-$name" C-c
-    sleep 1
-  fi
   bump_gen "$name"
   : > "$(state_dir)/$name.tasks.jsonl"
+  rm -f "$(state_dir)/$name".in.*.txt
   printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
-  # Visual marker in the pane so attach-watchers see the boundary
-  tmux send-keys -t "=$(session_name):pi-$name" "clear && echo '[tt] pi-$name cleared (gen $(current_gen "$name"))'" Enter
+  # Respawn the REPL on the new generation's session-dir → fresh context.
+  launch_repl "$name"
+  note "pi-$name cleared (gen $(current_gen "$name"))"
 }
 
 pi_send_cmd() {
@@ -229,56 +261,38 @@ pi_send_cmd() {
   require_session
   window_exists "pi-$name" || die "pi-$name does not exist"
 
-  if [[ $(worker_state "$name") == busy ]]; then
-    die "pi-$name is busy; wait for current task or \`tt pi clear $name --force\`"
+  # Tier is fixed at REPL launch; a change requires a respawn (which
+  # wipes context — rare, and documented).
+  local cur_tier; cur_tier=$(current_tier "$name")
+  local tier="${req_tier:-$cur_tier}"
+  if [[ -n $req_tier && $req_tier != "$cur_tier" ]]; then
+    printf '%s' "$tier" > "$(state_dir)/$name.tier"
+    launch_repl "$name"
+  else
+    ensure_repl "$name"
   fi
 
-  local tier="${req_tier:-$(current_tier "$name")}"
-  printf '%s' "$tier" > "$(state_dir)/$name.tier"
+  [[ $(worker_state "$name") == busy ]] && \
+    die "pi-$name is busy; wait for current task or \`tt pi clear $name --force\`"
 
   local f="$(state_dir)/$name.tasks.jsonl"
   local turn=1
-  if [[ -s $f ]]; then turn=$(($(wc -l <"$f") + 1)); fi
+  [[ -s $f ]] && turn=$(($(wc -l <"$f") + 1))
+  local id="$name-$turn"
 
   local promptfile="$(state_dir)/$name.in.$turn.txt"
   if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
 
-  local sdir; sdir=$(pi_session_dir "$name")
-  mkdir -p "$sdir"
+  printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s"}\n' \
+    "$turn" "$id" "$(date +%s)" "$tier" >> "$f"
 
-  local line; line=$(pane_line_count "$name")
-  local sent; sent=$(date +%s)
-  printf '{"turn":%d,"line":%d,"sent_at":%d,"tier":"%s","sdir":"%s"}\n' \
-    "$turn" "$line" "$sent" "$tier" "$sdir" >> "$f"
+  # Trigger file: line 1 = task id, remainder = prompt body. The
+  # tt-worker extension consumes it and feeds the body to the live REPL.
+  local tf="$(state_dir)/$name.trigger"
+  { printf '%s\n' "$id"; cat "$promptfile"; } > "$tf.tmp"
+  mv "$tf.tmp" "$tf"
 
-  local cont=""
-  (( turn > 1 )) && cont="--continue"
-
-  # Single-line shell command sent into the pi-$name window.
-  local cmd
-  cmd="pi -p --session-dir $(printf %q "$sdir") $cont --model ${PI_MODEL_PROVIDER}:${tier} < $(printf %q "$promptfile")"
-  tmux send-keys -t "=$(session_name):pi-$name" "$cmd" Enter
-
-  # send-keys is asynchronous: the keystrokes are queued and the shell
-  # needs a moment to read the line and exec pi. If `send` returned
-  # immediately, the pane would still show `bash` — a back-to-back
-  # `send` would misjudge the worker as idle and a `wait` would
-  # misjudge pi as already exited. Block until pi is confirmed running
-  # (or has already finished with a marker, for very fast turns).
-  local launch_deadline=$(( $(date +%s) + 15 ))
-  while (( $(date +%s) < launch_deadline )); do
-    [[ $(pane_current_command "$name") == pi ]] && break
-    local probe; probe=$(pane_capture "$name" | sed -n "$((line + 1)),\$p")
-    grep -qE '^(WORKER_DONE|BLOCKED:)' <<<"$probe" && break
-    sleep 0.3
-  done
-  if [[ $(pane_current_command "$name") != pi ]]; then
-    local probe; probe=$(pane_capture "$name" | sed -n "$((line + 1)),\$p")
-    grep -qE '^(WORKER_DONE|BLOCKED:)' <<<"$probe" \
-      || die "pi failed to launch on pi-$name (no process, no marker after 15s)"
-  fi
-
-  printf '%s-%d\n' "$name" "$turn"
+  printf '%s\n' "$id"
 }
 
 pi_wait_cmd() {
@@ -299,56 +313,24 @@ pi_wait_cmd() {
   require_session
   window_exists "pi-$name" || die "pi-$name does not exist"
 
-  local expected_callsign="${task_id%-*}" expected_turn="${task_id##*-}"
+  local expected_callsign="${task_id%-*}"
   [[ $expected_callsign == "$name" ]] || die "task-id callsign mismatch ($expected_callsign vs $name)"
 
-  local f="$(state_dir)/$name.tasks.jsonl"
-  [[ -s $f ]] || die "no task records for pi-$name"
-  local row; row=$(awk -v t="$expected_turn" 'NR==t' "$f")
-  [[ -n $row ]] || die "no task record for $task_id"
-  local watermark; watermark=$(printf '%s' "$row" | sed -n 's/.*"line":\([0-9]*\).*/\1/p')
-
+  # Block until the tt-worker extension records this task's result.
   local deadline=$(( $(date +%s) + timeout ))
   while (( $(date +%s) < deadline )); do
-    local cmd; cmd=$(pane_current_command "$name")
-    local cap; cap=$(pane_capture "$name")
-    local tail; tail=$(printf '%s\n' "$cap" | sed -n "$((watermark + 1)),\$p")
-
-    if grep -qE '^WORKER_DONE$' <<<"$tail"; then
-      # Print from WORKER_DONE to end (strip ANSI).
-      printf '%s\n' "$tail" \
-        | sed -n '/^WORKER_DONE$/,$p' \
-        | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
-      return 0
-    fi
-    if grep -qE '^BLOCKED:' <<<"$tail"; then
-      printf '%s\n' "$tail" \
-        | grep -E '^BLOCKED:' | head -n1 \
-        | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
-      return 0
-    fi
-    # If pi exited without the markers, surface that too.
-    if [[ $cmd != pi ]]; then
-      # Brief grace window — pi may have just exited and the markers may
-      # still be flushing.
-      sleep 1
-      cap=$(pane_capture "$name")
-      tail=$(printf '%s\n' "$cap" | sed -n "$((watermark + 1)),\$p")
-      if grep -qE '^WORKER_DONE$' <<<"$tail"; then
-        printf '%s\n' "$tail" | sed -n '/^WORKER_DONE$/,$p' \
-          | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
+    if [[ "$(result_id "$name")" == "$task_id" ]]; then
+      local st; st=$(result_status "$name")
+      if [[ $st == done || $st == blocked ]]; then
+        result_text "$name"
         return 0
       fi
-      if grep -qE '^BLOCKED:' <<<"$tail"; then
-        printf '%s\n' "$tail" | grep -E '^BLOCKED:' | head -n1 \
-          | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g'
-        return 0
-      fi
-      printf '%s\n' "$tail" | tail -n 40 \
-        | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' >&2
-      die "pi exited without WORKER_DONE/BLOCKED on $task_id (tail above)"
+      result_text "$name" >&2
+      die "pi finished $task_id without WORKER_DONE/BLOCKED (text above)"
     fi
-    sleep 2
+    repl_running "$name" \
+      || die "pi REPL on pi-$name stopped before $task_id completed"
+    sleep 1
   done
   die "wait timeout for $task_id (${timeout}s)"
 }
@@ -390,7 +372,7 @@ pi_down_cmd() {
     die "pi-$name is busy; use --force"
   fi
   tmux kill-window -t "=$(session_name):pi-$name"
-  rm -f "$(state_dir)/$name.tasks.jsonl" "$(state_dir)/$name.tier" "$(state_dir)/$name.gen"
+  rm -f "$(state_dir)/$name."*
   rm -rf "$(state_dir)/pi-sessions/$name"
 }
 
@@ -401,7 +383,7 @@ pi_popidle_cmd() {
     window_exists "pi-$n" || continue
     if ensure_idle_or_blocked "$n"; then
       tmux kill-window -t "=$(session_name):pi-$n"
-      rm -f "$(state_dir)/$n.tasks.jsonl" "$(state_dir)/$n.tier" "$(state_dir)/$n.gen"
+      rm -f "$(state_dir)/$n."*
       rm -rf "$(state_dir)/pi-sessions/$n"
       printf '%s\n' "$n"
       return 0
@@ -437,28 +419,27 @@ PI WORKER VERBS
       Errors at cap of 5. Prints the new callsign.
 
   tt pi clear <callsign> [--force]
-      Wipe the worker's pi-session context (bumps an internal generation
-      counter; next `send` starts fresh — no `--continue`). Refuses
-      unless idle or blocked; --force interrupts a busy turn first.
-      Works on immortals (alfa/bravo/charlie) too.
+      Wipe the worker's context: bumps a generation counter and respawns
+      the pi REPL on a fresh session-dir. Refuses unless idle/blocked;
+      --force interrupts a busy turn first. Works on immortals too.
 
   tt pi send <callsign> [--low|--medium] (FILE | -)
-      Send a prompt to the worker. Source is a file path, or `-` for
-      stdin. Use process substitution to skip temp files:
+      Send a prompt to the worker's live pi REPL. Source is a file path,
+      or `-` for stdin. Use process substitution to skip temp files:
       `tt pi send alfa <(printf 'TASK: ...\n')`.
-      --low/--medium selects pi thinking effort. The chosen tier sticks
-      until the next --low/--medium switch or `clear`.
+      --low/--medium selects pi thinking effort. A tier change respawns
+      the REPL (context is lost); otherwise the tier sticks.
       Refuses if the worker is busy. Prints task-id (e.g. "alfa-3").
 
   tt pi wait <callsign> <task-id> [--timeout SECONDS]
-      Block until WORKER_DONE or BLOCKED: appears in pane content past
-      the watermark recorded by the matching `send`. Default timeout
-      600s. Prints the captured block, ANSI-stripped. Exit 0 on
-      done/blocked, non-zero on timeout / unexpected pi exit.
+      Block until the tt-worker extension records the matching task's
+      result. Default timeout 600s. Prints the last assistant message
+      (the WORKER_DONE / BLOCKED: block). Exit 0 on done/blocked,
+      non-zero on timeout / unexpected completion.
 
   tt pi status
       One row per existing worker: CALLSIGN, STATE
-      (idle/busy/blocked/missing), LAST-TASK, TIER, GEN.
+      (idle/busy/blocked/down/missing), LAST-TASK, TIER, GEN.
 
   tt pi down <callsign> [--force]
       Remove a non-immortal worker. Refuses unless idle without --force.
@@ -471,25 +452,29 @@ PI WORKER VERBS
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
   1  claude       Empty shell. Type `claude` to launch the orchestrator.
-  2  pi-alfa      Pi worker shell (immortal).
-  3  pi-bravo     Pi worker shell (immortal).
-  4  pi-charlie   Pi worker shell (immortal).
+  2  pi-alfa      Live pi REPL (immortal).
+  3  pi-bravo     Live pi REPL (immortal).
+  4  pi-charlie   Live pi REPL (immortal).
   5+ pi-delta/echo  Optional, on-demand via `tt pi add`. Hard cap 5 pi.
   +  user windows Ad-hoc, created with Ctrl-b c. Not managed by tt.
 
-  Pi windows host plain shells, not a continuously-running pi REPL.
-  `tt pi send` invokes `pi -p --session-dir … --continue` inside the
-  shell, so output streams to the pane (visible if you attach), and
-  context persists across turns via pi's session files.
+  Pi windows host a live, interactive pi REPL. `tt pi send` injects the
+  prompt through the globally-installed `tt-worker` extension (which
+  watches a per-worker trigger file); `tt pi wait` reads the result the
+  extension records. You can watch, type into, and steer any pi-* REPL
+  by hand — tt's file channel and your keystrokes coexist.
 
 SESSION NAMING
   <basename($PWD)>-<sha1($PWD)[:4]>     e.g. /home/me/proj/foo → foo-a3f1
 
 STATE
-  /tmp/tt/<session>/<callsign>.tasks.jsonl   per-worker task watermarks
+  /tmp/tt/<session>/<callsign>.tasks.jsonl   per-worker task log
   /tmp/tt/<session>/<callsign>.tier          current pi thinking tier
   /tmp/tt/<session>/<callsign>.gen           current context generation
   /tmp/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
+  /tmp/tt/<session>/<callsign>.trigger       prompt handed to the REPL
+  /tmp/tt/<session>/<callsign>.result        latest turn result
+  /tmp/tt/<session>/<callsign>.ready         REPL trigger-watch is live
   /tmp/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
 
 EXIT CODES
