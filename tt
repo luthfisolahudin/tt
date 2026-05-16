@@ -3,14 +3,14 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
 PI_HISTORY_LIMIT=50000
 PI_DEFAULT_TIER=low
 PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
-TT_STATE_DIR_BASE="${TT_STATE_DIR:-/tmp/tt}"
+TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
 
 # ---------- helpers ----------
 
@@ -35,10 +35,12 @@ session_exists() { tmux has-session -t "=$(session_name)" 2>/dev/null; }
 # Enter the project session: switch-client when already inside tmux
 # (attach refuses to nest), attach otherwise.
 enter_session() {
+  local win=${1:-}
+  local target="=$(session_name)${win:+:$win}"
   if [[ -n "${TMUX:-}" ]]; then
-    tmux switch-client -t "=$(session_name)"
+    tmux switch-client -t "$target"
   else
-    tmux attach -t "=$(session_name)"
+    tmux attach -t "$target"
   fi
 }
 
@@ -87,10 +89,12 @@ up_cmd() {
     if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
       return 0
     fi
-    enter_session
+    auto_launch_claude
+    enter_session "claude"
   else
     create_session
-    enter_session
+    auto_launch_claude
+    enter_session "claude"
   fi
 }
 
@@ -145,8 +149,13 @@ launch_repl() {
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
   rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
         "$(state_dir)/$name.ready"
+  local global_append="${XDG_DATA_HOME:-$HOME/.local/share}/tt/.pi/APPEND_SYSTEM.md"
+  local append_flag=""
+  if [[ ! -f "$PWD/.pi/APPEND_SYSTEM.md" && -f "$global_append" ]]; then
+    append_flag="--append-system-prompt '$global_append'"
+  fi
   launch="env TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
-pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier; exec bash"
+pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   # Wait for the REPL process and the extension's trigger watch.
   local deadline=$(( $(date +%s) + 40 ))
@@ -160,6 +169,20 @@ pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier; exec bash"
 }
 
 ensure_repl() { repl_running "$1" || launch_repl "$1"; }
+
+# Auto-launch claude in the claude window if the pane is running a bare
+# shell. Called by up_cmd so the orchestrator starts automatically on
+# tt up, and resumes (--continue) on re-attach after a crash or reboot.
+auto_launch_claude() {
+  local s; s=$(session_name)
+  local cmd
+  cmd=$(tmux display-message -t "=$s:claude" -p '#{pane_current_command}' 2>/dev/null) || return 0
+  case "$cmd" in
+    bash|zsh|sh|fish) ;;
+    *) return 0 ;;
+  esac
+  tmux send-keys -t "=$s:claude" 'claude --continue --allow-dangerously-skip-permissions' Enter
+}
 
 # Fields of the worker's result file (written by the tt-worker extension).
 result_id()     { sed -n 's/^id: //p'     "$(state_dir)/$1.result" 2>/dev/null | head -n1; }
@@ -451,7 +474,7 @@ PI WORKER VERBS
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
-  1  claude       Empty shell. Type `claude` to launch the orchestrator.
+  1  claude       Shell; `claude --continue` auto-launched on `tt up`.
   2  pi-alfa      Live pi REPL (immortal).
   3  pi-bravo     Live pi REPL (immortal).
   4  pi-charlie   Live pi REPL (immortal).
@@ -468,14 +491,14 @@ SESSION NAMING
   <basename($PWD)>-<sha1($PWD)[:4]>     e.g. /home/me/proj/foo → foo-a3f1
 
 STATE
-  /tmp/tt/<session>/<callsign>.tasks.jsonl   per-worker task log
-  /tmp/tt/<session>/<callsign>.tier          current pi thinking tier
-  /tmp/tt/<session>/<callsign>.gen           current context generation
-  /tmp/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
-  /tmp/tt/<session>/<callsign>.trigger       prompt handed to the REPL
-  /tmp/tt/<session>/<callsign>.result        latest turn result
-  /tmp/tt/<session>/<callsign>.ready         REPL trigger-watch is live
-  /tmp/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
+  $XDG_STATE_HOME/tt/<session>/<callsign>.tasks.jsonl   per-worker task log
+  $XDG_STATE_HOME/tt/<session>/<callsign>.tier          current pi thinking tier
+  $XDG_STATE_HOME/tt/<session>/<callsign>.gen           current context generation
+  $XDG_STATE_HOME/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
+  $XDG_STATE_HOME/tt/<session>/<callsign>.trigger       prompt handed to the REPL
+  $XDG_STATE_HOME/tt/<session>/<callsign>.result        latest turn result
+  $XDG_STATE_HOME/tt/<session>/<callsign>.ready         REPL trigger-watch is live
+  $XDG_STATE_HOME/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
 
 EXIT CODES
   0   success

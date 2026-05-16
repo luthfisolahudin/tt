@@ -150,3 +150,88 @@ Under `/tmp/tt/<session>/`:
 - Auto-starting the dev server (`dev` window stays an empty shell).
 - Auto-launching `claude` on `tt up`.
 - Per-project `tt` config (custom dev command / default tier).
+
+## Robust task-completion detection (proposed)
+
+The current mechanism writes `<cs>.result` on every `agent_end` event —
+whether the turn ended naturally or was interrupted by the user pressing
+Esc. Four approaches address this, recommended to be combined (2 + 3 + 4):
+
+### Approach 1 — `status: interrupted` for cut-short tt turns
+
+**What changes:**
+- `tt-worker.ts`: when `agent_end` fires for a tt-injected turn
+  (`pendingId != "-"`) and the text has no valid completion marker,
+  write `status: interrupted` instead of `status: other`.
+- `tt` (`worker_state`): treat `interrupted` as non-idle to prevent
+  premature redispatch.
+
+**Tradeoffs:** low complexity; does not protect against a stale
+`WORKER_DONE` appearing in partial output before the interrupt.
+
+---
+
+### Approach 2 — Per-task nonce in the completion marker ⭐
+
+**What changes:**
+- `tt` (`pi_send`): generate a random 16-char nonce per task; write it
+  as the third field of the trigger header (`<id> <tier> <nonce>`) and
+  inject the expected footer into the task prompt:
+  ```
+  WORKER_DONE
+  task_id: <id>
+  nonce: <nonce>
+  ```
+- `tt-worker.ts`: store `pendingNonce` from the trigger header; on
+  `agent_end`, only classify `status=done` if the final text contains
+  `WORKER_DONE` **and** `nonce: <pendingNonce>`. A plain `WORKER_DONE`
+  without the matching nonce is `other`/`interrupted`.
+
+**Tradeoffs:** medium complexity; strongly defeats stale markers and
+manual-Esc false-positives; bash side remains line-parse-only (nonce is
+stored in `tasks.jsonl`).
+
+---
+
+### Approach 3 — Terminal-position validation ⭐
+
+**What changes:**
+- `tt-worker.ts`: `WORKER_DONE` only counts when it appears as the
+  **last block** of the last assistant message (only trailing whitespace
+  allowed after it). A `WORKER_DONE` inside a code snippet, log line,
+  or mid-stream tool output is ignored.
+
+**Tradeoffs:** low complexity; eliminates accidental classification from
+`WORKER_DONE` embedded in non-terminal text; pairs directly with the
+nonce approach (the nonce footer naturally anchors to end-of-message).
+
+---
+
+### Approach 4 — Quarantine `other`/`interrupted` workers ⭐
+
+**What changes:**
+- `tt` (`worker_state`): when the latest result for a task has
+  `status=other` or `status=interrupted`, return `interrupted` (not
+  `idle`). The worker is considered dirty.
+- `tt` (`pi_send`): refuse to dispatch to an `interrupted` worker;
+  require `tt pi clear <cs>` first.
+- `tt pi status`: display the `interrupted` state distinctly.
+
+**Tradeoffs:** very low complexity; standalone safety net regardless of
+other approaches; prevents the orchestrator from silently reusing a
+worker whose last task was cut short.
+
+---
+
+### How each approach handles the key scenarios
+
+| Scenario | Approach 1 | Approach 2 | Approach 3 | Approach 4 |
+|---|---|---|---|---|
+| Manual Esc mid-task | `interrupted` state, wait errors | nonce absent → `other`/interrupted | marker not terminal → `other` | worker quarantined |
+| Human types into pane | human turn uses `id: -` (unchanged) | nonce absent → ignored | same | same |
+| Stale `WORKER_DONE` in partial output | ✗ not protected | ✓ nonce missing | ✓ not terminal | ✗ not protected |
+| Redispatch after Esc | ✓ worker not idle | ✓ worker not idle | ✓ worker not idle | ✓ explicitly blocked |
+
+**Recommended combination: 2 + 3 + 4.** The nonce makes completion
+unforgeable, terminal-position validation eliminates accidental matches,
+and quarantine ensures a dirty worker is never silently reused.

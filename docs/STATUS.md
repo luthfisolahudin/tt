@@ -1,14 +1,36 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16._
+_Last updated: 2026-05-16 (v0.3.0)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.2.0, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.0, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+- **State dir moved to XDG** (2026-05-16). State now lives under
+  `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` instead of
+  `/tmp/tt/`. State (task logs, pi session-dirs) survives reboots.
+  Override with `TT_STATE_DIR`.
+- **XDG data install** (2026-05-16). `~/.local/share/tt/` holds
+  symlinks to the tt repo's `.pi/`, `.agents/`, and `tt-worker.ts`.
+  Global skill links and `~/.pi/agent/settings.json` now point through
+  `~/.local/share/tt/` — moving the repo requires only updating those
+  symlinks, not hunting scattered hardcoded paths.
+- **Global APPEND_SYSTEM.md auto-injected** (2026-05-16). If the
+  project has no `.pi/APPEND_SYSTEM.md`, `launch_repl` passes
+  `--append-system-prompt` pointing at the global file in
+  `~/.local/share/tt/.pi/`. The project directory is never touched;
+  a project-local `.pi/APPEND_SYSTEM.md` takes precedence naturally.
+- **`tt up` auto-launches claude** (2026-05-16). If the `claude` pane
+  is running a bare shell, `tt up` sends
+  `claude --continue --allow-dangerously-skip-permissions` into it.
+  Resumes the last conversation on re-attach after a crash or reboot.
+- **`tt up` always focuses the claude window** (2026-05-16).
+  `enter_session` now accepts an optional window target;
+  `up_cmd` passes `"claude"` so focus always lands on the orchestrator
+  window regardless of which tmux session `tt up` is called from.
 - **The pi-worker model was rewritten** (2026-05-16). The old `pi -p`
   one-shot + pane-watermark mechanism is gone. Each `pi-*` window now
   hosts a **live interactive pi REPL**; `tt` drives it through the
