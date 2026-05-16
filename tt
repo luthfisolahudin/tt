@@ -706,13 +706,15 @@ PI WORKER VERBS
 
 CROSS-SESSION VERBS
   tt x send <session-id> (FILE | -)
-      Send a message to another tt session's orchestrator (the Claude
-      Code TUI in its `claude` window) and submit it as one turn.
-      <session-id> is the exact tmux session name — run `tt name` in
-      the other project to get it. Source is a file path, or `-` for
-      stdin. The delivered message is prefixed `[tt x from <sender>]`.
+      Send a message to another tt session's orchestrator (its live
+      Claude Code TUI) and submit it as one turn. Source is a file path,
+      or `-` for stdin. Use process substitution to skip temp files:
+      `tt x send brainstorm-a3f1 <(printf 'hi\n')`.
+      <session-id> is the exact tmux session name; run `tt name` in the
+      other project to get it. The message is prefixed `[tt x from
+      <sender>]` so the receiver sees it is cross-session traffic.
       Refuses if the session is missing or its orchestrator is not
-      running. Example: `echo hi | tt x send brainstorm-a3f1 -`.
+      running.
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
