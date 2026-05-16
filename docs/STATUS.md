@@ -118,6 +118,16 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
   respawns the REPL at all — it is a runtime `setThinkingLevel` call
   (see "Tier switching is now a runtime operation" above). The respawn,
   and therefore the stale-file bug, is gone.
+- **`tmux automatic-rename` corrupted pi window names** — tmux's
+  automatic-rename fired between `new-window` and `respawn-pane` in
+  `launch_repl`, renaming `pi-charlie` away from its assigned name and
+  causing "can't find window: pi-charlie" on `tt up`. Fixed by calling
+  `set-window-option automatic-rename off` in `spawn_pi_window`
+  immediately after `new-window`.
+- **`kill-window` races in `down_cmd`, `pi_down_cmd`, `pi_popidle_cmd`**
+  — a pi window could disappear between the `window_exists` guard and
+  the `tmux kill-window` call, producing a spurious "can't find window"
+  error. Fixed with `2>/dev/null || true` on all three kill-window calls.
 
 ## Known limitations / not yet tested
 

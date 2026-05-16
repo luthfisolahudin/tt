@@ -48,6 +48,10 @@ pi ever exits. Rationale:
   recovered output by `capture-pane` + a line "watermark". That was the
   source of every hard bug tt ever had (blank-padding miscounts,
   scrollback roll-past, launch-detection races). It is gone.
+- **Names are pinned.** `spawn_pi_window` sets `automatic-rename off` on
+  each pi window immediately after creation so tmux cannot rename the
+  window away from its `pi-<callsign>` name. All subsequent tmux calls
+  target windows by name; a rename would cause "can't find window" errors.
 
 (The original `pi -p` shell model is retired. It is preserved only in
 git history.)
