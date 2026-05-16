@@ -115,7 +115,12 @@ ensure_standard_windows() {
   window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
   window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
   for n in "${IMMORTALS[@]}"; do
-    window_exists "pi-$n" || spawn_pi_window "$n"
+    if window_exists "pi-$n"; then
+      ensure_repl "$n"        # window exists but the REPL may be dead
+                              # (crash, or a tmux-resurrect restore)
+    else
+      spawn_pi_window "$n"
+    fi
   done
 }
 

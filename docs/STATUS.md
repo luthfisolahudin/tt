@@ -155,6 +155,15 @@ Run against throwaway `/tmp/tt-test-*` projects.
   session that existed but lost windows (the state `tt down`'s abort
   left behind). Added `ensure_standard_windows`, called on every
   `tt up`.
+- **tmux-resurrect/continuum vs tt** (v0.3.4) — a continuum auto-restore
+  recreates the session concurrently with `tt up`, leaving duplicate
+  `pi-*` windows (ambiguous `tmux -t` targets → "can't find window"),
+  and restored pi windows hold a bare shell with no REPL. Fixes:
+  `ensure_standard_windows` now collapses duplicate standard windows
+  (`dedup_windows`) and revives a dead REPL in an existing pi window
+  (`ensure_repl`), not just missing windows. Also dropped `pi`/`claude`
+  from `@resurrect-processes` in `~/.tmux.conf` so stale REPL command
+  lines are never resurrected.
 
 - **`pane_current_command` is unreliable** — pi runs as a grandchild
   (`bash → node → pi`); `repl_running` matches the live pi process by
