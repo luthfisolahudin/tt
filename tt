@@ -130,15 +130,17 @@ down_cmd() {
   printf 'tt: kill session %s? [y/N] ' "$s" >&2
   local ans; read -r ans
   [[ $ans == y || $ans == Y ]] || return 0
-  # SIGTERM the live REPL process in each pi window, then kill the window.
+  # SIGTERM each pi window's whole process group, then kill the window.
+  # The group — wrapper bash, its `node`, and the `pi` grandchild that
+  # hosts the tt-worker extension — all share the pane pid as PGID.
+  # Killing a single pid would orphan the grandchild (reparented away,
+  # it survives kill-session and leaks). `kill -- -PGID` gets them all.
+  # `|| true`: tmux/kill exit non-zero if the window already vanished.
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
-    local sdir; sdir=$(pi_session_dir "$n")
-    # `|| true` is required: under `set -euo pipefail` a standalone
-    # assignment whose pipeline fails aborts the script — and pgrep
-    # exits non-zero on no match, head closes the pipe early (SIGPIPE).
-    local pid; pid=$(pgrep -f "$sdir" 2>/dev/null | head -1) || true
-    [[ -n $pid ]] && kill "$pid" 2>/dev/null || true
+    local pane_pid
+    pane_pid=$(tmux display-message -p -t "=$s:pi-$n" '#{pane_pid}' 2>/dev/null) || true
+    [[ -n $pane_pid ]] && kill -TERM -- "-$pane_pid" 2>/dev/null || true
     tmux kill-window -t "=$s:pi-$n" 2>/dev/null || true
   done
   sleep 0.5
