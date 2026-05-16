@@ -1,0 +1,22 @@
+[
+  {"query": "add a `tt pi restart` verb that downs a worker and respawns it fresh — should live next to the existing down/clear verbs in the tt script", "should_trigger": true},
+  {"query": "rename the `nonce` field to `token` everywhere it appears across tt and tt-worker.ts, including the docs in DESIGN.md", "should_trigger": true},
+  {"query": "find every place in the codebase where worker state (idle/busy/blocked etc) gets computed or checked", "should_trigger": true},
+  {"query": "ok i need a new react component for the checkout summary, it should take a cart prop and render line items + total. put it in src/components/checkout/", "should_trigger": true},
+  {"query": "theres a bunch of dead code in the old payments module i think, can you figure out whats actually unused in src/payments/legacy and rip it out", "should_trigger": true},
+  {"query": "audit all the route handlers under api/ and tell me which ones are missing auth middleware", "should_trigger": true},
+  {"query": "trace how a webhook request gets from the express entrypoint to the actual handler function", "should_trigger": true},
+  {"query": "convert all the .json fixture files in test/fixtures to yaml", "should_trigger": true},
+  {"query": "can you spin up a pi worker to scaffold the new settings page", "should_trigger": true},
+  {"query": "i've got a spec doc for the reporting API — generate the typescript types and the stub endpoints from it", "should_trigger": true},
+  {"query": "i'm not sure what to build next for this app — should i do the notifications feature or the search rework first?", "should_trigger": false},
+  {"query": "does this landing page hero feel too cramped to you? wondering if the CTA should be bigger", "should_trigger": false},
+  {"query": "fix the typo in the comment on line 42 of utils.ts, it says 'recieve'", "should_trigger": false},
+  {"query": "what's the difference between a rebase and a merge again", "should_trigger": false},
+  {"query": "explain what the debounce function in src/lib/timing.ts does", "should_trigger": false},
+  {"query": "run the test suite and tell me if anything fails", "should_trigger": false},
+  {"query": "i pasted a diff below — does this look like a reasonable approach or am i overcomplicating it?", "should_trigger": false},
+  {"query": "how do i configure tt to spawn a fourth immortal worker?", "should_trigger": false},
+  {"query": "what model tier should i be using for safety-critical refactors with pi?", "should_trigger": false},
+  {"query": "git status is showing a file i deleted as still modified, whats going on", "should_trigger": false}
+]

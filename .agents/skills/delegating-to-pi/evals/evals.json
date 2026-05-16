@@ -1,0 +1,40 @@
+{
+  "skill_name": "delegating-to-pi",
+  "evals": [
+    {
+      "id": 0,
+      "name": "coding-add-verb-stub",
+      "prompt": "In the tt script, add a `tt pi peek <cs>` verb that prints the named worker's last task id. Wire it into the `pi` subcommand dispatch next to the existing verbs.",
+      "expected_output": "Skill should delegate the edit to a pi worker via `tt pi send`; baseline likely edits tt directly.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "exploration-find-trigger-file-handling",
+      "prompt": "Find every function in the tt script and tt-worker.ts that reads or writes the .trigger / .result control-channel files. Report each with file:line.",
+      "expected_output": "Skill should delegate the search to a pi worker (or built-in subagent only if skill absent); baseline likely uses Grep / Explore directly.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "refactor-rename-local",
+      "prompt": "Rename the local variable `gen` to `generation` inside the worker-status code path of the tt script. Local scope only — don't touch unrelated identifiers.",
+      "expected_output": "Skill should delegate the rename to a pi worker; baseline likely edits inline.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "audit-cross-file",
+      "prompt": "Audit the docs/ directory of the tt repo and tell me which command verbs documented in README.md are missing from the `tt --help` block in the tt script, or vice versa.",
+      "expected_output": "Skill should delegate the cross-file audit to a pi worker; baseline likely reads files directly.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "judgment-keep-with-orchestrator",
+      "prompt": "I'm deciding whether tt should support a sixth worker or keep the hard cap at five. What do you think the tradeoffs are?",
+      "expected_output": "Negative control: this is goal/judgment work — skill should NOT delegate; orchestrator answers directly.",
+      "files": []
+    }
+  ]
+}

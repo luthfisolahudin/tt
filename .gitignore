@@ -1,2 +1,5 @@
 # tt runtime state lives under /tmp/tt/<session>/ — never in the repo.
 *.swp
+
+# skill eval scratch — transient runs, snapshots, logs
+.agents/skills/*-workspace/

@@ -1,7 +1,7 @@
 ---
 name: delegating-to-pi
 description: >
-  Load BEFORE starting any coding execution that contains a mechanical subtask — creating new files/components from a spec, applying edits at known line ranges, scaffolding, codegen, mass renames, dead-code removal, format conversions.
+  Load BEFORE doing any non-trivial coding or codebase-exploration work yourself — this project has a pi worker pool that should do it instead. Whenever a task involves writing or editing files, scaffolding, codegen, refactors, renames, dead-code removal, format conversions, multi-file changes, OR searching, auditing, or tracing code across the codebase, delegate it to a pi worker via `tt pi send` rather than doing it inline or with a built-in Explore / general-purpose subagent. Default posture is delegate-first: keep a task only when it genuinely needs orchestrator judgment (goal definition, product/UX taste, final safety review).
   Also load when the user mentions pi, delegating, offloading, subagents, the tt worker pool, or the project's tmux session.
 ---
 
@@ -15,12 +15,22 @@ tool (`~/.local/bin/tt`). Three immortal workers are pre-spawned —
 is auto-appended from cwd, so pi already knows the Worker Mode protocol.
 Recommendations below are empirical — revalidate per project.
 
-## Quick-decide ladder
+## Delegate by default
+
+The orchestrator's time and context are the scarce resource; pi workers
+are flat-rate and parallel. So the question for any incoming chunk of
+work is **not** "is this worth delegating" — assume it is — but "does
+this genuinely need *me*". If you can't name a concrete reason it needs
+orchestrator judgment (see "Keep with the orchestrator" below), it goes
+to a worker. Doing a mechanical edit or a code search inline, when a
+worker was free, is the failure mode this skill exists to prevent.
+
+Once you've decided to delegate, pick the tier:
 
 1. Task is **safety-critical** (see triggers below)? → `tt pi send <name> --medium <prompt>`.
 2. Otherwise → `tt pi send <name> <prompt>` (default `--low`).
-3. Output looks wrong? → retry once at `--medium`; if still wrong, keep
-   the task with the orchestrator.
+3. Output looks wrong? → retry once at `--medium`; if still wrong, take
+   the task back rather than escalating further.
 
 ## Model tiers
 
@@ -99,17 +109,38 @@ SUCCESS: <one-line check>
   subtle internal uses (e.g. an exported helper used inside its own
   module) that the task author missed.
 
-## Out of scope (keep with the orchestrator)
+## Exploration goes to pi too
 
-- **Open-ended multi-turn debug** where each iteration is decided by
-  what the previous one revealed. A persistent worker can do a *short*
-  bounded chain, but exploratory back-and-forth belongs with the
-  orchestrator.
-- **Product / brand / UX judgment** — needs your taste.
+Read-only codebase work — the kind you would otherwise hand to a
+built-in **Explore** or **general-purpose** subagent — belongs on a pi
+worker, not on Claude's own subagents. "Find every place worker state
+is computed", "audit these files for X", "trace how a request reaches
+the handler": send each as a bounded ephemeral task and have pi report
+back with `file:line` citations.
+
+The test for whether a search can be delegated is whether you can state
+a concrete SUCCESS check up front. If you can, delegate it — and run
+several at once on parallel workers when their searches are disjoint.
+The orchestrator keeps only *truly* open-ended exploration, where each
+step's query depends on what the previous step turned up; that can't be
+written as a single bounded task.
+
+## Keep with the orchestrator
+
+These are the genuine exceptions — everything else delegates. A task
+stays with the orchestrator only when it needs judgment a worker
+structurally cannot supply:
+
 - **Goal definition** — "choosing what to do" is a conversation with
   the user, not a task for pi.
+- **Product / brand / UX taste** — subjective calls that need your
+  judgment.
 - **Final safety-critical diff review** — verify pi's deletions, type
   fixes, and generated-file edits before committing.
+- **Truly open-ended, step-dependent exploration** (see above) — a
+  persistent worker can do a *short* bounded chain, but exploratory
+  back-and-forth where the next query is unknowable up front belongs
+  with the orchestrator.
 
 ## Worker pool
 
