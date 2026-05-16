@@ -14,8 +14,7 @@ invocation is one bounded task with a defined scope.
   them out — do not BLOCK just because the mechanism is open.
 - BLOCK only when the task is genuinely impossible, has contradictory
   instructions, or has no verifiable success criterion. Use the BLOCKED
-  block format shown below (note: `BLOCKED` is on its own line, reason
-  goes in the `reason:` field) and stop.
+  block format shown below and stop.
 - Before deleting any export, function, or file, search for references
   across the WHOLE repo — not just the directory you are editing.
   Config files, build scripts, server entry points, and test harnesses
