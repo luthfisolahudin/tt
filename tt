@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -261,16 +261,15 @@ pi_send_cmd() {
   require_session
   window_exists "pi-$name" || die "pi-$name does not exist"
 
-  # Tier is fixed at REPL launch; a change requires a respawn (which
-  # wipes context — rare, and documented).
+  # Reasoning effort is a runtime knob: the tier travels in the trigger
+  # and the tt-worker extension applies it via setThinkingLevel — no
+  # respawn, pi context is preserved. ensure_repl only relaunches a REPL
+  # that has actually died.
   local cur_tier; cur_tier=$(current_tier "$name")
   local tier="${req_tier:-$cur_tier}"
-  if [[ -n $req_tier && $req_tier != "$cur_tier" ]]; then
+  ensure_repl "$name"
+  [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
     printf '%s' "$tier" > "$(state_dir)/$name.tier"
-    launch_repl "$name"
-  else
-    ensure_repl "$name"
-  fi
 
   [[ $(worker_state "$name") == busy ]] && \
     die "pi-$name is busy; wait for current task or \`tt pi clear $name --force\`"
@@ -286,10 +285,11 @@ pi_send_cmd() {
   printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s"}\n' \
     "$turn" "$id" "$(date +%s)" "$tier" >> "$f"
 
-  # Trigger file: line 1 = task id, remainder = prompt body. The
-  # tt-worker extension consumes it and feeds the body to the live REPL.
+  # Trigger file: line 1 = `<task id> <tier>`, remainder = prompt body.
+  # The tt-worker extension consumes it, applies the tier, and feeds the
+  # body to the live REPL.
   local tf="$(state_dir)/$name.trigger"
-  { printf '%s\n' "$id"; cat "$promptfile"; } > "$tf.tmp"
+  { printf '%s %s\n' "$id" "$tier"; cat "$promptfile"; } > "$tf.tmp"
   mv "$tf.tmp" "$tf"
 
   printf '%s\n' "$id"
@@ -427,8 +427,8 @@ PI WORKER VERBS
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin. Use process substitution to skip temp files:
       `tt pi send alfa <(printf 'TASK: ...\n')`.
-      --low/--medium selects pi thinking effort. A tier change respawns
-      the REPL (context is lost); otherwise the tier sticks.
+      --low/--medium selects pi thinking effort; it takes effect at
+      runtime (no respawn, context preserved) and the tier sticks.
       Refuses if the worker is busy. Prints task-id (e.g. "alfa-3").
 
   tt pi wait <callsign> <task-id> [--timeout SECONDS]

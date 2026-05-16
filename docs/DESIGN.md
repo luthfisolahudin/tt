@@ -64,10 +64,11 @@ The extension and tt exchange two plain files under
 `/tmp/tt/<session>/`, both in a trivial line format so the bash side
 needs no JSON parser:
 
-- **`<cs>.trigger`** — tt writes it: line 1 is the task id, the rest is
-  the prompt body. The extension's `fs.watchFile` fires, the body is
-  sent to the REPL as a user message (`pi.sendUserMessage`, steered if
-  pi is mid-turn), and the file is truncated.
+- **`<cs>.trigger`** — tt writes it: line 1 is `<task id> <tier>`, the
+  rest is the prompt body. The extension's `fs.watchFile` fires, it
+  applies the tier (`pi.setThinkingLevel`), the body is sent to the REPL
+  as a user message (`pi.sendUserMessage`, steered if pi is mid-turn),
+  and the file is truncated.
 - **`<cs>.result`** — the extension writes it on every `agent_end`:
   ```
   id: <task id | ->
@@ -108,10 +109,12 @@ State is derived from the window plus the control files:
 ## Model tiers
 
 Default tier is `low`; `--medium` on `send` is for safety-critical work.
-The model is fixed when the REPL launches, so a tier change makes `send`
-respawn the REPL — which wipes context. This is rare and acceptable; a
-run of same-tier turns never respawns. The tier is remembered in
-`<callsign>.tier`.
+Reasoning effort is a **runtime knob**: `send` writes the tier into the
+trigger and the `tt-worker` extension applies it with
+`pi.setThinkingLevel` before the turn. A tier change therefore does
+**not** respawn the REPL — pi context is preserved across it. The tier
+sticks (remembered in `<callsign>.tier`) until the next explicit
+`--low`/`--medium`.
 
 ## Context reset
 

@@ -9,9 +9,11 @@
  * Files live under `<TT_WORKER_STATE>/`, all in a dead-simple line format
  * so the bash side needs no JSON parser:
  *
- *   <cs>.trigger   line 1 = task id, rest = prompt text. tt writes it;
- *                  the extension consumes it (truncates to empty) and
- *                  sends the text as a user message (steered if busy).
+ *   <cs>.trigger   line 1 = `<task id> <tier>` (tier optional), rest =
+ *                  prompt text. tt writes it; the extension consumes it
+ *                  (truncates to empty), applies the tier via
+ *                  setThinkingLevel, and sends the text as a user
+ *                  message (steered if busy).
  *   <cs>.result    written on every `agent_end`:
  *                      id: <task id | -->
  *                      status: done|blocked|other
@@ -77,10 +79,20 @@ export default function (pi: ExtensionAPI) {
 			} catch {}
 			const nl = raw.indexOf("\n");
 			if (nl < 0) return; // need an id line + body
-			const id = raw.slice(0, nl).trim() || "-";
+			// line 1 = `<id> <tier>`; tier is optional (absent for a
+			// legacy trigger — a human turn never goes through here).
+			const head = raw.slice(0, nl).trim().split(/\s+/);
+			const id = head[0] || "-";
+			const tier = head[1];
 			const text = raw.slice(nl + 1).trim();
 			if (!text) return;
 			pendingId = id;
+			// Reasoning effort is a runtime knob — no REPL respawn.
+			if (tier === "low" || tier === "medium") {
+				try {
+					pi.setThinkingLevel(tier);
+				} catch {}
+			}
 			if (ctx.isIdle()) pi.sendUserMessage(text);
 			else pi.sendUserMessage(text, { deliverAs: "steer" });
 		});
