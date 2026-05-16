@@ -201,19 +201,25 @@ last_task_id() {
 }
 
 # State is derived from the worker's window + control files:
-#   missing — no window
-#   down    — window exists but the REPL process is not running
-#   busy    — the last task sent has no matching result yet
-#   blocked — the last task's result status is `blocked`
-#   idle    — anything else
+#   missing     — no window
+#   down        — window exists but the REPL process is not running
+#   busy        — the last task sent has no matching result yet
+#   blocked     — the last task's result status is `blocked`
+#   interrupted — last task ended without a valid WORKER_DONE footer
+#                 (manual Esc, stale marker, or nonce mismatch); requires
+#                 `tt pi clear` before the next dispatch
+#   idle        — anything else
 worker_state() {
   local name=$1
   window_exists "pi-$name" || { printf 'missing'; return; }
   repl_running "$name"     || { printf 'down'; return; }
   local tid; tid=$(last_task_id "$name") || { printf 'idle'; return; }
   [[ $tid == "$(result_id "$name")" ]] || { printf 'busy'; return; }
-  [[ $(result_status "$name") == blocked ]] && { printf 'blocked'; return; }
-  printf 'idle'
+  case "$(result_status "$name")" in
+    blocked)          printf 'blocked'     ;;
+    other|interrupted) printf 'interrupted' ;;
+    *)                printf 'idle'        ;;
+  esac
 }
 
 # Clearable / removable when not actively running a task.
@@ -294,25 +300,33 @@ pi_send_cmd() {
   [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
     printf '%s' "$tier" > "$(state_dir)/$name.tier"
 
-  [[ $(worker_state "$name") == busy ]] && \
+  local ws; ws=$(worker_state "$name")
+  [[ $ws == busy ]] && \
     die "pi-$name is busy; wait for current task or \`tt pi clear $name --force\`"
+  [[ $ws == interrupted ]] && \
+    die "pi-$name has an interrupted task; run \`tt pi clear $name\` first"
 
   local f="$(state_dir)/$name.tasks.jsonl"
   local turn=1
   [[ -s $f ]] && turn=$(($(wc -l <"$f") + 1))
   local id="$name-$turn"
+  local nonce
+  nonce=$(openssl rand -hex 8)
 
   local promptfile="$(state_dir)/$name.in.$turn.txt"
   if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
+  # Inject nonce so tt-worker.ts can confirm this specific dispatch triggered
+  # the completion (prevents stale-marker false positives from interrupted turns).
+  printf '\n\nIMPORTANT: In the notes field of your WORKER_DONE block, include this token verbatim: nonce=%s\n' \
+    "$nonce" >> "$promptfile"
 
-  printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s"}\n' \
-    "$turn" "$id" "$(date +%s)" "$tier" >> "$f"
+  printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s"}\n' \
+    "$turn" "$id" "$(date +%s)" "$tier" "$nonce" >> "$f"
 
-  # Trigger file: line 1 = `<task id> <tier>`, remainder = prompt body.
-  # The tt-worker extension consumes it, applies the tier, and feeds the
-  # body to the live REPL.
+  # Trigger file: line 1 = `<task id> <tier> <nonce>`, remainder = prompt body.
+  # The tt-worker extension validates nonce + terminal-position on agent_end.
   local tf="$(state_dir)/$name.trigger"
-  { printf '%s %s\n' "$id" "$tier"; cat "$promptfile"; } > "$tf.tmp"
+  { printf '%s %s %s\n' "$id" "$tier" "$nonce"; cat "$promptfile"; } > "$tf.tmp"
   mv "$tf.tmp" "$tf"
 
   printf '%s\n' "$id"

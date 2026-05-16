@@ -1,13 +1,13 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-16 (v0.3.0)._
+_Last updated: 2026-05-16 (v0.3.1)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.0, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.1, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
 - **State dir moved to XDG** (2026-05-16). State now lives under
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` instead of
@@ -39,14 +39,29 @@ This is the "pick up where we left off" document. Read it before touching
   send --low/--medium` no longer respawns the REPL — the tier travels
   in the trigger and `tt-worker.ts` applies it via
   `pi.setThinkingLevel`. pi context is preserved across a tier change.
+- **Robust task-completion detection** (2026-05-16). Three approaches
+  combined:
+  - **Nonce (approach 2)**: `pi_send` generates a random 16-char hex
+    nonce per dispatch, injects `nonce=<N>` into the WORKER_DONE notes
+    field, writes it into the trigger header. `tt-worker.ts` requires
+    the nonce to appear in the terminal block before setting
+    `status=done`. Stale markers from prior context are ignored.
+  - **Terminal-position (approach 3)**: `tt-worker.ts` only classifies
+    `done` when the WORKER_DONE block is the last thing in the response
+    (only `field: value` lines after it, then whitespace). Embedded
+    or mid-response WORKER_DONE markers are ignored.
+  - **Quarantine (approach 4)**: `worker_state` returns `interrupted`
+    when a task's result is `status=other`. `pi_send` refuses to
+    dispatch to an interrupted worker; `tt pi clear` is required first.
+    `tt pi status` displays the `interrupted` state.
 
 ## The rewrite — what changed
 
 - `tt-worker.ts` — pi extension. Watches `<cs>.trigger` (prompt in),
   writes `<cs>.result` on `agent_end` (result out), touches `<cs>.ready`.
-  Inert unless `TT_WORKER_CS` is set. Trigger line 1 is `<id> <tier>`;
-  the extension applies the tier with `pi.setThinkingLevel` before
-  sending the turn.
+  Inert unless `TT_WORKER_CS` is set. Trigger line 1 is `<id> <tier> <nonce>`;
+  the extension applies the tier with `pi.setThinkingLevel` and stores
+  the nonce for completion validation before sending the turn.
 - `~/.pi/agent/settings.json` — installs `tt-worker.ts` globally via
   `extensions`, and excludes the `delegating-to-pi` skill via `skills`.
   The skill is also symlinked into `~/.agents/skills/` + `~/.claude/skills/`

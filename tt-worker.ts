@@ -9,11 +9,12 @@
  * Files live under `<TT_WORKER_STATE>/`, all in a dead-simple line format
  * so the bash side needs no JSON parser:
  *
- *   <cs>.trigger   line 1 = `<task id> <tier>` (tier optional), rest =
- *                  prompt text. tt writes it; the extension consumes it
- *                  (truncates to empty), applies the tier via
- *                  setThinkingLevel, and sends the text as a user
- *                  message (steered if busy).
+ *   <cs>.trigger   line 1 = `<task id> <tier> <nonce>` (tier+nonce optional),
+ *                  rest = prompt text. tt writes it; the extension consumes
+ *                  it (truncates to empty), applies the tier via
+ *                  setThinkingLevel, and sends the text as a user message
+ *                  (steered if busy). The prompt body ends with a required
+ *                  footer; agent_end validates nonce + terminal-position.
  *   <cs>.result    written on every `agent_end`:
  *                      id: <task id | -->
  *                      status: done|blocked|other
@@ -38,6 +39,7 @@ export default function (pi: ExtensionAPI) {
 	const resultFile = path.join(stateDir, `${cs}.result`);
 	const readyFile = path.join(stateDir, `${cs}.ready`);
 	let pendingId = "-";
+	let pendingNonce = "";
 
 	function lastAssistantText(messages: any[]): string {
 		let text = "";
@@ -79,14 +81,15 @@ export default function (pi: ExtensionAPI) {
 			} catch {}
 			const nl = raw.indexOf("\n");
 			if (nl < 0) return; // need an id line + body
-			// line 1 = `<id> <tier>`; tier is optional (absent for a
-			// legacy trigger — a human turn never goes through here).
+			// line 1 = `<id> <tier> <nonce>`; tier and nonce are optional.
 			const head = raw.slice(0, nl).trim().split(/\s+/);
 			const id = head[0] || "-";
 			const tier = head[1];
+			const nonce = head[2] || "";
 			const text = raw.slice(nl + 1).trim();
 			if (!text) return;
 			pendingId = id;
+			pendingNonce = nonce;
 			// Reasoning effort is a runtime knob — no REPL respawn.
 			if (tier === "low" || tier === "medium") {
 				try {
@@ -102,12 +105,30 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("agent_end", async (event: any, _ctx) => {
 		const text = lastAssistantText(event?.messages);
-		// BLOCKED takes precedence: if the worker reported a block, that
-		// stands even when it also appended a WORKER_DONE wrapper.
+		// BLOCKED takes precedence over everything.
+		// For done (approaches 2+3):
+		//   - terminal-position: WORKER_DONE block must be the last thing in the
+		//     response (only `field: value` lines after it, then whitespace)
+		//   - nonce: the per-dispatch token must appear inside that block,
+		//     preventing stale-marker false positives from interrupted turns
 		let status = "other";
-		if (/^BLOCKED:/m.test(text)) status = "blocked";
-		else if (/^WORKER_DONE$/m.test(text)) status = "done";
+		if (/^BLOCKED:/m.test(text)) {
+			status = "blocked";
+		} else if (pendingNonce) {
+			// Find the last WORKER_DONE line
+			const wdPos = text.lastIndexOf("\nWORKER_DONE\n");
+			const wdStart =
+				wdPos >= 0 ? wdPos + 1 : text.startsWith("WORKER_DONE\n") ? 0 : -1;
+			if (wdStart >= 0) {
+				const block = text.slice(wdStart).trimEnd();
+				// Terminal: only `field: value` lines after WORKER_DONE (pi block format)
+				const isTerminal = /^WORKER_DONE(\n[\w][\w_-]*:[^\n]*)*$/.test(block);
+				const hasNonce = block.includes(pendingNonce);
+				if (isTerminal && hasNonce) status = "done";
+			}
+		}
 		atomicWrite(resultFile, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
-		pendingId = "-"; // a following human turn must not reuse this id
+		pendingId = "-";
+		pendingNonce = "";
 	});
 }
