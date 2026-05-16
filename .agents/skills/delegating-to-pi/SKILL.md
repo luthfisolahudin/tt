@@ -15,15 +15,33 @@ tool (`~/.local/bin/tt`). Three immortal workers are pre-spawned —
 is auto-appended from cwd, so pi already knows the Worker Mode protocol.
 Recommendations below are empirical — revalidate per project.
 
-## Delegate by default
+## Delegate by default — but calibrate
 
-The orchestrator's time and context are the scarce resource; pi workers
-are flat-rate and parallel. So the question for any incoming chunk of
-work is **not** "is this worth delegating" — assume it is — but "does
-this genuinely need *me*". If you can't name a concrete reason it needs
-orchestrator judgment (see "Keep with the orchestrator" below), it goes
-to a worker. Doing a mechanical edit or a code search inline, when a
-worker was free, is the failure mode this skill exists to prevent.
+Every incoming chunk of work is one of three buckets. Most
+miscalibration is treating a bucket-1 task as bucket-2, or a bucket-2
+task as bucket-3.
+
+1. **Trivial / single-step** — reading one file, one grep, a known
+   small edit. Do it **inline** with Read/Grep/Edit. Never spawn a
+   worker or a built-in subagent for it: the send/wait/verify cycle
+   costs far more than the task.
+2. **Substantial & bounded** — real work with a statable SUCCESS check:
+   multi-file edits, codegen, scaffolding, refactors, renames,
+   dead-code removal, wide audits. **Delegate to pi.** This is the
+   default for real work; doing it inline when a worker was free is the
+   failure mode this skill exists to prevent.
+3. **Needs orchestrator judgment** — goal definition, product/UX taste,
+   architecture calls, final safety review. **Keep it** (see "Keep with
+   the orchestrator").
+
+What separates 2 from 3 is not "is this worth delegating" — assume it
+is — but "does this genuinely need *me*". No concrete judgment reason?
+It's bucket 2.
+
+Why delegate at all: the payoff is **parallel fan-out** and **keeping
+orchestrator context lean** — not raw single-task speed. A lone
+sequential send/wait can be net-slower than doing it yourself; delegate
+so you can run things in parallel and stay unburdened, not as a reflex.
 
 Once you've decided to delegate, pick the tier:
 
@@ -109,21 +127,24 @@ SUCCESS: <one-line check>
   subtle internal uses (e.g. an exported helper used inside its own
   module) that the task author missed.
 
-## Exploration goes to pi too
+## Exploration — delegate the sweeps, keep the precise lookups
 
-Read-only codebase work — the kind you would otherwise hand to a
-built-in **Explore** or **general-purpose** subagent — belongs on a pi
-worker, not on Claude's own subagents. "Find every place worker state
-is computed", "audit these files for X", "trace how a request reaches
-the handler": send each as a bounded ephemeral task and have pi report
-back with `file:line` citations.
+Codebase search splits three ways, same as any other work:
 
-The test for whether a search can be delegated is whether you can state
-a concrete SUCCESS check up front. If you can, delegate it — and run
-several at once on parallel workers when their searches are disjoint.
-The orchestrator keeps only *truly* open-ended exploration, where each
-step's query depends on what the previous step turned up; that can't be
-written as a single bounded task.
+- **Bulk or parallel sweeps** — "audit every route handler for X",
+  several disjoint searches at once, a wide map of a subsystem.
+  **Delegate to pi**; fan disjoint searches across parallel workers.
+- **A single precise lookup where you need trustworthy `file:line`** —
+  keep it with the built-in **Explore** agent. Explore is the same
+  Claude-grade model, read-only by construction, and folds its answer
+  straight back into your reasoning with no verification pass. pi is a
+  weaker model and has returned stale line numbers — for citations
+  you'd act on, that verification tax cancels the offload.
+- **One file, one grep** — inline (bucket 1 above). No subagent at all.
+
+Truly open-ended exploration — where each step's query depends on what
+the last turned up — stays with the orchestrator; it can't be written
+as a single bounded task.
 
 ## Keep with the orchestrator
 
