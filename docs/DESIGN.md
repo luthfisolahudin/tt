@@ -232,14 +232,24 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 ## Cross-session messaging — `tt x send`
 
-`tt x send <session-id> (FILE|-)` lets one project's orchestrator push a
-message into another tt session's orchestrator and submit it.
+`tt x send [--timeout N] <session-id> (FILE|-)` lets one project's
+orchestrator push a message into another tt session's orchestrator and
+submit it once the target Claude Code TUI is at empty input.
 
 Unlike pi workers, the orchestrator is a live Claude Code TUI with no
 file/trigger control channel — the trigger files are pi-worker-only.
-Delivery therefore uses tmux directly: the message (prefixed with an
-`[tt x from <sender>]` attribution header) is loaded into a uniquely
-named tmux buffer (`tt-x-$$`), pasted into the target `claude` pane with
+Delivery therefore uses tmux directly. Before touching the pane, `tt x
+send` serializes per target with `<target-state>/x-send.lock`, then polls
+`capture-pane` until the visible Claude Code prompt contains an empty
+input line (`❯` plus only whitespace, including Claude Code's
+non-breaking prompt spacer). This conservative check prevents pressing
+Enter while the user is still typing, Claude is mid-turn, or the TUI is
+showing a plan/question/confirmation state. The default wait is infinite
+and Ctrl-C cancels; `--timeout N` makes the wait fail after N seconds.
+
+Once the target is ready, the message (prefixed with an `[tt x from
+<sender>]` attribution header) is loaded into a uniquely named tmux
+buffer (`tt-x-$$`), pasted into the target `claude` pane with
 `paste-buffer -p` (bracketed paste, so embedded newlines do not submit
 early), then submitted with a single `send-keys Enter`. This is the same
 primitive `auto_launch_claude` uses to drive that pane.

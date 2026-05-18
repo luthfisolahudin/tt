@@ -1,14 +1,23 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-17 (v0.3.8)._
+_Last updated: 2026-05-18 (v0.3.9)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.8, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.3.9, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+- **`tt x send` waits for empty Claude Code input** (2026-05-18, v0.3.9).
+  Cross-session delivery now serializes per target with
+  `<target-state>/x-send.lock`, then polls the target `claude` pane until
+  Claude Code shows an empty input prompt (`❯` plus only whitespace,
+  including Claude Code's non-breaking prompt spacer) before pasting and
+  pressing Enter. This avoids submitting into a user draft, plan
+  confirmation, question, or in-flight turn. The wait is infinite by
+  default and Ctrl-C cancels; `--timeout N` fails instead of waiting
+  forever.
 - **`tt up` no longer black-screens during boot** (2026-05-16, v0.3.6).
   Async startup (v0.3.5) made `tt up` attach instantly — but the user
   then watched the `claude` window stay black until the workers were
@@ -258,9 +267,10 @@ so each session's working directory is recoverable without visiting it.
 
 ## Verification — cross-session messaging (2026-05-16, v0.3.7)
 
-New verb `tt x send <session-id> (FILE|-)` delivers a message to another
-tt session's orchestrator via tmux bracketed paste + `sleep 0.3` +
-Enter. See DESIGN.md "Cross-session messaging". Staged test, all PASS:
+New verb `tt x send [--timeout N] <session-id> (FILE|-)` delivers a
+message to another tt session's orchestrator via tmux bracketed paste +
+`sleep 0.3` + Enter, after waiting for empty Claude Code input. See
+DESIGN.md "Cross-session messaging". Original staged test, all PASS:
 
 - **Guard paths** — non-existent session, missing args, missing source,
   unreadable file, unknown `x` subcommand, session with no `claude`

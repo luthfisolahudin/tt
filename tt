@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.3.8"
+VERSION="0.3.9"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -600,15 +600,74 @@ pi_popidle_cmd() {
 
 # ---------- cross-session messaging ----------
 
+x_target_state_dir() {
+  local target=$1 d="$TT_STATE_DIR_BASE/$target"
+  [[ -d $d ]] || die "x send: no state dir for session: $target"
+  printf '%s' "$d"
+}
+
+x_valid_timeout() {
+  [[ $1 =~ ^[0-9]+$ ]] || die "x send: --timeout must be a non-negative integer"
+}
+
+x_deadline_expired() {
+  local deadline=$1
+  [[ $deadline != 0 && $(date +%s) -ge $deadline ]]
+}
+
+x_acquire_lock() {
+  local target=$1 deadline=$2
+  local lockdir; lockdir="$(x_target_state_dir "$target")/x-send.lock"
+  local noted=0 owner=""
+
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    if [[ -r $lockdir/pid ]]; then
+      owner=$(cat "$lockdir/pid" 2>/dev/null || true)
+      if [[ $owner =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+        rm -rf "$lockdir" 2>/dev/null || true
+        continue
+      fi
+    fi
+    (( noted )) || { note "x send: waiting behind another send to $target; Ctrl-C cancels"; noted=1; }
+    x_deadline_expired "$deadline" && die "x send: timed out waiting for x-send lock for $target"
+    sleep 0.5
+  done
+
+  printf '%s\n' "$$" > "$lockdir/pid"
+  printf '%s\n' "$(session_name)" > "$lockdir/from"
+  date +%s > "$lockdir/created_at"
+  printf '%s' "$lockdir"
+}
+
+x_claude_empty_input() {
+  local target=$1 pane
+  pane=$(tmux capture-pane -p -t "=$target:claude" 2>/dev/null) || return 1
+  ! grep -Eq 'esc interrupt|ctrl\+c cancel|ctrl\+c to cancel' <<<"$pane" || return 1
+  grep -Eq '^[[:space:] ]*❯[[:space:] ]*$' <<<"$pane"
+}
+
+x_wait_claude_empty_input() {
+  local target=$1 deadline=$2 noted=0
+  while ! x_claude_empty_input "$target"; do
+    (( noted )) || { note "x send: waiting for $target:claude empty input; Ctrl-C cancels"; noted=1; }
+    x_deadline_expired "$deadline" && die "x send: timed out waiting for $target:claude empty input"
+    sleep 0.5
+  done
+}
+
 # Send a message to another tt session's orchestrator (the Claude Code
 # TUI in its `claude` window) and submit it. Unlike pi workers, the
 # orchestrator has no file/trigger channel — delivery is a tmux
-# bracketed paste (multiline-safe) followed by Enter, the same primitive
-# auto_launch_claude uses to drive that pane.
+# bracketed paste (multiline-safe) followed by Enter, guarded by a
+# conservative empty-input prompt check so Enter is not pressed in a
+# user's draft, a confirmation UI, or an in-flight turn.
 x_send_cmd() {
-  local target="" src=""
+  local target="" src="" timeout=0
   while (( $# )); do
     case $1 in
+      --timeout)
+        shift; [[ $# -gt 0 ]] || die "x send: --timeout requires seconds"
+        x_valid_timeout "$1"; timeout=$1; shift ;;
       -)  src=-; shift ;;
       -*) die "unknown flag for x send: $1" ;;
       *)
@@ -628,6 +687,7 @@ x_send_cmd() {
 
   tmux has-session -t "=$target" 2>/dev/null \
     || die "x send: no tmux session: $target"
+  x_target_state_dir "$target" >/dev/null
   tmux list-windows -t "=$target" -F '#W' 2>/dev/null | grep -Fxq claude \
     || die "x send: session $target has no claude window"
 
@@ -647,6 +707,17 @@ x_send_cmd() {
   # cross-session traffic and who it came from.
   local msg
   msg=$(printf '[tt x from %s]\n%s' "$(session_name)" "$body")
+
+  local deadline=0
+  (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
+
+  local lockdir
+  lockdir=$(x_acquire_lock "$target" "$deadline")
+  local lockq
+  printf -v lockq '%q' "$lockdir"
+  trap "rm -rf $lockq 2>/dev/null || true" EXIT
+
+  x_wait_claude_empty_input "$target" "$deadline"
 
   # Deliver via a uniquely-named tmux buffer + bracketed paste so
   # embedded newlines do not submit early; then Enter submits once.
@@ -780,19 +851,21 @@ PI WORKER VERBS
       delta). No-op if none idle. Prints the removed callsign.
 
 CROSS-SESSION VERBS
-  tt x send <session-id> (FILE | -)
+  tt x send [--timeout SECONDS] <session-id> (FILE | -)
       Send a message to another tt session's orchestrator (its live
-      Claude Code TUI) and submit it as one turn. Source is a file path,
-      or `-` for stdin. Use process substitution to skip temp files:
+      Claude Code TUI) and submit it as one turn once Claude Code is at
+      empty input. By default it waits forever; Ctrl-C cancels. Use
+      --timeout SECONDS to fail instead of waiting indefinitely.
+      Source is a file path, or `-` for stdin. Use process substitution:
       `tt x send brainstorm-a3f1 <(printf 'hi\n')`.
       <session-id> is the exact tmux session name; run `tt name` in the
       other project to get it. The message is prefixed `[tt x from
       <sender>]` so the receiver sees it is cross-session traffic.
       Refuses if the session is missing or its orchestrator is not
       running.
-      Send-only and asynchronous: there is no `tt x receive`. The other
-      session replies by running its own `tt x send` back to you, which
-      arrives as a new turn in your session.
+      Send-only: there is no `tt x receive`. Concurrent sends to the same
+      target are serialized; the other session replies by running its own
+      `tt x send` back to you, which arrives as a new turn in your session.
 
   tt x list [--all]
   tt x ls [--all]
