@@ -15,6 +15,14 @@ This is the "pick up where we left off" document. Read it before touching
   Internal health guards remain finite; in particular, an unconsumed
   trigger still fails fast after 20 s because that indicates stuck
   plumbing, not a long model turn.
+- **`tt x observe` samples Claude panes for classifier data** (2026-05-18).
+  New passive diagnostics command: `tt x observe [--interval N]
+  [--duration N] [--out FILE|-] [--max-lines N] [--all]`. It reuses the
+  same classifier as `tt x send`, captures plain and escaped pane tails,
+  writes JSONL to `$(state_dir)/x-observe.jsonl` by default, and trims to
+  10000 lines unless `--max-lines 0` is set. It never sends keys or takes
+  `x-send.lock`; it logs pane text intentionally and prints a startup
+  warning.
 - **`tt x send` waits for empty Claude Code input** (2026-05-18, v0.3.9).
   Cross-session delivery now serializes per target with
   `<target-state>/x-send.lock`, rejects unsafe plain-capture states

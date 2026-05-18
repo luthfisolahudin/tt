@@ -70,6 +70,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |
 | `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to reach empty input, then send + submit a message. Waits forever by default. |
 | `tt x list [--all]`, `tt x ls [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
+| `tt x observe [--interval N] [--duration N] [--out FILE\|-] [--max-lines N] [--all]` | Passively sample Claude panes to JSONL for improving `tt x send` safe-input detection. |
 
 Workers: `alfa`, `bravo`, `charlie` are immortal (always present); `delta`,
 `echo` are optional. Hard cap of 5.
