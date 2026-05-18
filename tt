@@ -866,6 +866,34 @@ x_observe_append() {
   fi
 }
 
+x_observe_dedupe_file() {
+  local out=$1
+  [[ $out != - ]] || return 0
+  if [[ ! -e $out ]]; then
+    note "x observe dedupe: no file: $out"
+    return 0
+  fi
+  [[ -f $out ]] || die "x observe dedupe: not a file: $out"
+
+  note "x observe: deduplicating $out"
+  local tmp="${out}.tmp.$$"
+  perl -MJSON::PP -ne '
+    chomp;
+    next if $_ eq "";
+    my $line = $_;
+    my $obj = eval { JSON::PP->new->decode($line) };
+    if ($@) {
+      chomp(my $err = $@);
+      die "invalid JSONL at line $.: $err\n";
+    }
+    delete $obj->{ts};
+    my $key = JSON::PP->new->canonical->encode($obj);
+    next if $seen{$key}++;
+    print $line, "\n";
+  ' "$out" > "$tmp" || { rm -f "$tmp"; die "x observe dedupe: failed: $out"; }
+  mv "$tmp" "$out"
+}
+
 x_observe_event() {
   local out=$1 max_lines=$2 session=$3 status=$4 project=$5 pane_cmd=$6 classifier=$7 unsafe=$8 plain=$9 escaped=${10} prompt_plain=${11} prompt_escaped=${12} stripped=${13}
   local ts
@@ -887,7 +915,7 @@ x_observe_event() {
   x_observe_append "$out" "$line" "$max_lines"
 }
 
-x_observe_cmd() {
+x_observe_run_cmd() {
   local interval=1 duration=0 out="" max_lines=10000 show_all=0
   while (( $# )); do
     case $1 in
@@ -903,16 +931,22 @@ x_observe_cmd() {
       --max-lines)
         shift; [[ $# -gt 0 ]] || die "x observe: --max-lines requires a count"
         valid_timeout_arg "x observe" "$1"; max_lines=$1; shift ;;
+      --no-max-lines) max_lines=0; shift ;;
       --all) show_all=1; shift ;;
       -*) die "unknown flag for x observe: $1" ;;
       *) die "x observe: unexpected argument: $1" ;;
     esac
   done
-  [[ -n $out ]] || out="$(state_dir)/x-observe.jsonl"
+  [[ -n $out ]] || out="$TT_STATE_DIR_BASE/x-observe.jsonl"
 
   local deadline=0
   (( duration > 0 )) && deadline=$(($(date +%s) + duration))
   note "x observe: logging Claude pane captures to $out; Ctrl-C stops collection"
+  if [[ $out != - ]]; then
+    local outq
+    printf -v outq '%q' "$out"
+    trap "x_observe_dedupe_file $outq" EXIT
+  fi
 
   while true; do
     local dir
@@ -953,6 +987,22 @@ x_observe_cmd() {
     deadline_expired "$deadline" && return 0
     sleep "$interval"
   done
+}
+
+x_observe_dedupe_cmd() {
+  local out="${1:-$TT_STATE_DIR_BASE/x-observe.jsonl}"
+  (( $# <= 1 )) || die "x observe dedupe: unexpected argument: $2"
+  x_observe_dedupe_file "$out"
+}
+
+x_observe_cmd() {
+  local sub=${1:-run}
+  case "$sub" in
+    run) shift || true; x_observe_run_cmd "$@" ;;
+    dedupe) shift || true; x_observe_dedupe_cmd "$@" ;;
+    --*|-*|"") x_observe_run_cmd "$@" ;;
+    *) die "unknown x observe subcommand '$sub' (try \`tt --help\`)" ;;
+  esac
 }
 
 # ---------- help ----------
@@ -1040,15 +1090,21 @@ CROSS-SESSION VERBS
       --all, shows every session whose state dir exists, with a STATUS
       column (ready / no-orchestrator / down).
 
-  tt x observe [--interval SECONDS] [--duration SECONDS] [--out FILE|-]
-               [--max-lines N] [--all]
+  tt x observe [run] [--interval SECONDS] [--duration SECONDS] [--out FILE|-]
+               [--max-lines N|--no-max-lines] [--all]
       Passively sample Claude Code panes to improve `tt x send` safe-input
-      detection. Writes JSONL to $(state_dir)/x-observe.jsonl by default,
+      detection. Writes JSONL to ${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.jsonl by default,
       including plain and escaped pane tails plus the classifier used by
       `tt x send`. Default interval is 1s; duration 0 means run until
       Ctrl-C; max-lines defaults to 10000 and trims the output to bounded
-      growth (0 disables trimming). --all also logs down/no-orchestrator
+      growth (`--no-max-lines` or `--max-lines 0` disables trimming; last
+      flag wins). On exit, file outputs are deduplicated by preserving the
+      first row for each non-ts payload. --all also logs down/no-orchestrator
       sessions as metadata rows.
+
+  tt x observe dedupe [FILE]
+      Deduplicate an observe JSONL file manually. Defaults to the global
+      observe log. Duplicate detection ignores only the `ts` field.
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.
