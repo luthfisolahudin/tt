@@ -484,10 +484,12 @@ pi_send_cmd() {
 }
 
 pi_wait_cmd() {
-  local name="" task_id="" timeout=600
+  local name="" task_id="" timeout=0
   while (( $# )); do
     case $1 in
-      --timeout) timeout=$2; shift 2 ;;
+      --timeout)
+        shift; [[ $# -gt 0 ]] || die "wait: --timeout requires seconds"
+        valid_timeout_arg "wait" "$1"; timeout=$1; shift ;;
       -*) die "unknown flag for wait: $1" ;;
       *)
         if [[ -z $name ]]; then name=$1
@@ -505,11 +507,12 @@ pi_wait_cmd() {
   [[ $expected_callsign == "$name" ]] || die "task-id callsign mismatch ($expected_callsign vs $name)"
 
   # Block until the tt-worker extension records this task's result.
-  local deadline=$(( $(date +%s) + timeout ))
+  local deadline=0
+  (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
   local grace_deadline=$(( $(date +%s) + 20 ))
   local consumed=0
   local tf="$(state_dir)/$name.trigger"
-  while (( $(date +%s) < deadline )); do
+  while true; do
     local head="" rid="" rst=""
     head=$(result_head "$name") || true
     if [[ -n $head ]]; then
@@ -537,9 +540,9 @@ pi_wait_cmd() {
     if (( ! consumed && $(date +%s) >= grace_deadline )) && [[ -s $tf ]]; then
       die "pi-$name never consumed the trigger for $task_id (worker stuck or trigger watch dead)"
     fi
+    deadline_expired "$deadline" && die "wait timeout for $task_id (${timeout}s)"
     sleep 1
   done
-  die "wait timeout for $task_id (${timeout}s)"
 }
 
 pi_status_cmd() {
@@ -606,11 +609,12 @@ x_target_state_dir() {
   printf '%s' "$d"
 }
 
-x_valid_timeout() {
-  [[ $1 =~ ^[0-9]+$ ]] || die "x send: --timeout must be a non-negative integer"
+valid_timeout_arg() {
+  local context=$1 value=$2
+  [[ $value =~ ^[0-9]+$ ]] || die "$context: --timeout must be a non-negative integer"
 }
 
-x_deadline_expired() {
+deadline_expired() {
   local deadline=$1
   [[ $deadline != 0 && $(date +%s) -ge $deadline ]]
 }
@@ -629,7 +633,7 @@ x_acquire_lock() {
       fi
     fi
     (( noted )) || { note "x send: waiting behind another send to $target; Ctrl-C cancels"; noted=1; }
-    x_deadline_expired "$deadline" && die "x send: timed out waiting for x-send lock for $target"
+    deadline_expired "$deadline" && die "x send: timed out waiting for x-send lock for $target"
     sleep 0.5
   done
 
@@ -665,7 +669,7 @@ x_wait_claude_empty_input() {
   local target=$1 deadline=$2 noted=0
   while ! x_claude_empty_input "$target"; do
     (( noted )) || { note "x send: waiting for $target:claude empty input; Ctrl-C cancels"; noted=1; }
-    x_deadline_expired "$deadline" && die "x send: timed out waiting for $target:claude empty input"
+    deadline_expired "$deadline" && die "x send: timed out waiting for $target:claude empty input"
     sleep 0.5
   done
 }
@@ -682,7 +686,7 @@ x_send_cmd() {
     case $1 in
       --timeout)
         shift; [[ $# -gt 0 ]] || die "x send: --timeout requires seconds"
-        x_valid_timeout "$1"; timeout=$1; shift ;;
+        valid_timeout_arg "x send" "$1"; timeout=$1; shift ;;
       -)  src=-; shift ;;
       -*) die "unknown flag for x send: $1" ;;
       *)
@@ -848,8 +852,11 @@ PI WORKER VERBS
 
   tt pi wait <callsign> <task-id> [--timeout SECONDS]
       Block until the tt-worker extension records the matching task's
-      result. Default timeout 600s. Prints the last assistant message
-      (the WORKER_DONE / BLOCKED block). Exit 0 on done/blocked,
+      result. By default it waits forever; Ctrl-C cancels. Use
+      --timeout SECONDS to fail instead of waiting indefinitely
+      (--timeout 0 also waits forever). The 20s unconsumed-trigger
+      stuck-worker guard still fails fast. Prints the last assistant
+      message (the WORKER_DONE / BLOCKED block). Exit 0 on done/blocked,
       non-zero on timeout / unexpected completion.
 
   tt pi status

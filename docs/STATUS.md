@@ -9,6 +9,12 @@ This is the "pick up where we left off" document. Read it before touching
 
 - `tt` v0.3.9, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+- **`tt pi wait` waits forever by default** (2026-05-18). The user-facing
+  completion wait now matches `tt x send`: no timeout unless
+  `--timeout N` is provided, and `--timeout 0` is explicit forever.
+  Internal health guards remain finite; in particular, an unconsumed
+  trigger still fails fast after 20 s because that indicates stuck
+  plumbing, not a long model turn.
 - **`tt x send` waits for empty Claude Code input** (2026-05-18, v0.3.9).
   Cross-session delivery now serializes per target with
   `<target-state>/x-send.lock`, rejects unsafe plain-capture states

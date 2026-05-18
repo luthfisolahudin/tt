@@ -64,7 +64,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi add` | Spawn the next worker (`delta`, then `echo`). Cap of 5. |
 | `tt pi clear <cs> [--force]` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
 | `tt pi send <cs> [--low\|--medium] (FILE\|-)` | Send a prompt; print task ID. |
-| `tt pi wait <cs> <task-id> [--timeout N]` | Block until `WORKER_DONE`/`BLOCKED:`. |
+| `tt pi wait <cs> <task-id> [--timeout N]` | Block until `WORKER_DONE`/`BLOCKED:`. Waits forever by default. |
 | `tt pi status` | One row per worker: state, last task, tier, generation. |
 | `tt pi rm <cs> [--force]`, `tt pi remove <cs> [--force]` | Remove a non-immortal worker. |
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |

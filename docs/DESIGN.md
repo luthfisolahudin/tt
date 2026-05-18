@@ -126,14 +126,16 @@ needs no JSON parser:
    count of `tasks.jsonl` + 1), writes the trigger, and appends
    `{turn,id,sent_at,tier}` to `tasks.jsonl`.
 2. `tt pi wait <cs> <task-id>` polls `<cs>.result` until its `id` field
-   equals the task-id. `status` of `done`/`blocked` prints the assistant
-   text and exits 0; `other` (pi answered without a marker) and `error`
-   (extension exception) exit 1; `running` keeps polling. `BLOCKED` is
-   classified ahead of `WORKER_DONE` so a real block is never masked by
-   a trailing wrapper.
+   equals the task-id. It waits forever by default; `--timeout N` bounds
+   the top-level completion wait, and `--timeout 0` is explicit forever.
+   `status` of `done`/`blocked` prints the assistant text and exits 0;
+   `other` (pi answered without a marker) and `error` (extension
+   exception) exit 1; `running` keeps polling. `BLOCKED` is classified
+   ahead of `WORKER_DONE` so a real block is never masked by a trailing
+   wrapper.
 3. If the trigger is still sitting unconsumed 20 s after dispatch (the
    worker is wedged or its watch is dead), `wait` fails fast with a
-   diagnostic instead of silently burning the full timeout.
+   diagnostic even when the top-level wait is infinite.
 
 ## Send → wait flow
 
@@ -159,6 +161,7 @@ tt-worker.ts  (inside the pi REPL)
 orchestrator
   tt pi wait <cs> <task-id>
     → polls <cs>.result until id matches task-id
+    → waits forever by default; --timeout N bounds completion wait
     → exits 0 on done/blocked; exits 1 on other/error/timeout
     → fast-fails if the trigger is unconsumed 20s after dispatch
 ```
