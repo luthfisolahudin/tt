@@ -305,7 +305,7 @@ auto_launch_claude() {
     bash|zsh|sh|fish) ;;
     *) return 0 ;;
   esac
-  tmux send-keys -t "=$s:claude" 'claude --continue --allow-dangerously-skip-permissions' Enter
+  tmux send-keys -t "=$s:claude" 'claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions' Enter
 }
 
 # Fields of the worker's result file (written by the tt-worker extension).
