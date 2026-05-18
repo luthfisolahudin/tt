@@ -640,10 +640,25 @@ x_acquire_lock() {
 }
 
 x_claude_empty_input() {
-  local target=$1 pane
-  pane=$(tmux capture-pane -p -t "=$target:claude" 2>/dev/null) || return 1
-  ! grep -Eq 'esc interrupt|ctrl\+c cancel|ctrl\+c to cancel' <<<"$pane" || return 1
-  grep -Eq '^[[:space:] ]*❯[[:space:] ]*$' <<<"$pane"
+  local target=$1 plain escaped prompt after stripped esc
+
+  plain=$(tmux capture-pane -p -S -12 -t "=$target:claude" 2>/dev/null) || return 1
+  ! grep -Eiq 'esc interrupt|ctrl\+c cancel|ctrl\+c to cancel|queued messages?|paste again to expand|Churning|Blanching' <<<"$plain" || return 1
+
+  escaped=$(tmux capture-pane -e -p -S -8 -t "=$target:claude" 2>/dev/null) || return 1
+  prompt=$(awk '/❯/{line=$0} END{if (line != "") print line; else exit 1}' <<<"$escaped") || return 1
+  after=${prompt#*❯}
+
+  # Empty input is only spaces/NBSP plus optional terminal reset codes.
+  stripped=$(perl -pe 's/\e\[[0-9;?]*[ -\/]*[@-~]//g' <<<"$after")
+  [[ $stripped =~ ^[[:space:] ]*$ ]] && return 0
+
+  # Real user input can be styled too; only explicit dim text is treated
+  # as Claude Code suggestion text that paste replaces.
+  esc=$'\033'
+  [[ $after =~ ^[[:space:] ]*$esc\[2m ]] && return 0
+
+  return 1
 }
 
 x_wait_claude_empty_input() {

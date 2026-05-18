@@ -11,11 +11,14 @@ This is the "pick up where we left off" document. Read it before touching
   `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
 - **`tt x send` waits for empty Claude Code input** (2026-05-18, v0.3.9).
   Cross-session delivery now serializes per target with
-  `<target-state>/x-send.lock`, then polls the target `claude` pane until
-  Claude Code shows an empty input prompt (`❯` plus only whitespace,
-  including Claude Code's non-breaking prompt spacer) before pasting and
-  pressing Enter. This avoids submitting into a user draft, plan
-  confirmation, question, or in-flight turn. The wait is infinite by
+  `<target-state>/x-send.lock`, rejects unsafe plain-capture states
+  (`esc interrupt`, queued-message banners, collapsed queued-message
+  `paste again to expand` hints), then uses escaped capture to
+  classify the current bottom `❯` prompt. Empty prompts are safe; visible
+  text after `❯` is a real user draft and waits; explicitly dim (`ESC[2m`)
+  suggestion text is safe because paste replaces Claude Code's suggestion.
+  Missing bottom prompt also waits, covering plan
+  confirmation, question, or in-flight states. The wait is infinite by
   default and Ctrl-C cancels; `--timeout N` fails instead of waiting
   forever.
 - **`tt up` no longer black-screens during boot** (2026-05-16, v0.3.6).

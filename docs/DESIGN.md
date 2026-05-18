@@ -240,12 +240,15 @@ Unlike pi workers, the orchestrator is a live Claude Code TUI with no
 file/trigger control channel — the trigger files are pi-worker-only.
 Delivery therefore uses tmux directly. Before touching the pane, `tt x
 send` serializes per target with `<target-state>/x-send.lock`, then polls
-`capture-pane` until the visible Claude Code prompt contains an empty
-input line (`❯` plus only whitespace, including Claude Code's
-non-breaking prompt spacer). This conservative check prevents pressing
-Enter while the user is still typing, Claude is mid-turn, or the TUI is
-showing a plan/question/confirmation state. The default wait is infinite
-and Ctrl-C cancels; `--timeout N` makes the wait fail after N seconds.
+`capture-pane`. Plain capture rejects unsafe UI states such as interrupts,
+queued-message banners, and Claude Code's collapsed queued-message hint
+(`paste again to expand`). Escaped capture (`capture-pane -e`) then
+classifies the current bottom prompt line: an empty `❯` prompt is safe,
+visible text after `❯` is treated as a real user draft and waits, and
+explicitly dim (`ESC[2m`) suggestion text after `❯` is safe because paste
+replaces Claude Code's suggestion. If the prompt is absent from the bottom
+region, `tt x send` waits. The default wait is infinite and Ctrl-C
+cancels; `--timeout N` makes the wait fail after N seconds.
 
 Once the target is ready, the message (prefixed with an `[tt x from
 <sender>]` attribution header) is loaded into a uniquely named tmux
