@@ -1,8 +1,7 @@
 ---
 name: delegating-to-pi
 description: >
-  Load BEFORE doing any non-trivial coding or codebase-exploration work yourself — this project has a pi worker pool that should do it instead. Whenever a task involves writing or editing files, scaffolding, codegen, refactors, renames, dead-code removal, format conversions, multi-file changes, OR searching, auditing, or tracing code across the codebase, delegate it to a pi worker via `tt pi send` rather than doing it inline or with a built-in Explore / general-purpose subagent. Default posture is delegate-first: keep a task only when it genuinely needs orchestrator judgment (goal definition, product/UX taste, final safety review).
-  Also load when the user mentions pi, delegating, offloading, subagents, the tt worker pool, or the project's tmux session.
+  Load when considering delegation for substantial bounded code work, parallel fan-out, or when the user mentions pi, delegating, offloading, subagents, the tt worker pool, or the project's tmux session. Do not load for one-file reads, one grep, or known small edits. Default posture for real work is delegate-first: keep a task only when it genuinely needs orchestrator judgment (goal definition, product/UX taste, final safety review).
 ---
 
 # Delegating to pi
@@ -74,15 +73,19 @@ blast radius and low will pick it:
 - **TS error fixes near codegen output** — low tends to edit the
   generated file (brittle, regenerated on next codegen run); medium
   fixes the importers instead.
+- **Mizan examples:** Legal/Stage gate changes, OCR/SLIK/KOL/DSR/LTV
+  hard-gates, send-back/reset semantics, compliance text, and finance
+  calculations are safety-critical.
 - **Anything touching generated/build artifacts**, or that requires
   understanding what *not* to delete.
 
 ## MUST / MUST NOT
 
-- **MUST** use the TASK / FILES / CHANGE / [CONTEXT] / SUCCESS prompt
+- **MUST** use the TASK / FILES / CHANGE / [CONTEXT] / SUCCESS / [OUTPUT]
   format (see below).
-- **MUST** parse stdout for `BLOCKED:` or `WORKER_DONE` before
-  continuing.
+- **MUST** check the `tt pi wait` status marker before continuing.
+- **MUST** summarize worker results to the user concisely; do not paste
+  the full WORKER_DONE block unless asked.
 - **MUST** verify the diff (Read or `git diff`) before committing pi's
   safety-critical output.
 - **MUST NOT** escalate the model when pi returns `BLOCKED:` —
@@ -103,19 +106,36 @@ FILES: <exact/path/to/file.tsx>   # single file, OR "dir/* read+write" for multi
 CHANGE: <specific description — no "better/improve/fix/clean">
 CONTEXT: <paste snippet if surgical>
 SUCCESS: <one-line check>
+OUTPUT: <optional cap, e.g. "Keep response under 20 lines" or "Top 5 findings only">
 ```
+
+## Output Budget
+
+Default to terse worker handoffs. Ask for detailed narrative only when
+that detail is the deliverable.
+
+- For implementation tasks: `OUTPUT: Terminal block only; notes only for
+  risks, failed checks, dependent changes, or artifact paths.`
+- For audits: set a cap such as `OUTPUT: Top 5 findings only, with file
+  paths; no exhaustive narrative.`
+- If a longer handoff is valuable and FILES permits `.tt/`, ask the
+  worker to write `.tt/handoffs/YYYY-MM-DD/<task-id>-<slug>.md` and put
+  only that path plus key risks in `notes`.
 
 ## Stdout protocol
 
 - `BLOCKED: <reason>` — task was ambiguous or impossible; rephrase and
   retry, don't escalate the model.
 - `WORKER_DONE\nfiles_changed: ...\nsummary: ...\nnotes: ...` — task
-  complete; verify via `git diff` or Read before continuing.
+  complete; verify via `git diff` or Read before continuing. Treat it as
+  machine-readable: extract the facts, then give the user a short
+  synthesis rather than replaying the whole block.
 
 ## Tasks pi handles well
 
-- Architecture decisions — multi-point analysis with file:line
-  citations and reasoned why-not for rejected options.
+- Bounded architecture analysis — a stated decision question with an
+  explicit output cap, file:line citations, and reasoned why-not for
+  rejected options.
 - Debugging unclear failures, diagnostic phase — root-causing across a
   handful of files in one shot.
 - Cross-file consistency audits — bucketing many files across
@@ -190,7 +210,8 @@ verbs, never by calling `pi` directly.
   bounded follow-ups (e.g. "apply the refactor" → "now fix the type
   errors it surfaced"). Each follow-up MUST restate the SUCCESS check;
   persistent workers accumulate context, so scope drift is the failure
-  mode.
+  mode. Clear after large audits/reports or after 2–3 follow-ups unless
+  continuity is essential.
 
 ### Send + wait
 
