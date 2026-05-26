@@ -619,11 +619,6 @@ deadline_expired() {
   [[ $deadline != 0 && $(date +%s) -ge $deadline ]]
 }
 
-json_escape() {
-  perl -CS -MJSON::PP -0777 -ne 'print JSON::PP->new->ascii->encode($_)' \
-    | sed 's/^"//; s/"$//'
-}
-
 x_acquire_lock() {
   local target=$1 deadline=$2
   local lockdir; lockdir="$(x_target_state_dir "$target")/x-send.lock"
@@ -848,75 +843,77 @@ x_list_cmd() {
   fi
 }
 
-x_observe_append() {
-  local out=$1 line=$2 max_lines=$3
-  if [[ $out == - ]]; then
-    printf '%s\n' "$line"
-    return 0
-  fi
-
-  mkdir -p "$(dirname "$out")"
-  printf '%s\n' "$line" >> "$out"
-  if (( max_lines > 0 )); then
-    local lines
-    lines=$(wc -l < "$out") || return 0
-    if (( lines > max_lines )); then
-      tail -n "$max_lines" "$out" > "$out.tmp.$$" && mv "$out.tmp.$$" "$out"
-    fi
-  fi
+x_observe_db_default() {
+  printf '%s/x-observe.sqlite' "$TT_STATE_DIR_BASE"
 }
 
-x_observe_dedupe_file() {
-  local out=$1
-  [[ $out != - ]] || return 0
-  if [[ ! -e $out ]]; then
-    note "x observe dedupe: no file: $out"
-    return 0
-  fi
-  [[ -f $out ]] || die "x observe dedupe: not a file: $out"
+x_observe_require_sqlite() {
+  command -v sqlite3 >/dev/null 2>&1 || die "x observe: sqlite3 is required"
+}
 
-  note "x observe: deduplicating $out"
-  local tmp="${out}.tmp.$$"
-  perl -MJSON::PP -ne '
-    chomp;
-    next if $_ eq "";
-    my $line = $_;
-    my $obj = eval { JSON::PP->new->decode($line) };
-    if ($@) {
-      chomp(my $err = $@);
-      die "invalid JSONL at line $.: $err\n";
+x_observe_init_db() {
+  local db=$1
+  mkdir -p "$(dirname "$db")"
+  sqlite3 "$db" >/dev/null <<'SQL'
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS x_observe_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  session TEXT NOT NULL,
+  status TEXT NOT NULL,
+  project TEXT NOT NULL,
+  pane_cmd TEXT NOT NULL,
+  classifier TEXT NOT NULL,
+  unsafe_marker TEXT NOT NULL,
+  plain_tail TEXT NOT NULL,
+  escaped_tail TEXT NOT NULL,
+  prompt_plain TEXT NOT NULL,
+  prompt_escaped_visible TEXT NOT NULL,
+  stripped_after_prompt TEXT NOT NULL,
+  payload_key TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS x_observe_events_ts_idx ON x_observe_events(ts);
+CREATE INDEX IF NOT EXISTS x_observe_events_classifier_idx ON x_observe_events(classifier);
+CREATE INDEX IF NOT EXISTS x_observe_events_session_idx ON x_observe_events(session);
+SQL
+}
+
+x_observe_payload_key() {
+  perl -MJSON::PP -MDigest::SHA=sha1_hex -e '
+    my @names = qw(session status project pane_cmd classifier unsafe_marker plain_tail escaped_tail prompt_plain prompt_escaped_visible stripped_after_prompt);
+    my %obj;
+    @obj{@names} = @ARGV;
+    print sha1_hex(JSON::PP->new->ascii->canonical->encode(\%obj));
+  ' "$@"
+}
+
+x_observe_insert() {
+  local db=$1 ts=$2 session=$3 status=$4 project=$5 pane_cmd=$6 classifier=$7 unsafe=$8 plain=$9 escaped=${10} prompt_plain=${11} prompt_escaped=${12} stripped=${13}
+  local payload_key
+  payload_key=$(x_observe_payload_key "$session" "$status" "$project" "$pane_cmd" "$classifier" "$unsafe" "$plain" "$escaped" "$prompt_plain" "$prompt_escaped" "$stripped")
+  perl -CS -e '
+    sub sql_quote {
+      my ($s) = @_;
+      $s =~ s/\x27/\x27\x27/g;
+      return chr(39) . $s . chr(39);
     }
-    delete $obj->{ts};
-    my $key = JSON::PP->new->canonical->encode($obj);
-    next if $seen{$key}++;
-    print $line, "\n";
-  ' "$out" > "$tmp" || { rm -f "$tmp"; die "x observe dedupe: failed: $out"; }
-  mv "$tmp" "$out"
+    my @v = @ARGV;
+    print "INSERT OR IGNORE INTO x_observe_events (ts, session, status, project, pane_cmd, classifier, unsafe_marker, plain_tail, escaped_tail, prompt_plain, prompt_escaped_visible, stripped_after_prompt, payload_key) VALUES (";
+    print join(",", $v[0], map { sql_quote($_) } @v[1..12]);
+    print ");\n";
+  ' "$ts" "$session" "$status" "$project" "$pane_cmd" "$classifier" "$unsafe" "$plain" "$escaped" "$prompt_plain" "$prompt_escaped" "$stripped" "$payload_key" \
+    | sqlite3 "$db"
 }
 
 x_observe_event() {
-  local out=$1 max_lines=$2 session=$3 status=$4 project=$5 pane_cmd=$6 classifier=$7 unsafe=$8 plain=$9 escaped=${10} prompt_plain=${11} prompt_escaped=${12} stripped=${13}
+  local db=$1 session=$2 status=$3 project=$4 pane_cmd=$5 classifier=$6 unsafe=$7 plain=$8 escaped=$9 prompt_plain=${10} prompt_escaped=${11} stripped=${12}
   local ts
   ts=$(date +%s)
-  local line
-  line=$(printf '{"ts":%s,"session":"%s","status":"%s","project":"%s","pane_cmd":"%s","classifier":"%s","unsafe_marker":"%s","plain_tail":"%s","escaped_tail":"%s","prompt_plain":"%s","prompt_escaped_visible":"%s","stripped_after_prompt":"%s"}' \
-    "$ts" \
-    "$(printf '%s' "$session" | json_escape)" \
-    "$(printf '%s' "$status" | json_escape)" \
-    "$(printf '%s' "$project" | json_escape)" \
-    "$(printf '%s' "$pane_cmd" | json_escape)" \
-    "$(printf '%s' "$classifier" | json_escape)" \
-    "$(printf '%s' "$unsafe" | json_escape)" \
-    "$(printf '%s' "$plain" | json_escape)" \
-    "$(printf '%s' "$escaped" | json_escape)" \
-    "$(printf '%s' "$prompt_plain" | json_escape)" \
-    "$(printf '%s' "$prompt_escaped" | json_escape)" \
-    "$(printf '%s' "$stripped" | json_escape)")
-  x_observe_append "$out" "$line" "$max_lines"
+  x_observe_insert "$db" "$ts" "$session" "$status" "$project" "$pane_cmd" "$classifier" "$unsafe" "$plain" "$escaped" "$prompt_plain" "$prompt_escaped" "$stripped"
 }
 
 x_observe_run_cmd() {
-  local interval=1 duration=0 out="" max_lines=10000 show_all=0
+  local interval=1 duration=0 db="" show_all=0
   while (( $# )); do
     case $1 in
       --interval)
@@ -925,28 +922,18 @@ x_observe_run_cmd() {
       --duration)
         shift; [[ $# -gt 0 ]] || die "x observe: --duration requires seconds"
         valid_timeout_arg "x observe" "$1"; duration=$1; shift ;;
-      --out)
-        shift; [[ $# -gt 0 ]] || die "x observe: --out requires a file path or -"
-        out=$1; shift ;;
-      --max-lines)
-        shift; [[ $# -gt 0 ]] || die "x observe: --max-lines requires a count"
-        valid_timeout_arg "x observe" "$1"; max_lines=$1; shift ;;
-      --no-max-lines) max_lines=0; shift ;;
       --all) show_all=1; shift ;;
       -*) die "unknown flag for x observe: $1" ;;
       *) die "x observe: unexpected argument: $1" ;;
     esac
   done
-  [[ -n $out ]] || out="$TT_STATE_DIR_BASE/x-observe.jsonl"
+  [[ -n $db ]] || db=$(x_observe_db_default)
+  x_observe_require_sqlite
+  x_observe_init_db "$db"
 
   local deadline=0
   (( duration > 0 )) && deadline=$(($(date +%s) + duration))
-  note "x observe: logging Claude pane captures to $out; Ctrl-C stops collection"
-  if [[ $out != - ]]; then
-    local outq
-    printf -v outq '%q' "$out"
-    trap "x_observe_dedupe_file $outq" EXIT
-  fi
+  note "x observe: logging Claude pane captures to $db; Ctrl-C stops collection"
 
   while true; do
     local dir
@@ -981,7 +968,7 @@ x_observe_run_cmd() {
             escaped=$(tmux capture-pane -e -p -S -8 -t "=$sname:claude" 2>/dev/null | perl -pe 's/\e/\\e/g' || true) ;;
         esac
       fi
-      x_observe_event "$out" "$max_lines" "$sname" "$status" "$project" "$pane_cmd" "$classifier" "$X_UNSAFE_MARKER" "$plain" "$escaped" "$X_PROMPT_PLAIN" "$X_PROMPT_ESCAPED" "$X_STRIPPED_AFTER"
+      x_observe_event "$db" "$sname" "$status" "$project" "$pane_cmd" "$classifier" "$X_UNSAFE_MARKER" "$plain" "$escaped" "$X_PROMPT_PLAIN" "$X_PROMPT_ESCAPED" "$X_STRIPPED_AFTER"
     done
 
     deadline_expired "$deadline" && return 0
@@ -989,17 +976,10 @@ x_observe_run_cmd() {
   done
 }
 
-x_observe_dedupe_cmd() {
-  local out="${1:-$TT_STATE_DIR_BASE/x-observe.jsonl}"
-  (( $# <= 1 )) || die "x observe dedupe: unexpected argument: $2"
-  x_observe_dedupe_file "$out"
-}
-
 x_observe_cmd() {
   local sub=${1:-run}
   case "$sub" in
     run) shift || true; x_observe_run_cmd "$@" ;;
-    dedupe) shift || true; x_observe_dedupe_cmd "$@" ;;
     --*|-*|"") x_observe_run_cmd "$@" ;;
     *) die "unknown x observe subcommand '$sub' (try \`tt --help\`)" ;;
   esac
@@ -1090,21 +1070,13 @@ CROSS-SESSION VERBS
       --all, shows every session whose state dir exists, with a STATUS
       column (ready / no-orchestrator / down).
 
-  tt x observe [run] [--interval SECONDS] [--duration SECONDS] [--out FILE|-]
-               [--max-lines N|--no-max-lines] [--all]
+  tt x observe [run] [--interval SECONDS] [--duration SECONDS] [--all]
       Passively sample Claude Code panes to improve `tt x send` safe-input
-      detection. Writes JSONL to ${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.jsonl by default,
+      detection. Writes SQLite to ${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.sqlite,
       including plain and escaped pane tails plus the classifier used by
       `tt x send`. Default interval is 1s; duration 0 means run until
-      Ctrl-C; max-lines defaults to 10000 and trims the output to bounded
-      growth (`--no-max-lines` or `--max-lines 0` disables trimming; last
-      flag wins). On exit, file outputs are deduplicated by preserving the
-      first row for each non-ts payload. --all also logs down/no-orchestrator
-      sessions as metadata rows.
-
-  tt x observe dedupe [FILE]
-      Deduplicate an observe JSONL file manually. Defaults to the global
-      observe log. Duplicate detection ignores only the `ts` field.
+      Ctrl-C. Duplicate non-ts payloads are ignored. --all logs
+      down/no-orchestrator sessions as metadata rows.
 
 WINDOW LAYOUT (created by `tt up`)
   0  dev          Empty shell in $PWD. Run the dev server here.

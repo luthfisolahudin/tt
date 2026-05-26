@@ -266,28 +266,25 @@ window, or its orchestrator pane is a bare shell.
 
 ### Cross-session observation — `tt x observe`
 
-`tt x observe [run] [--interval N] [--duration N] [--out FILE|-]
-[--max-lines N|--no-max-lines] [--all]` is a passive diagnostics loop for
+`tt x observe [run] [--interval N] [--duration N] [--all]` is a passive diagnostics loop for
 improving the `tt x send` classifier. Bare `tt x observe` is an alias for
 `tt x observe run`. It samples every running tt session's `claude` pane,
-reuses the same prompt classifier as `tt x send`, and appends JSONL events
+reuses the same prompt classifier as `tt x send`, and inserts SQLite rows
 containing the classifier, unsafe marker, plain pane tail, escaped pane tail,
 prompt line, and stripped post-prompt text. The default output is the global
-tt state log, `${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.jsonl`,
+tt state database, `${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.sqlite`,
 because the observer samples all tt sessions rather than only the invoking
 project.
 
 The observer is intentionally read-only: it never takes `x-send.lock`, never
 pastes, and never sends keys. It logs pane text by design, so it prints a
 startup warning and should be run only when local capture is acceptable.
-Growth is bounded by `--max-lines` (default 10000), which trims the output to
-the latest N JSONL rows after each sample round; `--no-max-lines` or
-`--max-lines 0` disables trimming, and the last such flag wins. `--duration 0`
-means run until Ctrl-C. On exit, file outputs are deduplicated by preserving
-the first row for each unique payload after ignoring only the `ts` field.
-`tt x observe dedupe [FILE]` runs the same dedupe manually, defaulting to the
-global observe log. `--all` also emits metadata rows for down/no-orchestrator
-sessions; the default observes only live Claude Code panes.
+`--duration 0` means run until Ctrl-C. Duplicate detection is enforced with a
+unique payload key that ignores only the `ts` field, preserving the first seen
+row for each payload. `scripts/import-x-observe-jsonl.sh` imports the old JSONL
+log into the SQLite database and leaves the JSONL source in place. `--all` also
+emits metadata rows for down/no-orchestrator sessions; the default observes
+only live Claude Code panes.
 
 ## Out of scope (deliberately)
 

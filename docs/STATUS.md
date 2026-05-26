@@ -15,18 +15,18 @@ This is the "pick up where we left off" document. Read it before touching
   Internal health guards remain finite; in particular, an unconsumed
   trigger still fails fast after 20 s because that indicates stuck
   plumbing, not a long model turn.
-- **`tt x observe` samples Claude panes for classifier data** (2026-05-18).
+- **`tt x observe` samples Claude panes for classifier data** (2026-05-18;
+  SQLite storage updated 2026-05-26).
   Passive diagnostics command: `tt x observe [run] [--interval N]
-  [--duration N] [--out FILE|-] [--max-lines N|--no-max-lines] [--all]`.
+  [--duration N] [--all]`.
   Bare `tt x observe` aliases to `tt x observe run`. It reuses the same
-  classifier as `tt x send`, captures plain and escaped pane tails, writes
-  JSONL to the global tt state log
-  `${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.jsonl` by default,
-  trims to 10000 lines unless `--no-max-lines` or `--max-lines 0` is set
-  (last flag wins), and dedupes file outputs on exit by ignoring only `ts`.
-  Manual dedupe is `tt x observe dedupe [FILE]`, defaulting to the global
-  observe log. It never sends keys or takes `x-send.lock`; it logs pane text
-  intentionally and prints a startup warning.
+  classifier as `tt x send`, captures plain and escaped pane tails, writes to
+  the global tt SQLite database
+  `${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.sqlite` by default,
+  and ignores duplicate non-`ts` payloads at insert time.
+  `scripts/import-x-observe-jsonl.sh` imports the old JSONL log and leaves the
+  source file in place. It never sends keys or takes `x-send.lock`; it logs
+  pane text intentionally and prints a startup warning.
 - **`tt x send` waits for empty Claude Code input** (2026-05-18, v0.3.9).
   Cross-session delivery now serializes per target with
   `<target-state>/x-send.lock`, rejects unsafe plain-capture states
