@@ -27,11 +27,12 @@ This is the "pick up where we left off" document. Read it before touching
   `scripts/import-x-observe-jsonl.sh` imports the old JSONL log and leaves the
   source file in place. It never sends keys or takes `x-send.lock`; it logs
   pane text intentionally and prints a startup warning.
-- **`tt x send` waits for empty Claude Code input** (2026-05-18, v0.3.9).
+- **`tt x send` waits for safe Claude Code input** (2026-05-18, v0.3.9).
   Cross-session delivery now serializes per target with
   `<target-state>/x-send.lock`, rejects unsafe plain-capture states
-  (`esc interrupt`, queued-message banners, collapsed queued-message
-  `paste again to expand` hints), then uses escaped capture to
+  (`esc interrupt` / Ctrl-C cancel hints), treats queued-message banners and
+  collapsed queued-message `paste again to expand` hints as safe, then uses
+  escaped capture to
   classify the current bottom `❯` prompt. Empty prompts are safe; visible
   text after `❯` is a real user draft and waits; explicitly dim (`ESC[2m`)
   suggestion text is safe because paste replaces Claude Code's suggestion.

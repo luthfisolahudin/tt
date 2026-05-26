@@ -237,15 +237,16 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 `tt x send [--timeout N] <session-id> (FILE|-)` lets one project's
 orchestrator push a message into another tt session's orchestrator and
-submit it once the target Claude Code TUI is at empty input.
+submit it once the target Claude Code TUI can safely accept input.
 
 Unlike pi workers, the orchestrator is a live Claude Code TUI with no
 file/trigger control channel — the trigger files are pi-worker-only.
 Delivery therefore uses tmux directly. Before touching the pane, `tt x
 send` serializes per target with `<target-state>/x-send.lock`, then polls
-`capture-pane`. Plain capture rejects unsafe UI states such as interrupts,
-queued-message banners, and Claude Code's collapsed queued-message hint
-(`paste again to expand`). Escaped capture (`capture-pane -e`) then
+`capture-pane`. Plain capture rejects unsafe UI states such as interrupts;
+queued-message banners and Claude Code's collapsed queued-message hint
+(`paste again to expand`) are safe because a new paste joins Claude Code's
+input queue. Escaped capture (`capture-pane -e`) then
 classifies the current bottom prompt line: an empty `❯` prompt is safe,
 visible text after `❯` is treated as a real user draft and waits, and
 explicitly dim (`ESC[2m`) suggestion text after `❯` is safe because paste

@@ -68,7 +68,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi status` | One row per worker: state, last task, tier, generation. |
 | `tt pi rm <cs> [--force]`, `tt pi remove <cs> [--force]` | Remove a non-immortal worker. |
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |
-| `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to reach empty input, then send + submit a message. Waits forever by default. |
+| `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to safely accept input, then send + submit a message. Waits forever by default. |
 | `tt x list [--all]`, `tt x ls [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
 | `tt x observe [run] [--interval N] [--duration N] [--all]` | Passively sample Claude panes to SQLite for improving `tt x send` safe-input detection; duplicate non-`ts` payloads are ignored. |
 

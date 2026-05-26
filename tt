@@ -656,7 +656,7 @@ x_classify_claude_input() {
     X_CLASSIFIER="wait_active"; X_UNSAFE_MARKER="interrupt/cancel"; printf '%s\n' "$X_CLASSIFIER"; return 0
   fi
   if grep -Eiq 'queued messages?|paste again to expand' <<<"$plain"; then
-    X_CLASSIFIER="wait_queued"; X_UNSAFE_MARKER="queued-message"; printf '%s\n' "$X_CLASSIFIER"; return 0
+    X_CLASSIFIER="safe_queued"; X_UNSAFE_MARKER="queued-message"; printf '%s\n' "$X_CLASSIFIER"; return 0
   fi
   if grep -Eiq 'Churning|Blanching' <<<"$plain"; then
     X_CLASSIFIER="wait_active"; X_UNSAFE_MARKER="active-status"; printf '%s\n' "$X_CLASSIFIER"; return 0
@@ -691,20 +691,20 @@ x_classify_claude_input() {
   printf '%s\n' "$X_CLASSIFIER"
 }
 
-x_claude_empty_input() {
+x_claude_accepts_input() {
   local classifier
   classifier=$(x_classify_claude_input "$1")
   case "$classifier" in
-    safe_empty|safe_suggestion) return 0 ;;
+    safe_empty|safe_suggestion|safe_queued) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-x_wait_claude_empty_input() {
+x_wait_claude_accepts_input() {
   local target=$1 deadline=$2 noted=0
-  while ! x_claude_empty_input "$target"; do
-    (( noted )) || { note "x send: waiting for $target:claude empty input; Ctrl-C cancels"; noted=1; }
-    deadline_expired "$deadline" && die "x send: timed out waiting for $target:claude empty input"
+  while ! x_claude_accepts_input "$target"; do
+    (( noted )) || { note "x send: waiting for $target:claude safe input; Ctrl-C cancels"; noted=1; }
+    deadline_expired "$deadline" && die "x send: timed out waiting for $target:claude safe input"
     sleep 0.5
   done
 }
@@ -713,7 +713,7 @@ x_wait_claude_empty_input() {
 # TUI in its `claude` window) and submit it. Unlike pi workers, the
 # orchestrator has no file/trigger channel — delivery is a tmux
 # bracketed paste (multiline-safe) followed by Enter, guarded by a
-# conservative empty-input prompt check so Enter is not pressed in a
+# conservative safe-input prompt check so Enter is not pressed in a
 # user's draft, a confirmation UI, or an in-flight turn.
 x_send_cmd() {
   local target="" src="" timeout=0
@@ -771,7 +771,7 @@ x_send_cmd() {
   printf -v lockq '%q' "$lockdir"
   trap "rm -rf $lockq 2>/dev/null || true" EXIT
 
-  x_wait_claude_empty_input "$target" "$deadline"
+  x_wait_claude_accepts_input "$target" "$deadline"
 
   # Deliver via a uniquely-named tmux buffer + bracketed paste so
   # embedded newlines do not submit early; then Enter submits once.
@@ -1052,8 +1052,9 @@ PI WORKER VERBS
 CROSS-SESSION VERBS
   tt x send [--timeout SECONDS] <session-id> (FILE | -)
       Send a message to another tt session's orchestrator (its live
-      Claude Code TUI) and submit it as one turn once Claude Code is at
-      empty input. By default it waits forever; Ctrl-C cancels. Use
+      Claude Code TUI) and submit it as one turn once Claude Code can
+      safely accept input: empty prompt, suggestion prompt, or queued-message
+      state. By default it waits forever; Ctrl-C cancels. Use
       --timeout SECONDS to fail instead of waiting indefinitely.
       Source is a file path, or `-` for stdin. Use process substitution:
       `tt x send brainstorm-a3f1 <(printf 'hi\n')`.
