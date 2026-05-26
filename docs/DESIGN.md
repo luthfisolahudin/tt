@@ -249,8 +249,10 @@ queued-message banners, and Claude Code's collapsed queued-message hint
 classifies the current bottom prompt line: an empty `❯` prompt is safe,
 visible text after `❯` is treated as a real user draft and waits, and
 explicitly dim (`ESC[2m`) suggestion text after `❯` is safe because paste
-replaces Claude Code's suggestion. If the prompt is absent from the bottom
-region, `tt x send` waits. The default wait is infinite and Ctrl-C
+replaces Claude Code's suggestion. Cursor-highlighted suggestions where the
+first character is reverse-video (`ESC[7m`) and the remaining text is dim
+(`ESC[0;2m`) are safe for the same reason. If the prompt is absent from the
+bottom region, `tt x send` waits. The default wait is infinite and Ctrl-C
 cancels; `--timeout N` makes the wait fail after N seconds.
 
 Once the target is ready, the message (prefixed with an `[tt x from

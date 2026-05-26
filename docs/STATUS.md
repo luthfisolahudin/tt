@@ -35,6 +35,8 @@ This is the "pick up where we left off" document. Read it before touching
   classify the current bottom `❯` prompt. Empty prompts are safe; visible
   text after `❯` is a real user draft and waits; explicitly dim (`ESC[2m`)
   suggestion text is safe because paste replaces Claude Code's suggestion.
+  Cursor-highlighted suggestions where the first character is reverse-video
+  (`ESC[7m`) and the rest is dim (`ESC[0;2m`) are also safe.
   Missing bottom prompt also waits, covering plan
   confirmation, question, or in-flight states. The wait is infinite by
   default and Ctrl-C cancels; `--timeout N` fails instead of waiting
