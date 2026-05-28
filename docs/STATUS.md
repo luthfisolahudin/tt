@@ -89,10 +89,14 @@ This is the "pick up where we left off" document. Read it before touching
   agent dir contains `settings.json` and `APPEND_SYSTEM.md`; worker REPLs
   also pass `--no-skills` so a delegate never loads the delegating skill.
 - **XDG data install** (2026-05-16, updated 2026-05-28). `~/.local/share/tt/`
-  holds symlinks to the tt repo's `pi-agent/`, `.agents/`, and
-  `tt-worker.ts`. Global skill links point through `~/.local/share/tt/` —
-  moving the repo requires only updating those symlinks, not hunting
-  scattered hardcoded paths.
+  holds runtime worker data plus symlinks to repo-owned source files. In
+  particular, `~/.local/share/tt/pi-agent/` is a real writable runtime
+  directory (not a symlink to the git checkout): `tt-worker.ts` and
+  repo-owned `pi-agent/` files are symlinked in, except `settings.json`
+  which is copied because pi mutates it with changelog metadata. pi can
+  write `auth.json` or changelog metadata there without dirtying the repo.
+  Global skill links point through `~/.local/share/tt/` — moving the repo requires only
+  updating those symlinks, not hunting scattered hardcoded paths.
 - **Global APPEND_SYSTEM.md auto-injected** (2026-05-16, updated 2026-05-28).
   If the project has no `.pi/APPEND_SYSTEM.md`, `launch_repl` passes
   `--append-system-prompt` pointing at the worker file in

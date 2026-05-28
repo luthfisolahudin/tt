@@ -3,5 +3,8 @@
 # Local tt handoff artifacts
 .tt/
 
+# pi may write local auth/cache if a worker agent dir ever points here
+pi-agent/auth.json
+
 # skill eval scratch — transient runs, snapshots, logs
 .agents/skills/*-workspace/

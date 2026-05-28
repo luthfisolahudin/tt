@@ -301,10 +301,10 @@ only live Claude Code panes.
 |----------|---------|
 | `~/code/tt/tt` | The tool itself (symlinked from `~/.local/bin/tt`). |
 | `~/code/tt/tt-worker.ts` | The pi extension; loaded by worker REPLs through tt's private pi agent dir. |
-| `~/code/tt/pi-agent/` | Worker-only pi config: `settings.json` loads `tt-worker.ts`, and `APPEND_SYSTEM.md` defines Worker Mode. |
-| `~/.local/share/tt/` | XDG data dir: symlinks to `pi-agent/`, `.agents/`, `tt-worker.ts`. |
+| `~/code/tt/pi-agent/` | Repo-owned worker templates: tracked `settings.json` and `APPEND_SYSTEM.md`. |
+| `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
 | `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker. Override with `TT_STATE_DIR`. |
-| `~/.local/share/tt/pi-agent` | Passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_AGENT_DIR`. |
+| `~/.local/share/tt/pi-agent` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_AGENT_DIR`. Contains copied `settings.json`, symlinked repo-owned `pi-agent/` files such as `APPEND_SYSTEM.md`, and pi-owned mutable files such as `auth.json`. |
 | `~/.pi/agent/settings.json` | User-owned normal pi settings; tt no longer installs worker resources here. |
 | `pi-agent/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |
 | `.agents/skills/delegating-to-pi/` | Consumer-facing skill telling the orchestrator how to use `tt pi send`/`wait`. |

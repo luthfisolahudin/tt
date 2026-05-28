@@ -13,6 +13,7 @@ PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
 TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
 TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
 TT_PI_AGENT_DIR="${TT_PI_AGENT_DIR:-$TT_DATA_DIR/pi-agent}"
+TT_REPO_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # ---------- helpers ----------
 
@@ -227,6 +228,34 @@ repl_running() {
   pgrep -f -- "$(state_dir)/pi-sessions/$1/" >/dev/null 2>&1
 }
 
+ensure_worker_agent_dir() {
+  mkdir -p "$TT_DATA_DIR"
+  ln -sfn "$TT_REPO_DIR/tt-worker.ts" "$TT_DATA_DIR/tt-worker.ts"
+
+  # Early versions symlinked the whole worker agent dir back into the git
+  # checkout. pi treats PI_CODING_AGENT_DIR as writable config/state and may
+  # add auth.json or lastChangelogVersion there, so keep the runtime dir real
+  # and symlink only repo-owned source files into it.
+  if [[ -L $TT_PI_AGENT_DIR && $(readlink -f "$TT_PI_AGENT_DIR") == "$TT_REPO_DIR/pi-agent" ]]; then
+    rm -f "$TT_PI_AGENT_DIR"
+  fi
+  mkdir -p "$TT_PI_AGENT_DIR"
+  local src base
+  for src in "$TT_REPO_DIR"/pi-agent/*; do
+    [[ -e $src ]] || continue
+    base=$(basename "$src")
+    [[ $base == settings.json ]] && continue
+    ln -sfn "$src" "$TT_PI_AGENT_DIR/$base"
+  done
+
+  # settings.json is copied, not symlinked: pi mutates it with runtime
+  # metadata such as lastChangelogVersion.
+  if [[ -L $TT_PI_AGENT_DIR/settings.json && $(readlink -f "$TT_PI_AGENT_DIR/settings.json") == "$TT_REPO_DIR/pi-agent/settings.json" ]]; then
+    rm -f "$TT_PI_AGENT_DIR/settings.json"
+  fi
+  [[ -f $TT_PI_AGENT_DIR/settings.json ]] || cp "$TT_REPO_DIR/pi-agent/settings.json" "$TT_PI_AGENT_DIR/settings.json"
+}
+
 # Start the pi REPL in the worker's window — non-blocking. `respawn-pane
 # -k` kills whatever is there (a shell, or a stale/crashed pi) and starts
 # fresh on the worker's current-generation session-dir. Workers use tt's
@@ -239,6 +268,7 @@ repl_running() {
 start_repl() {
   local name=$1 s sdir tier launch nice_prefix
   s=$(session_name)
+  ensure_worker_agent_dir
   tier=$(current_tier "$name")
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
   rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
