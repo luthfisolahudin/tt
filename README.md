@@ -20,8 +20,8 @@ rather than one-shot `pi -p` calls.
 ln -s ~/code/tt/tt ~/.local/bin/tt   # already done on this machine
 ```
 
-Dependencies: `tmux`, `sha1sum` (coreutils), `sed`, `awk`, `bash`. `pi` must
-be on `PATH` for the worker verbs.
+Dependencies: `tmux`, `sha1sum`/`sha256sum` (coreutils), `sed`, `awk`, `bash`.
+`pi` must be on `PATH` for the worker verbs.
 
 ## Quick start
 
@@ -60,6 +60,7 @@ Run `tt --help` for the full block. Summary:
 | `tt` / `tt up` | Create (if missing) + attach the project session. Idempotent. Attaches at once; pi REPLs boot in the background. |
 | `tt a` / `tt attach` | Attach without creating. |
 | `tt name` | Print the computed session name. |
+| `tt --version`, `tt -v` | Print the installed `tt` version. |
 | `tt down` | Kill the project session (with confirmation). |
 | `tt pi add` | Spawn the next worker (`delta`, then `echo`). Cap of 5. |
 | `tt pi clear <cs> [--force]` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
@@ -74,6 +75,19 @@ Run `tt --help` for the full block. Summary:
 
 Workers: `alfa`, `bravo`, `charlie` are immortal (always present); `delta`,
 `echo` are optional. Hard cap of 5.
+
+## Checking a session's tt version
+
+`tt --version` shows the executable currently on your `PATH`. `tt up` also
+stamps the live tmux session with the version that last managed it:
+
+```sh
+tmux show-environment -t "=$(tt name)" TT_VERSION
+cat "${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)/version"
+```
+
+Newly spawned pi worker REPLs also receive `TT_VERSION` in their process
+environment.
 
 ## Consumers
 

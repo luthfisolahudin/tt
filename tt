@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.3.9"
+VERSION="0.4.0"
 NATO=(alfa bravo charlie delta echo)
 IMMORTALS=(alfa bravo charlie)
 MAX_PI=5
@@ -65,11 +65,18 @@ require_session() {
   session_exists || die "no session for $PWD; run \`tt up\` first"
 }
 
+set_session_version() {
+  local s; s=$(session_name)
+  tmux set-environment -t "=$s" TT_VERSION "$VERSION"
+  printf '%s\n' "$VERSION" > "$(state_dir)/version"
+}
+
 # ---------- session lifecycle ----------
 
 create_session() {
   local s; s=$(session_name)
   tmux new-session -d -s "$s" -n dev -c "$PWD"
+  set_session_version
   # set-option does not accept the `=` exact-match prefix; use the
   # bare-name + colon target form instead.
   tmux set-option -t "$s:" history-limit "$PI_HISTORY_LIMIT" >/dev/null
@@ -150,6 +157,7 @@ spawn_pi_window() {
 
 up_cmd() {
   if session_exists; then
+    set_session_version
     ensure_standard_windows   # heal any windows lost to a crash/aborted down
   else
     create_session
@@ -338,7 +346,7 @@ start_repl() {
   nice_prefix="nice -n 19"
   command -v ionice >/dev/null 2>&1 && nice_prefix="ionice -c3 $nice_prefix"
   launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_WORKER_DIR' \
-TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
+TT_VERSION='$VERSION' TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
 pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier --no-skills${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   date +%s > "$(state_dir)/$name.starting"
@@ -1186,6 +1194,8 @@ SESSION NAMING
   <basename($PWD)>-<sha1($PWD)[:4]>     e.g. /home/me/proj/foo → foo-a3f1
 
 STATE
+  $XDG_STATE_HOME/tt/<session>/version                  tt version last stamped by `tt up`
+  $XDG_STATE_HOME/tt/<session>/project                  project directory for this session
   $XDG_STATE_HOME/tt/<session>/<callsign>.tasks.jsonl   per-worker task log
   $XDG_STATE_HOME/tt/<session>/<callsign>.tier          current pi thinking tier
   $XDG_STATE_HOME/tt/<session>/<callsign>.gen           current context generation

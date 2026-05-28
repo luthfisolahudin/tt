@@ -302,7 +302,7 @@ only live Claude Code panes.
 | `~/code/tt/tt` | The tool itself (symlinked from `~/.local/bin/tt`). |
 | `~/code/tt/pi-worker/` | Repo-owned worker templates: tracked `settings.json`, `APPEND_SYSTEM.md`, and `extensions/tt-worker.ts`. |
 | `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
-| `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker. Override with `TT_STATE_DIR`. |
+| `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker, plus `project` and `version` session metadata. Override with `TT_STATE_DIR`. |
 | `~/.local/share/tt/pi-worker` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_WORKER_DIR` (legacy `TT_PI_AGENT_DIR` is still honored). Lazily filled missing-only: copied `settings.json`, managed symlinks to repo-owned files such as `APPEND_SYSTEM.md` and `extensions/tt-worker.ts`, symlinked global `auth.json`/`models.json` when present, pi-owned mutable files, and `.tt-version` metadata for template-drift warnings. Existing runtime files are left alone for customization. |
 | `~/.pi/agent/settings.json` | User-owned normal pi settings; tt no longer installs worker resources here. |
 | `pi-worker/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |

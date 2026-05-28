@@ -1,14 +1,20 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-28 (v0.3.9)._
+_Last updated: 2026-05-29 (v0.4.0)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
 
 ## Current state
 
-- `tt` v0.3.9, single bash file (`~/code/tt/tt`, symlinked from
+- `tt` v0.4.0, single bash file (`~/code/tt/tt`, symlinked from
   `~/.local/bin/tt`), plus worker templates under `pi-worker/`.
+- **Session version stamping** (2026-05-29, v0.4.0). `tt up` writes the
+  running tt version to the tmux session environment as `TT_VERSION` and
+  to `$(state_dir)/version`; newly spawned worker REPLs also receive
+  `TT_VERSION` in their process environment. Check a live session with
+  `tmux show-environment -t "=$(tt name)" TT_VERSION` or inspect the
+  state file.
 - **`tt pi wait` waits forever by default** (2026-05-18). The user-facing
   completion wait now matches `tt x send`: no timeout unless
   `--timeout N` is provided, and `--timeout 0` is explicit forever.
