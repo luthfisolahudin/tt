@@ -2,8 +2,8 @@
  * tt-worker — pi extension giving `tt` a file-based control channel into a
  * live interactive pi REPL.
  *
- * Loaded by tt workers through tt's private pi-agent settings
- * (`PI_CODING_AGENT_DIR=~/.local/share/tt/pi-agent`). It is INERT unless
+ * Auto-loaded by tt workers from tt's private pi-worker runtime dir
+ * (`PI_CODING_AGENT_DIR=~/.local/share/tt/pi-worker`). It is INERT unless
  * `TT_WORKER_CS` is set, so normal pi sessions are unaffected; `tt` sets
  * that env var only for the workers it spawns.
  *

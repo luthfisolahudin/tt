@@ -85,8 +85,8 @@ startup trigger race stays closed. A `send` to a genuinely-dead worker
 
 ## The tt-worker extension — control channel
 
-tt talks to each REPL through **`tt-worker.ts`**, a pi extension
-installed in tt's private pi agent dir (`~/.local/share/tt/pi-agent`,
+tt talks to each REPL through **`pi-worker/extensions/tt-worker.ts`**, a pi extension
+auto-discovered from tt's private pi worker dir (`~/.local/share/tt/pi-worker`,
 passed as `PI_CODING_AGENT_DIR`). Normal user pi sessions continue using
 `~/.pi/agent` and do not load the worker extension. The extension is still
 inert unless `TT_WORKER_CS` is set; tt sets that env var (and
@@ -228,7 +228,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 ## What does NOT change vs the old `pi -p` flow
 
-- `pi-agent/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
+- `pi-worker/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
 - The model ladder (`gpt-5.5:low` default, `:medium` for safety-critical).
@@ -300,11 +300,10 @@ only live Claude Code panes.
 | Location | Purpose |
 |----------|---------|
 | `~/code/tt/tt` | The tool itself (symlinked from `~/.local/bin/tt`). |
-| `~/code/tt/tt-worker.ts` | The pi extension; loaded by worker REPLs through tt's private pi agent dir. |
-| `~/code/tt/pi-agent/` | Repo-owned worker templates: tracked `settings.json` and `APPEND_SYSTEM.md`. |
+| `~/code/tt/pi-worker/` | Repo-owned worker templates: tracked `settings.json`, `APPEND_SYSTEM.md`, and `extensions/tt-worker.ts`. |
 | `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
 | `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker. Override with `TT_STATE_DIR`. |
-| `~/.local/share/tt/pi-agent` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_AGENT_DIR`. Contains copied `settings.json`, symlinked repo-owned `pi-agent/` files such as `APPEND_SYSTEM.md`, and pi-owned mutable files such as `auth.json`. |
+| `~/.local/share/tt/pi-worker` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_WORKER_DIR` (legacy `TT_PI_AGENT_DIR` is still honored). Lazily filled missing-only: copied `settings.json`, managed symlinks to repo-owned files such as `APPEND_SYSTEM.md` and `extensions/tt-worker.ts`, symlinked global `auth.json`/`models.json` when present, pi-owned mutable files, and `.tt-version` metadata for template-drift warnings. Existing runtime files are left alone for customization. |
 | `~/.pi/agent/settings.json` | User-owned normal pi settings; tt no longer installs worker resources here. |
-| `pi-agent/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |
+| `pi-worker/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |
 | `.agents/skills/delegating-to-pi/` | Consumer-facing skill telling the orchestrator how to use `tt pi send`/`wait`. |

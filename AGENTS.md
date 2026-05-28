@@ -15,9 +15,9 @@ a pool of `pi` code workers. This file orients an AI agent working **on**
 ## Layout
 
 - `tt` — the tool itself. Pure bash, `set -euo pipefail`.
-- `tt-worker.ts` — the pi extension `tt` drives the REPLs through.
-  Loaded by workers through tt's private `pi-agent/settings.json` via
-  `PI_CODING_AGENT_DIR`.
+- `pi-worker/` — worker-only pi runtime templates. `extensions/tt-worker.ts`
+  is the pi extension `tt` drives the REPLs through, auto-loaded by pi from
+  tt's private `PI_CODING_AGENT_DIR`.
 - `~/.local/bin/tt` is a **symlink** to `./tt` — edits here take effect
   immediately, no install step.
 - `docs/` — design, status, handoff.
@@ -35,10 +35,10 @@ a pool of `pi` code workers. This file orients an AI agent working **on**
 - **REPL liveness is detected with `pgrep -f` on the worker's
   `--session-dir`**, never `pane_current_command` — pi is a grandchild
   process and tmux reports the foreground command inconsistently.
-- **`tt-worker.ts` must stay inert unless `TT_WORKER_CS` is set** — this
-  is a safety belt even though workers now use a private pi agent dir.
+- **`pi-worker/extensions/tt-worker.ts` must stay inert unless `TT_WORKER_CS` is set** — this
+  is a safety belt even though workers now use a private pi worker dir.
 - **The `delegating-to-pi` skill must stay excluded from pi workers** —
-  `pi-agent/settings.json` excludes it, and `tt` launches worker REPLs
+  `pi-worker/settings.json` excludes it, and `tt` launches worker REPLs
   with `--no-skills` so project/user-discovered skills cannot make a
   delegate become the orchestrator.
 - `alfa`/`bravo`/`charlie` are immortal; hard cap of 5 pi workers.
@@ -87,5 +87,5 @@ Commit only when the user asks. Keep `tt` a single file.
 | trigger/result file format or nonce protocol | `docs/DESIGN.md` control channel + task IDs sections |
 | worker states | `docs/DESIGN.md` worker state detection section |
 | install layout (`~/.local/share/tt/`, symlinks) | `docs/STATUS.md` current state |
-| completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-agent/APPEND_SYSTEM.md` |
+| completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-worker/APPEND_SYSTEM.md` |
 | model tiers or provider | `docs/DESIGN.md` model tiers · `README.md` |

@@ -12,7 +12,8 @@ PI_DEFAULT_TIER=low
 PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
 TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
 TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
-TT_PI_AGENT_DIR="${TT_PI_AGENT_DIR:-$TT_DATA_DIR/pi-agent}"
+# TT_PI_AGENT_DIR is a legacy override kept for compatibility; prefer TT_PI_WORKER_DIR.
+TT_PI_WORKER_DIR="${TT_PI_WORKER_DIR:-${TT_PI_AGENT_DIR:-$TT_DATA_DIR/pi-worker}}"
 TT_REPO_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # ---------- helpers ----------
@@ -228,32 +229,82 @@ repl_running() {
   pgrep -f -- "$(state_dir)/pi-sessions/$1/" >/dev/null 2>&1
 }
 
-ensure_worker_agent_dir() {
-  mkdir -p "$TT_DATA_DIR"
-  ln -sfn "$TT_REPO_DIR/tt-worker.ts" "$TT_DATA_DIR/tt-worker.ts"
-
-  # Early versions symlinked the whole worker agent dir back into the git
-  # checkout. pi treats PI_CODING_AGENT_DIR as writable config/state and may
-  # add auth.json or lastChangelogVersion there, so keep the runtime dir real
-  # and symlink only repo-owned source files into it.
-  if [[ -L $TT_PI_AGENT_DIR && $(readlink -f "$TT_PI_AGENT_DIR") == "$TT_REPO_DIR/pi-agent" ]]; then
-    rm -f "$TT_PI_AGENT_DIR"
+ensure_pi_worker_dir() {
+  # pi treats PI_CODING_AGENT_DIR as writable config/state, so keep the worker
+  # runtime dir real. Repo templates are linked/copied into it lazily.
+  if [[ -L $TT_PI_WORKER_DIR && $(readlink -f "$TT_PI_WORKER_DIR" 2>/dev/null) == "$TT_REPO_DIR/pi-worker" ]]; then
+    rm -f "$TT_PI_WORKER_DIR"
   fi
-  mkdir -p "$TT_PI_AGENT_DIR"
-  local src base
-  for src in "$TT_REPO_DIR"/pi-agent/*; do
-    [[ -e $src ]] || continue
-    base=$(basename "$src")
-    [[ $base == settings.json ]] && continue
-    ln -sfn "$src" "$TT_PI_AGENT_DIR/$base"
-  done
+  mkdir -p "$TT_PI_WORKER_DIR/extensions"
 
-  # settings.json is copied, not symlinked: pi mutates it with runtime
-  # metadata such as lastChangelogVersion.
-  if [[ -L $TT_PI_AGENT_DIR/settings.json && $(readlink -f "$TT_PI_AGENT_DIR/settings.json") == "$TT_REPO_DIR/pi-agent/settings.json" ]]; then
-    rm -f "$TT_PI_AGENT_DIR/settings.json"
+  local meta="$TT_PI_WORKER_DIR/.tt-version"
+  local prev_app_sha prev_ext_sha prev_settings_sha
+  prev_app_sha=$(awk -F= '$1=="file.APPEND_SYSTEM.md.sha"{print $2}' "$meta" 2>/dev/null || true)
+  prev_ext_sha=$(awk -F= '$1=="file.extensions/tt-worker.ts.sha"{print $2}' "$meta" 2>/dev/null || true)
+  prev_settings_sha=$(awk -F= '$1=="file.settings.json.sha"{print $2}' "$meta" 2>/dev/null || true)
+
+  local app_src="$TT_REPO_DIR/pi-worker/APPEND_SYSTEM.md"
+  local app_dst="$TT_PI_WORKER_DIR/APPEND_SYSTEM.md"
+  local app_sha; app_sha=$(sha256sum "$app_src" | awk '{print $1}')
+  if [[ ! -e $app_dst || ( -L $app_dst && ! -e $app_dst ) ]]; then
+    ln -sfn "$app_src" "$app_dst"
+  elif [[ -L $app_dst && $(readlink -f "$app_dst" 2>/dev/null) == "$app_src" ]]; then
+    ln -sfn "$app_src" "$app_dst"
+  elif [[ -n $prev_app_sha && $prev_app_sha != "$app_sha" ]]; then
+    note "pi-worker APPEND_SYSTEM.md template changed; keeping customized $app_dst (remove it to regenerate)"
   fi
-  [[ -f $TT_PI_AGENT_DIR/settings.json ]] || cp "$TT_REPO_DIR/pi-agent/settings.json" "$TT_PI_AGENT_DIR/settings.json"
+
+  local ext_src="$TT_REPO_DIR/pi-worker/extensions/tt-worker.ts"
+  local ext_dst="$TT_PI_WORKER_DIR/extensions/tt-worker.ts"
+  local ext_sha; ext_sha=$(sha256sum "$ext_src" | awk '{print $1}')
+  if [[ ! -e $ext_dst || ( -L $ext_dst && ! -e $ext_dst ) ]]; then
+    ln -sfn "$ext_src" "$ext_dst"
+  elif [[ -L $ext_dst && $(readlink -f "$ext_dst" 2>/dev/null) == "$ext_src" ]]; then
+    ln -sfn "$ext_src" "$ext_dst"
+  elif [[ -n $prev_ext_sha && $prev_ext_sha != "$ext_sha" ]]; then
+    note "pi-worker tt-worker.ts template changed; keeping customized $ext_dst (remove it to regenerate)"
+  fi
+
+  local settings_src="$TT_REPO_DIR/pi-worker/settings.json"
+  local settings_dst="$TT_PI_WORKER_DIR/settings.json"
+  local settings_sha; settings_sha=$(sha256sum "$settings_src" | awk '{print $1}')
+  local settings_preexisted=0
+  [[ -e $settings_dst || -L $settings_dst ]] && settings_preexisted=1
+  if [[ -L $settings_dst && $(readlink -f "$settings_dst" 2>/dev/null) == "$settings_src" ]]; then
+    rm -f "$settings_dst"
+    settings_preexisted=0
+  fi
+  if [[ ! -e $settings_dst ]]; then
+    cp "$settings_src" "$settings_dst"
+    settings_preexisted=0
+  elif (( settings_preexisted )) && [[ -n $prev_settings_sha && $prev_settings_sha != "$settings_sha" ]]; then
+    note "pi-worker settings.json template changed; keeping customized $settings_dst (remove it to regenerate)"
+  fi
+
+  local global_agent="${PI_CODING_AGENT_USER_DIR:-$HOME/.pi/agent}"
+  local auth_dst="$TT_PI_WORKER_DIR/auth.json"
+  if [[ -f $global_agent/auth.json ]]; then
+    if [[ ! -e $auth_dst || ( -L $auth_dst && ! -e $auth_dst ) ]]; then
+      ln -sfn "$global_agent/auth.json" "$auth_dst"
+    elif [[ -f $auth_dst && ! -L $auth_dst && $(tr -d '[:space:]' < "$auth_dst" 2>/dev/null || true) == "{}" ]]; then
+      rm -f "$auth_dst"
+      ln -sfn "$global_agent/auth.json" "$auth_dst"
+    fi
+  fi
+  local models_dst="$TT_PI_WORKER_DIR/models.json"
+  if [[ -f $global_agent/models.json && ( ! -e $models_dst || ( -L $models_dst && ! -e $models_dst ) ) ]]; then
+    ln -sfn "$global_agent/models.json" "$models_dst"
+  fi
+
+  local updated_at; updated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  cat > "$meta" <<EOF
+version=$VERSION
+repo=$TT_REPO_DIR
+file.APPEND_SYSTEM.md.sha=$app_sha
+file.extensions/tt-worker.ts.sha=$ext_sha
+file.settings.json.sha=$settings_sha
+updated_at=$updated_at
+EOF
 }
 
 # Start the pi REPL in the worker's window — non-blocking. `respawn-pane
@@ -268,12 +319,12 @@ ensure_worker_agent_dir() {
 start_repl() {
   local name=$1 s sdir tier launch nice_prefix
   s=$(session_name)
-  ensure_worker_agent_dir
+  ensure_pi_worker_dir
   tier=$(current_tier "$name")
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
   rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
         "$(state_dir)/$name.trigger.consuming" "$(state_dir)/$name.ready"
-  local global_append="$TT_PI_AGENT_DIR/APPEND_SYSTEM.md"
+  local global_append="$TT_PI_WORKER_DIR/APPEND_SYSTEM.md"
   local append_flag=""
   if [[ ! -f "$PWD/.pi/APPEND_SYSTEM.md" && -f "$global_append" ]]; then
     append_flag="--append-system-prompt '$global_append'"
@@ -286,7 +337,7 @@ start_repl() {
   # the `; exec bash` fallback shell stays at normal priority.
   nice_prefix="nice -n 19"
   command -v ionice >/dev/null 2>&1 && nice_prefix="ionice -c3 $nice_prefix"
-  launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_AGENT_DIR' \
+  launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_WORKER_DIR' \
 TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
 pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier --no-skills${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"

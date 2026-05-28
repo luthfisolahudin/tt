@@ -8,7 +8,7 @@ This is the "pick up where we left off" document. Read it before touching
 ## Current state
 
 - `tt` v0.3.9, single bash file (`~/code/tt/tt`, symlinked from
-  `~/.local/bin/tt`), plus one sidecar: `tt-worker.ts`.
+  `~/.local/bin/tt`), plus worker templates under `pi-worker/`.
 - **`tt pi wait` waits forever by default** (2026-05-18). The user-facing
   completion wait now matches `tt x send`: no timeout unless
   `--timeout N` is provided, and `--timeout 0` is explicit forever.
@@ -82,25 +82,32 @@ This is the "pick up where we left off" document. Read it before touching
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` instead of
   `/tmp/tt/`. State (task logs, pi session-dirs) survives reboots.
   Override with `TT_STATE_DIR`.
-- **Worker pi-agent split** (2026-05-28). `tt` workers launch with
-  `PI_CODING_AGENT_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/tt/pi-agent`
-  (override with `TT_PI_AGENT_DIR`) so normal `pi` sessions keep using
-  the user's `~/.pi/agent` and do not load `tt-worker.ts`. The worker
-  agent dir contains `settings.json` and `APPEND_SYSTEM.md`; worker REPLs
-  also pass `--no-skills` so a delegate never loads the delegating skill.
+- **Worker pi-worker split** (2026-05-28). `tt` workers launch with
+  `PI_CODING_AGENT_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/tt/pi-worker`
+  (override with `TT_PI_WORKER_DIR`; legacy `TT_PI_AGENT_DIR` is still honored)
+  so normal `pi` sessions keep using the user's `~/.pi/agent` and do not
+  load `pi-worker/extensions/tt-worker.ts`. The worker runtime contains
+  copied `settings.json`, `APPEND_SYSTEM.md`, and an auto-discovered
+  `extensions/tt-worker.ts`; worker REPLs also pass `--no-skills` so a
+  delegate never loads the delegating skill.
 - **XDG data install** (2026-05-16, updated 2026-05-28). `~/.local/share/tt/`
   holds runtime worker data plus symlinks to repo-owned source files. In
-  particular, `~/.local/share/tt/pi-agent/` is a real writable runtime
-  directory (not a symlink to the git checkout): `tt-worker.ts` and
-  repo-owned `pi-agent/` files are symlinked in, except `settings.json`
-  which is copied because pi mutates it with changelog metadata. pi can
+  particular, `~/.local/share/tt/pi-worker/` is a real writable runtime
+  directory (not a symlink to the git checkout). Worker launch lazily
+  fills missing defaults only: repo-owned `pi-worker/` files are managed
+  symlinks by default, except `settings.json` which is copied because pi
+  mutates it with changelog metadata; existing runtime files are left
+  alone for customization. Global pi credentials (`~/.pi/agent/auth.json`,
+  and `models.json` when present) are symlinked if missing, and a
+  `.tt-version` marker records the tt version plus template file hashes
+  so future template drift can warn without clobbering user config. pi can
   write `auth.json` or changelog metadata there without dirtying the repo.
   Global skill links point through `~/.local/share/tt/` — moving the repo requires only
   updating those symlinks, not hunting scattered hardcoded paths.
 - **Global APPEND_SYSTEM.md auto-injected** (2026-05-16, updated 2026-05-28).
   If the project has no `.pi/APPEND_SYSTEM.md`, `launch_repl` passes
   `--append-system-prompt` pointing at the worker file in
-  `~/.local/share/tt/pi-agent/APPEND_SYSTEM.md`. The project directory is
+  `~/.local/share/tt/pi-worker/APPEND_SYSTEM.md`. The project directory is
   never touched; a project-local `.pi/APPEND_SYSTEM.md` takes precedence
   naturally.
 - **`tt up` auto-launches claude** (2026-05-16). If the `claude` pane
@@ -114,19 +121,19 @@ This is the "pick up where we left off" document. Read it before touching
 - **The pi-worker model was rewritten** (2026-05-16). The old `pi -p`
   one-shot + pane-watermark mechanism is gone. Each `pi-*` window now
   hosts a **live interactive pi REPL**; `tt` drives it through the
-  `tt-worker.ts` pi extension over plain files. See `docs/DESIGN.md`.
+  `pi-worker/extensions/tt-worker.ts` pi extension over plain files. See `docs/DESIGN.md`.
 - **Tier switching is now a runtime operation** (2026-05-16). `tt pi
   send --low/--medium` no longer respawns the REPL — the tier travels
-  in the trigger and `tt-worker.ts` applies it via
+  in the trigger and `pi-worker/extensions/tt-worker.ts` applies it via
   `pi.setThinkingLevel`. pi context is preserved across a tier change.
 - **Robust task-completion detection** (2026-05-16). Three approaches
   combined:
   - **Nonce (approach 2)**: `pi_send` generates a random 16-char hex
     nonce per dispatch, injects `nonce=<N>` into the WORKER_DONE notes
-    field, writes it into the trigger header. `tt-worker.ts` requires
+    field, writes it into the trigger header. `pi-worker/extensions/tt-worker.ts` requires
     the nonce to appear in the terminal block before setting
     `status=done`. Stale markers from prior context are ignored.
-  - **Terminal-position (approach 3)**: `tt-worker.ts` only classifies
+  - **Terminal-position (approach 3)**: `pi-worker/extensions/tt-worker.ts` only classifies
     `done` when the WORKER_DONE block is the last thing in the response
     (only `field: value` lines after it, then whitespace). Embedded
     or mid-response WORKER_DONE markers are ignored.
@@ -137,16 +144,16 @@ This is the "pick up where we left off" document. Read it before touching
 
 ## The rewrite — what changed
 
-- `tt-worker.ts` — pi extension. Watches `<cs>.trigger` (prompt in),
+- `pi-worker/extensions/tt-worker.ts` — pi extension. Watches `<cs>.trigger` (prompt in),
   consumes it by rename, writes a `running` result, then a terminal
   result on `agent_end` (result out), touches `<cs>.ready`, logs
   failures to `<cs>.log`. Inert unless `TT_WORKER_CS` is set. Trigger
   line 1 is `<id> <tier> <nonce>`; the extension applies the tier with
   `pi.setThinkingLevel` and stores the nonce for completion validation
   before sending the turn.
-- `pi-agent/settings.json` — worker-only pi config used via
-  `PI_CODING_AGENT_DIR`; installs `tt-worker.ts` via `extensions` and
-  excludes `delegating-to-pi` via `skills`. `tt` also starts worker REPLs
+- `pi-worker/settings.json` — worker-only pi config used via
+  `PI_CODING_AGENT_DIR`; excludes `delegating-to-pi` via `skills` while
+  `pi-worker/extensions/tt-worker.ts` is auto-discovered by pi. `tt` also starts worker REPLs
   with `--no-skills` so workers cannot become orchestrators through a
   project- or user-discovered skill. Normal `~/.pi/agent/settings.json`
   is user-owned and no longer carries tt worker resources.
@@ -183,7 +190,7 @@ Run against `tt-fbba` (the tt repo's own session), kept alive afterwards.
 
 ## Verification — control-channel hardening (2026-05-16, v0.3.3)
 
-- `bash -n tt` passes; `tt-worker.ts` passes `bun --check`.
+- `bash -n tt` passes; `pi-worker/extensions/tt-worker.ts` passes `bun --check`.
 - Happy path — `clear charlie` (loads the new extension) → trivial
   read-only task → `<cs>.result` transits `running` → `done`, `wait`
   exits 0, no `<cs>.log`. ✅
@@ -222,7 +229,7 @@ had only been code-reviewed are now exercised live.
 - **`status: error` channel** — `id/status: error/---/<text>` injected
   into `<cs>.result`; `tt pi wait` printed the `---` body to stderr and
   died with `pi-bravo reported an internal error for bravo-1`, exit 1
-  (`tt:518-520`). The extension-side writes (`tt-worker.ts:127-134,
+  (`tt:518-520`). The extension-side writes (`pi-worker/extensions/tt-worker.ts:127-134,
   184-186`) remain code-reviewed only. ✅
 - **Persistent multi-turn chain (4 turns)** — `charlie` ran turns 1–4:
   store codeword `orbit` → append `-7` (`orbit-7`) → reverse (`7-tibro`)
@@ -260,7 +267,7 @@ had only been code-reviewed are now exercised live.
 - **Startup trigger race** — the extension truncated `<cs>.trigger` on
   `session_start`. Fixed with create-if-missing only, plus the
   `<cs>.ready` handshake `launch_repl` waits on.
-- **BLOCKED masked by WORKER_DONE** — `tt-worker.ts` classifies
+- **BLOCKED masked by WORKER_DONE** — `pi-worker/extensions/tt-worker.ts` classifies
   `BLOCKED` ahead of `WORKER_DONE`.
 - **`--medium` tier switch wedged the worker** (found in this retest,
   step 6 of the old plan). The tier-change path called `launch_repl`,
@@ -332,7 +339,7 @@ DESIGN.md "Cross-session messaging". Original staged test, all PASS:
 
 ```sh
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
-# No need to copy APPEND_SYSTEM.md — tt up injects pi-agent/APPEND_SYSTEM.md via --append-system-prompt
+# No need to copy APPEND_SYSTEM.md — tt up injects pi-worker/APPEND_SYSTEM.md via --append-system-prompt
 env -u TMUX tt up                       # attach fails harmlessly off-tty
 TID=$(tt pi send alfa <(printf 'TASK: reply WORKER_DONE\nSUCCESS: done\n'))
 tt pi wait alfa "$TID"
@@ -340,7 +347,7 @@ STATE="${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)"
 tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
 ```
 
-Editing `tt-worker.ts` only takes effect on a freshly launched REPL —
+Editing `pi-worker/extensions/tt-worker.ts` only takes effect on a freshly launched REPL —
 respawn workers (`tt pi clear <cs>`) after changing the extension.
 Live pi steps spend OpenAI Codex quota — keep test tasks trivial.
 
