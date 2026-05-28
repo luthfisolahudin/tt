@@ -91,11 +91,6 @@ environment.
 
 ## Consumers
 
-`tt` is referenced by the **bassaudio-storefront** project (its first
-adopter):
-
-- `.agents/skills/delegating-to-pi/SKILL.md` — tells the orchestrator to
-  delegate via `tt pi send` / `tt pi wait`.
-- `AGENTS.md` / `CLAUDE.md` — a "Tmux session" subsection pointing at `tt`.
-
-Any project can adopt `tt`; it is not project-specific.
+Any project can adopt `tt`. Wire it up by adding a `delegating-to-pi`
+skill (`SKILL.md`, `AGENTS.md` / `CLAUDE.md`) that tells the orchestrator
+to delegate via `tt pi send` / `tt pi wait`.

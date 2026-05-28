@@ -52,10 +52,10 @@ syntax changes always run `bash -n tt`.
 
 ## Consumers
 
-`bassaudio-storefront` is the first adopter:
-`.agents/skills/delegating-to-pi/SKILL.md` and its `AGENTS.md` / `CLAUDE.md`
-tell the orchestrator to delegate via `tt pi send` / `tt pi wait`. If you
-change the `tt pi` interface, update that skill too.
+Consumer projects reference `tt` via a `delegating-to-pi` skill
+(`SKILL.md`, `AGENTS.md`, `CLAUDE.md`) that tells the orchestrator to
+delegate via `tt pi send` / `tt pi wait`. If you change the `tt pi`
+interface, update that skill too.
 
 ## AI quick reference
 
