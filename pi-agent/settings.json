@@ -1,3 +1,4 @@
 {
+  "extensions": ["../tt-worker.ts"],
   "skills": ["!**/delegating-to-pi", "!**/delegating-to-pi/**"]
 }

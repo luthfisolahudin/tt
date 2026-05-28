@@ -10,7 +10,7 @@ pi is a worker wired to OpenAI Codex (ChatGPT Plus, flat-rate). In this
 project pi runs inside a per-project tmux session managed by the `tt`
 tool (`~/.local/bin/tt`). Three immortal workers are pre-spawned —
 `pi-alfa`, `pi-bravo`, `pi-charlie` — plus up to two extras
-(`pi-delta`, `pi-echo`) you can `tt pi add` on demand. `.pi/APPEND_SYSTEM.md`
+(`pi-delta`, `pi-echo`) you can `tt pi add` on demand. `pi-agent/APPEND_SYSTEM.md`
 is auto-appended from cwd, so pi already knows the Worker Mode protocol.
 Recommendations below are empirical — revalidate per project.
 

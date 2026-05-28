@@ -86,10 +86,11 @@ startup trigger race stays closed. A `send` to a genuinely-dead worker
 ## The tt-worker extension — control channel
 
 tt talks to each REPL through **`tt-worker.ts`**, a pi extension
-installed globally in `~/.pi/agent/settings.json`. It is inert unless
-`TT_WORKER_CS` is set, so it has no effect on the user's ordinary pi
-sessions; tt sets that env var (and `TT_WORKER_STATE`) only for the
-workers it spawns.
+installed in tt's private pi agent dir (`~/.local/share/tt/pi-agent`,
+passed as `PI_CODING_AGENT_DIR`). Normal user pi sessions continue using
+`~/.pi/agent` and do not load the worker extension. The extension is still
+inert unless `TT_WORKER_CS` is set; tt sets that env var (and
+`TT_WORKER_STATE`) only for the workers it spawns.
 
 The extension and tt exchange two plain files under
 `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, both in a trivial line format so the bash side
@@ -227,7 +228,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 ## What does NOT change vs the old `pi -p` flow
 
-- `.pi/APPEND_SYSTEM.md` — pi's Worker Mode rules, auto-appended from cwd.
+- `pi-agent/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
 - The model ladder (`gpt-5.5:low` default, `:medium` for safety-critical).
@@ -299,10 +300,11 @@ only live Claude Code panes.
 | Location | Purpose |
 |----------|---------|
 | `~/code/tt/tt` | The tool itself (symlinked from `~/.local/bin/tt`). |
-| `~/code/tt/tt-worker.ts` | The pi extension; loaded globally via `~/.pi/agent/settings.json`. |
-| `~/.local/share/tt/` | XDG data dir: symlinks to `.pi/`, `.agents/`, `tt-worker.ts`. |
+| `~/code/tt/tt-worker.ts` | The pi extension; loaded by worker REPLs through tt's private pi agent dir. |
+| `~/code/tt/pi-agent/` | Worker-only pi config: `settings.json` loads `tt-worker.ts`, and `APPEND_SYSTEM.md` defines Worker Mode. |
+| `~/.local/share/tt/` | XDG data dir: symlinks to `pi-agent/`, `.agents/`, `tt-worker.ts`. |
 | `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker. Override with `TT_STATE_DIR`. |
-| `~/.pi/agent/settings.json` | Registers `tt-worker.ts` as a global extension; excludes `delegating-to-pi` skill. |
-| `.pi/settings.json` | Project-local pi settings: repeats the skill exclusion for the project-discovered copy. |
-| `.pi/APPEND_SYSTEM.md` | Project-local worker protocol injected into every pi REPL. If absent, the global `~/.local/share/tt/.pi/APPEND_SYSTEM.md` is used. |
+| `~/.local/share/tt/pi-agent` | Passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_AGENT_DIR`. |
+| `~/.pi/agent/settings.json` | User-owned normal pi settings; tt no longer installs worker resources here. |
+| `pi-agent/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |
 | `.agents/skills/delegating-to-pi/` | Consumer-facing skill telling the orchestrator how to use `tt pi send`/`wait`. |

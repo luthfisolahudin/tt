@@ -11,6 +11,8 @@ PI_HISTORY_LIMIT=50000
 PI_DEFAULT_TIER=low
 PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
 TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
+TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
+TT_PI_AGENT_DIR="${TT_PI_AGENT_DIR:-$TT_DATA_DIR/pi-agent}"
 
 # ---------- helpers ----------
 
@@ -227,9 +229,10 @@ repl_running() {
 
 # Start the pi REPL in the worker's window — non-blocking. `respawn-pane
 # -k` kills whatever is there (a shell, or a stale/crashed pi) and starts
-# fresh on the worker's current-generation session-dir. The extension is
-# loaded globally via ~/.pi/agent/settings.json; TT_WORKER_CS/STATE wire
-# it to this worker's control files. `; exec bash` keeps the pane alive
+# fresh on the worker's current-generation session-dir. Workers use tt's
+# private PI_CODING_AGENT_DIR so normal pi sessions do not load the
+# tt-worker extension; TT_WORKER_CS/STATE wire it to this worker's control
+# files. `; exec bash` keeps the pane alive
 # (as a shell) if pi ever exits, so the window is never lost. The REPL
 # boots in the background — `<cs>.starting` stamps the boot for
 # `repl_starting`; readiness is awaited later by `wait_repl_ready`.
@@ -240,7 +243,7 @@ start_repl() {
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
   rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
         "$(state_dir)/$name.trigger.consuming" "$(state_dir)/$name.ready"
-  local global_append="${XDG_DATA_HOME:-$HOME/.local/share}/tt/.pi/APPEND_SYSTEM.md"
+  local global_append="$TT_PI_AGENT_DIR/APPEND_SYSTEM.md"
   local append_flag=""
   if [[ ! -f "$PWD/.pi/APPEND_SYSTEM.md" && -f "$global_append" ]]; then
     append_flag="--append-system-prompt '$global_append'"
@@ -253,8 +256,9 @@ start_repl() {
   # the `; exec bash` fallback shell stays at normal priority.
   nice_prefix="nice -n 19"
   command -v ionice >/dev/null 2>&1 && nice_prefix="ionice -c3 $nice_prefix"
-  launch="$nice_prefix env TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
-pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier${append_flag:+ $append_flag}; exec bash"
+  launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_AGENT_DIR' \
+TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
+pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier --no-skills${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   date +%s > "$(state_dir)/$name.starting"
 }
@@ -1092,7 +1096,7 @@ WINDOW LAYOUT (created by `tt up`)
   +  user windows Ad-hoc, created with Ctrl-b c. Not managed by tt.
 
   Pi windows host a live, interactive pi REPL. `tt pi send` injects the
-  prompt through the globally-installed `tt-worker` extension (which
+  prompt through the worker-installed `tt-worker` extension (which
   watches a per-worker trigger file); `tt pi wait` reads the result the
   extension records. You can watch, type into, and steer any pi-* REPL
   by hand — tt's file channel and your keystrokes coexist.

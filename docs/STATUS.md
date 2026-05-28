@@ -1,6 +1,6 @@
 # tt — status & handoff
 
-_Last updated: 2026-05-18 (v0.3.9)._
+_Last updated: 2026-05-28 (v0.3.9)._
 
 This is the "pick up where we left off" document. Read it before touching
 `tt`.
@@ -82,16 +82,23 @@ This is the "pick up where we left off" document. Read it before touching
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` instead of
   `/tmp/tt/`. State (task logs, pi session-dirs) survives reboots.
   Override with `TT_STATE_DIR`.
-- **XDG data install** (2026-05-16). `~/.local/share/tt/` holds
-  symlinks to the tt repo's `.pi/`, `.agents/`, and `tt-worker.ts`.
-  Global skill links and `~/.pi/agent/settings.json` now point through
-  `~/.local/share/tt/` — moving the repo requires only updating those
-  symlinks, not hunting scattered hardcoded paths.
-- **Global APPEND_SYSTEM.md auto-injected** (2026-05-16). If the
-  project has no `.pi/APPEND_SYSTEM.md`, `launch_repl` passes
-  `--append-system-prompt` pointing at the global file in
-  `~/.local/share/tt/.pi/`. The project directory is never touched;
-  a project-local `.pi/APPEND_SYSTEM.md` takes precedence naturally.
+- **Worker pi-agent split** (2026-05-28). `tt` workers launch with
+  `PI_CODING_AGENT_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/tt/pi-agent`
+  (override with `TT_PI_AGENT_DIR`) so normal `pi` sessions keep using
+  the user's `~/.pi/agent` and do not load `tt-worker.ts`. The worker
+  agent dir contains `settings.json` and `APPEND_SYSTEM.md`; worker REPLs
+  also pass `--no-skills` so a delegate never loads the delegating skill.
+- **XDG data install** (2026-05-16, updated 2026-05-28). `~/.local/share/tt/`
+  holds symlinks to the tt repo's `pi-agent/`, `.agents/`, and
+  `tt-worker.ts`. Global skill links point through `~/.local/share/tt/` —
+  moving the repo requires only updating those symlinks, not hunting
+  scattered hardcoded paths.
+- **Global APPEND_SYSTEM.md auto-injected** (2026-05-16, updated 2026-05-28).
+  If the project has no `.pi/APPEND_SYSTEM.md`, `launch_repl` passes
+  `--append-system-prompt` pointing at the worker file in
+  `~/.local/share/tt/pi-agent/APPEND_SYSTEM.md`. The project directory is
+  never touched; a project-local `.pi/APPEND_SYSTEM.md` takes precedence
+  naturally.
 - **`tt up` auto-launches claude** (2026-05-16). If the `claude` pane
   is running a bare shell, `tt up` sends
   `claude --continue --allow-dangerously-skip-permissions` into it.
@@ -133,13 +140,12 @@ This is the "pick up where we left off" document. Read it before touching
   line 1 is `<id> <tier> <nonce>`; the extension applies the tier with
   `pi.setThinkingLevel` and stores the nonce for completion validation
   before sending the turn.
-- `~/.pi/agent/settings.json` — installs `tt-worker.ts` globally via
-  `extensions`, and excludes the `delegating-to-pi` skill via `skills`.
-  The skill is also symlinked into `~/.agents/skills/` + `~/.claude/skills/`
-  so Claude sees it globally; pi scopes skill `!`-excludes to the
-  discovery location, so the exclude is repeated in this repo's
-  `.pi/settings.json` to cover the project-discovered copy under
-  `.agents/skills/`.
+- `pi-agent/settings.json` — worker-only pi config used via
+  `PI_CODING_AGENT_DIR`; installs `tt-worker.ts` via `extensions` and
+  excludes `delegating-to-pi` via `skills`. `tt` also starts worker REPLs
+  with `--no-skills` so workers cannot become orchestrators through a
+  project- or user-discovered skill. Normal `~/.pi/agent/settings.json`
+  is user-owned and no longer carries tt worker resources.
 - `tt` — `spawn_pi_window` launches a REPL; `launch_repl`/`ensure_repl`/
   `repl_running` manage it; `pi_send`/`pi_wait`/`pi_clear` use the
   trigger/result files; all `capture-pane`/watermark code deleted.
@@ -322,7 +328,7 @@ DESIGN.md "Cross-session messaging". Original staged test, all PASS:
 
 ```sh
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
-# No need to copy APPEND_SYSTEM.md — tt up injects global one via --append-system-prompt
+# No need to copy APPEND_SYSTEM.md — tt up injects pi-agent/APPEND_SYSTEM.md via --append-system-prompt
 env -u TMUX tt up                       # attach fails harmlessly off-tty
 TID=$(tt pi send alfa <(printf 'TASK: reply WORKER_DONE\nSUCCESS: done\n'))
 tt pi wait alfa "$TID"
