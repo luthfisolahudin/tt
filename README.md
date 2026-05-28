@@ -17,7 +17,7 @@ rather than one-shot `pi -p` calls.
 ## Install
 
 ```sh
-ln -s ~/code/tt/tt ~/.local/bin/tt   # already done on this machine
+ln -s ~/code/tt/tt ~/.local/bin/tt
 ```
 
 Dependencies: `tmux`, `sha1sum`/`sha256sum` (coreutils), `sed`, `awk`, `bash`.
@@ -87,7 +87,7 @@ cat "${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)/version"
 ```
 
 Newly spawned pi worker REPLs also receive `TT_VERSION` in their process
-environment.
+environment. See `CHANGELOG.md` for what changed between versions.
 
 ## Consumers
 

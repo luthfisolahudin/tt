@@ -73,9 +73,10 @@ blast radius and low will pick it:
 - **TS error fixes near codegen output** — low tends to edit the
   generated file (brittle, regenerated on next codegen run); medium
   fixes the importers instead.
-- **Mizan examples:** Legal/Stage gate changes, OCR/SLIK/KOL/DSR/LTV
-  hard-gates, send-back/reset semantics, compliance text, and finance
-  calculations are safety-critical.
+- **Domain hard-gates and business rules** — regulatory/compliance gates,
+  stage or state-machine transitions, permission/auth checks, financial or
+  pricing calculations: logic where a plausible-looking wrong edit has real
+  blast radius and low will pick the obvious-wrong answer.
 - **Anything touching generated/build artifacts**, or that requires
   understanding what *not* to delete.
 

@@ -53,35 +53,24 @@ pi ever exits. Rationale:
   window away from its `pi-<callsign>` name. All subsequent tmux calls
   target windows by name; a rename would cause "can't find window" errors.
 
-(The original `pi -p` shell model is retired. It is preserved only in
-git history.)
-
 ### `tt up` starts the REPLs asynchronously
 
-`tt up` does not block on REPL readiness. It creates/heals the windows,
-launches the orchestrator, fires `start_repl` for every immortal (each
-just `respawn-pane`s the pane and stamps `<cs>.starting`), and attaches
-the user immediately — the user lands in the `claude` window in well
-under a second. The pi REPLs finish booting in the background.
+`tt up` does not block on REPL readiness: it creates/heals windows, launches
+the orchestrator, fires `start_repl` for every immortal (each just
+`respawn-pane`s the pane and stamps `<cs>.starting`), and attaches at once. The
+REPLs finish booting in the background.
 
-**Order matters: claude first, then the pi REPLs.** `up_cmd` calls
-`auto_launch_claude` *before* `ensure_pi_repls` (the pi spawn loop is
-kept out of `ensure_standard_windows` for exactly this reason). claude
-is an alternate-screen TUI that blanks the pane on launch; if its first
-paint were starved behind three concurrent pi `node` startups the
-`claude` window would sit black until the workers settled. So claude's
-process gets a clean head start, and `start_repl` launches pi under
-`nice -n 19` (plus `ionice -c3` where available) so the interactive
-claude TUI keeps CPU/IO priority. pi workers are background and
-API-I/O bound, so the low priority costs them little.
+**Order matters: claude first, then the pi REPLs.** `up_cmd` runs
+`auto_launch_claude` before `ensure_pi_repls` so claude's alternate-screen TUI
+gets a clean first paint instead of sitting black behind three concurrent pi
+`node` startups; `start_repl` further launches pi under `nice -n 19` (and
+`ionice -c3` where available) so the interactive TUI keeps priority. pi workers
+are API-I/O bound, so the low priority costs them little.
 
-The 40 s readiness wait is **lazy**: `tt pi send` calls
-`ensure_repl_ready`, which waits for *that* worker's `<cs>.ready` only
-when a task is actually dispatched. A `send` issued while the boot is
-still in flight simply blocks until the worker is up — and because the
-trigger is still written only after `<cs>.ready` is confirmed, the
-startup trigger race stays closed. A `send` to a genuinely-dead worker
-(no process, no recent `<cs>.starting`) re-starts it first.
+The 40 s readiness wait is **lazy** — `tt pi send` calls `ensure_repl_ready`,
+which blocks on *that* worker's `<cs>.ready` only when a task is dispatched.
+The trigger is still written only after `<cs>.ready`, so the startup trigger
+race stays closed; a send to a genuinely-dead worker restarts it first.
 
 ## The tt-worker extension — control channel
 
@@ -236,59 +225,41 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 ## Cross-session messaging — `tt x send`
 
-`tt x send [--timeout N] <session-id> (FILE|-)` lets one project's
-orchestrator push a message into another tt session's orchestrator and
-submit it once the target Claude Code TUI can safely accept input.
+`tt x send [--timeout N] <session-id> (FILE|-)` pushes a message into another
+tt session's orchestrator and submits it once that Claude Code TUI can safely
+accept input.
 
 Unlike pi workers, the orchestrator is a live Claude Code TUI with no
-file/trigger control channel — the trigger files are pi-worker-only.
-Delivery therefore uses tmux directly. Before touching the pane, `tt x
-send` serializes per target with `<target-state>/x-send.lock`, then polls
-`capture-pane`. Plain capture rejects unsafe UI states such as interrupts;
-queued-message banners and Claude Code's collapsed queued-message hint
-(`paste again to expand`) are safe because a new paste joins Claude Code's
-input queue. Escaped capture (`capture-pane -e`) then
-classifies the current bottom prompt line: an empty `❯` prompt is safe,
-visible text after `❯` is treated as a real user draft and waits, and
-explicitly dim (`ESC[2m`) suggestion text after `❯` is safe because paste
-replaces Claude Code's suggestion. Cursor-highlighted suggestions where the
-first character is reverse-video (`ESC[7m`) and the remaining text is dim
-(`ESC[0;2m`) are safe for the same reason. If the prompt is absent from the
-bottom region, `tt x send` waits. The default wait is infinite and Ctrl-C
-cancels; `--timeout N` makes the wait fail after N seconds.
+file/trigger control channel, so delivery uses tmux directly. `tt x send`
+serializes per target with `<target-state>/x-send.lock`, then waits for a safe
+input state: it rejects in-flight/interrupt states and a non-empty `❯` draft,
+and treats an empty prompt, dim suggestion text, and queued-message banners as
+safe (a fresh paste joins Claude Code's input queue or replaces its
+suggestion). The exact ANSI heuristics live in the code; `tt x observe` exists
+to tune them. The wait is infinite by default; `--timeout N` fails after N
+seconds.
 
-Once the target is ready, the message (prefixed with an `[tt x from
-<sender>]` attribution header) is loaded into a uniquely named tmux
-buffer (`tt-x-$$`), pasted into the target `claude` pane with
-`paste-buffer -p` (bracketed paste, so embedded newlines do not submit
-early), then submitted with a single `send-keys Enter`. This is the same
-primitive `auto_launch_claude` uses to drive that pane.
+Once ready, the message (prefixed with an `[tt x from <sender>]` header) is
+loaded into a per-process tmux buffer (`tt-x-$$`) and pasted with
+`paste-buffer -p` (bracketed paste, so embedded newlines don't submit early),
+then submitted with one `send-keys Enter` — the same primitive
+`auto_launch_claude` uses.
 
-`<session-id>` is the exact tmux session name (`tt name` in the other
-project). `tt x send` refuses if the session is missing, has no `claude`
-window, or its orchestrator pane is a bare shell.
+`<session-id>` is the exact tmux session name (`tt name` in the other project).
+`tt x send` refuses if the session is missing, has no `claude` window, or its
+orchestrator pane is a bare shell.
 
 ### Cross-session observation — `tt x observe`
 
-`tt x observe [run] [--interval N] [--duration N] [--all]` is a passive diagnostics loop for
-improving the `tt x send` classifier. Bare `tt x observe` is an alias for
-`tt x observe run`. It samples every running tt session's `claude` pane,
-reuses the same prompt classifier as `tt x send`, and inserts SQLite rows
-containing the classifier, unsafe marker, plain pane tail, escaped pane tail,
-prompt line, and stripped post-prompt text. The default output is the global
-tt state database, `${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.sqlite`,
-because the observer samples all tt sessions rather than only the invoking
-project.
-
-The observer is intentionally read-only: it never takes `x-send.lock`, never
-pastes, and never sends keys. It logs pane text by design, so it prints a
-startup warning and should be run only when local capture is acceptable.
-`--duration 0` means run until Ctrl-C. Duplicate detection is enforced with a
-unique payload key that ignores only the `ts` field, preserving the first seen
-row for each payload. `scripts/import-x-observe-jsonl.sh` imports the old JSONL
-log into the SQLite database and leaves the JSONL source in place. `--all` also
-emits metadata rows for down/no-orchestrator sessions; the default observes
-only live Claude Code panes.
+`tt x observe [run] [--interval N] [--duration N] [--all]` is a passive,
+read-only diagnostics loop for tuning the `tt x send` classifier (bare
+`tt x observe` aliases `run`). It samples every running tt session's `claude`
+pane with the same classifier as `tt x send` and writes rows to the global
+`${XDG_STATE_HOME:-$HOME/.local/state}/tt/x-observe.sqlite`, deduping on a
+payload key that ignores the `ts` field. It never takes `x-send.lock`, pastes,
+or sends keys — but it does log pane text, so it prints a startup warning.
+`--duration 0` runs until Ctrl-C; `--all` also samples down/no-orchestrator
+sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 
 ## Out of scope (deliberately)
 

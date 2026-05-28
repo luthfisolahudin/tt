@@ -21,6 +21,7 @@ a pool of `pi` code workers. This file orients an AI agent working **on**
 - `~/.local/bin/tt` is a **symlink** to `./tt` — edits here take effect
   immediately, no install step.
 - `docs/` — design, status, handoff.
+- `CHANGELOG.md` — version history (newest first).
 
 ## Conventions & invariants — do not regress
 
@@ -79,6 +80,24 @@ Worker states: `idle` · `busy` · `blocked` · `interrupted` · `starting` · `
 
 Commit only when the user asks. Keep `tt` a single file.
 
+## Versioning
+
+`tt` carries `MAJOR.MINOR.PATCH` in the `VERSION=` constant at the top of `tt`
+(pre-1.0, so MAJOR stays `0`). Bump once per coherent change set — a feature
+plus its follow-up fixes/docs share one version, not one bump per commit.
+
+- **PATCH** (`0.3.x`) — the default: a new `tt pi`/`tt x` verb or flag, a
+  behavior change, or a bug fix.
+- **MINOR** (`0.x.0`) — a cross-cutting shift in the worker model, state layout,
+  or runtime (e.g. the live-REPL rewrite, the XDG state move, the worker
+  pi-worker split).
+- **MAJOR** — reserved for post-1.0.
+
+To bump: edit `VERSION=`, add a `CHANGELOG.md` entry (newest first), commit,
+then tag the commit — `git tag -a v<x.y.z> -m "tt v<x.y.z> — <summary>"`. Tags
+let you diff releases (`git diff v0.3.9 v0.4.0`). `docs/STATUS.md` tracks only
+current state, never history.
+
 ## When changing X, update Y
 
 | Change | Also update |
@@ -89,3 +108,4 @@ Commit only when the user asks. Keep `tt` a single file.
 | install layout (`~/.local/share/tt/`, symlinks) | `docs/STATUS.md` current state |
 | completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-worker/APPEND_SYSTEM.md` |
 | model tiers or provider | `docs/DESIGN.md` model tiers · `README.md` |
+| `VERSION` bump | `CHANGELOG.md` entry · `git tag -a v<x.y.z>` (see Versioning) |
