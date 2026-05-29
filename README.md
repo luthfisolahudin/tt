@@ -64,6 +64,7 @@ Run `tt --help` for the full block. Summary:
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
 | `tt down` | Kill the project session (with confirmation). |
 | `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
+| `tt pi resume <cs>` | Recover an **interrupted** worker without a context wipe: re-drive its task to completion (`interrupted → busy → done`). Needs the REPL alive. In the worker's own pane, `/tt-resume` does the same. |
 | `tt pi send [--low\|--medium] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--notify`: ping the orchestrator on completion. |
 | `tt pi auto [--low\|--medium] [--rm] [--notify] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |

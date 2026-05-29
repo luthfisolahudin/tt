@@ -5,6 +5,29 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.0] — 2026-05-29
+
+In-place interrupt recovery (Release 2 of the records/recovery plan). Recover an
+**interrupted** worker without a context wipe: re-drive its task to completion,
+`interrupted → busy → done`. **Extension changed — respawn workers (`tt pi
+clear <cs>`) to load it; only interruptions that happen on the new REPL are
+resumable.** Worker-driven paths pending a live run.
+
+- **`tt pi resume <callsign>`** — re-drive an interrupted worker's task to
+  completion, keeping its live REPL context (vs `clear`, which respawns on a
+  fresh session-dir and loses it). Writes a `<cs>.resume` trigger the extension
+  watches; the extension rehydrates the pending task's id/nonce/notify and
+  re-sends the turn, so the normal `agent_end` validator closes it to `done`.
+  Requires the REPL running and the worker interrupted; the turn runs async
+  (join with `tt pi wait`).
+- **`/tt-resume`** — the same recovery typed in the worker's own pi pane (an
+  extension `registerCommand`), for when you interrupted it from there.
+- **`tasks.jsonl`** rows gain a `notify` field so a resumed task re-honors the
+  original `--notify`.
+
+(Reset-to-idle — abandoning the interrupted task — was scoped out; `resume`
+recovers, `clear` wipes.)
+
 ## [0.9.0] — 2026-05-29
 
 Task records & observability (Release 1 of the records/recovery plan, see

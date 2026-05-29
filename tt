@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.9.0"
+VERSION="0.10.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -568,6 +568,35 @@ pi_clear_cmd() {
   note "pi-$name cleared (gen $(current_gen "$name"))"
 }
 
+# Recover an interrupted worker WITHOUT a context wipe (vs `clear`, which
+# respawns on a fresh session-dir and loses context). `resume` re-drives the
+# interrupted task to completion: interrupted → busy → done. The live REPL keeps
+# all its context — that is the point — so it must still be running (never
+# respawn here). The extension rehydrates the pending task id/nonce from the
+# `<cs>.resume` trigger and re-sends the turn; the normal completion validator
+# closes it.
+pi_resume_cmd() {
+  local name=""
+  while (( $# )); do
+    case $1 in
+      -*) die "unknown flag for resume: $1" ;;
+      *)  [[ -z $name ]] && name=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  [[ -n $name ]] || die "resume: callsign required"
+  valid_callsign "$name" || die "invalid callsign: $name"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+  repl_running "$name" || \
+    die "pi-$name REPL is not running; resume needs its live context (use \`tt pi clear $name\` to start fresh)"
+  local st; st=$(worker_state "$name")
+  [[ $st == interrupted ]] || die "pi-$name is $st, not interrupted — nothing to resume"
+  # Presence of the trigger is the whole signal; write it atomically.
+  local rf="$(state_dir)/$name.resume"
+  printf '%s' "$(date +%s)" > "$rf.tmp" && mv "$rf.tmp" "$rf"
+  note "pi-$name resuming its interrupted task (context preserved); join with \`tt pi wait $name\`"
+}
+
 pi_send_cmd() {
   local name="" req_tier="" src="" notify=0
   while (( $# )); do
@@ -641,8 +670,8 @@ enqueue_to_worker() {
   if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
   printf '\nnonce: %s\n' "$nonce" >> "$promptfile"
 
-  printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s"}\n' \
-    "$turn" "$id" "$(date +%s)" "$tier" "$nonce" >> "$f"
+  printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s","notify":%d}\n' \
+    "$turn" "$id" "$(date +%s)" "$tier" "$nonce" "$notify" >> "$f"
 
   local nfield=""; [[ $notify == 1 ]] && nfield=" notify"
   local qdir="$(state_dir)/$name.queue"
@@ -1823,6 +1852,15 @@ PI WORKER VERBS
       the pi REPL on a fresh session-dir. Refuses unless idle/blocked;
       --force interrupts a busy turn first.
 
+  tt pi resume <callsign>
+      Recover an INTERRUPTED worker WITHOUT a context wipe: re-drive its
+      interrupted task to completion (interrupted → busy → done). Use this when
+      a turn was interrupted (you hit Esc, typed into the pane, …) but the REPL
+      is alive and its context is intact — unlike `clear`, it keeps that context.
+      Requires the REPL to be running and the worker to be interrupted. The turn
+      runs asynchronously; join it with `tt pi wait <callsign>`. (In the worker's
+      own pane you can instead type `/tt-resume`.)
+
   tt pi send [--low|--medium] [--notify] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin — feed inline text with a here-string or heredoc:
@@ -1961,6 +1999,7 @@ STATE
   $XDG_STATE_HOME/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
   $XDG_STATE_HOME/tt/<session>/<callsign>.queue/        per-worker task queue (<turn>.task)
   $XDG_STATE_HOME/tt/<session>/<callsign>.steer         run-now injection (tt pi steer)
+  $XDG_STATE_HOME/tt/<session>/<callsign>.resume        resume trigger (tt pi resume / /tt-resume)
   $XDG_STATE_HOME/tt/<session>/<callsign>.result        worker's latest-turn result (liveness pointer)
   $XDG_STATE_HOME/tt/<session>/<callsign>.collected     tt pi collect cursor (last collected turn)
   $XDG_STATE_HOME/tt/<session>/<callsign>.busy          marker: REPL is processing a turn
@@ -2015,6 +2054,11 @@ PROMPT
   # One-shot on a fresh ephemeral worker at medium effort (reaped after)
   TID=$(tt pi auto --medium --rm - <<<'TASK: ...')
   tt pi wait "$TID"
+
+  # You interrupted a worker (Esc / typed in its pane) → it's now `interrupted`.
+  # Resume the same task with its context intact (no wipe), then join it.
+  tt pi resume alfa                  # or type /tt-resume in the pi-alfa pane
+  tt pi wait alfa                    # interrupted → busy → done
 HELP
 }
 
@@ -2032,6 +2076,7 @@ case "$cmd" in
     sub=${1:-}; (( $# > 0 )) && shift || true
     case "$sub" in
       clear)    pi_clear_cmd "$@" ;;
+      resume)   pi_resume_cmd "$@" ;;
       send)     pi_send_cmd "$@" ;;
       auto)     pi_auto_cmd "$@" ;;
       notify-drain) pi_notify_drain_cmd "$@" ;;

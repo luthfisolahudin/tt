@@ -1,8 +1,8 @@
 # tt — status & handoff
 
-_v0.9.0._ Read before touching `tt`. Design rationale lives in `docs/DESIGN.md`;
+_v0.10.0._ Read before touching `tt`. Design rationale lives in `docs/DESIGN.md`;
 version history in `CHANGELOG.md`. The records/recovery effort is tracked in
-`docs/PLAN-records-recovery.md` (R1 landed in 0.9.0; R2 — in-place resume — next).
+`docs/PLAN-records-recovery.md` (R1 landed 0.9.0, R2 landed 0.10.0).
 
 ## Current state
 
@@ -28,6 +28,11 @@ version history in `CHANGELOG.md`. The records/recovery effort is tracked in
   `tt pi results` re-reads outcomes after the fact; `tt pi collect` joins a
   fan-out via a per-worker cursor without dropping already-finished tasks;
   `--json` on `wait`/`status`/`results`/`collect` emits a stable envelope.
+- **Interrupted workers recover in place (0.10.0).** `tt pi resume <cs>` (or the
+  in-pane `/tt-resume`) re-drives an interrupted task to completion without a
+  context wipe (`interrupted → busy → done`), via a `<cs>.resume` trigger the
+  extension consumes; `tasks.jsonl` carries `notify` so resume re-honors
+  `--notify`. `clear` still wipes; reset-to-idle was scoped out.
 
 ## Verified (manual)
 
@@ -106,12 +111,15 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Known limitations / not yet tested
 
-- **0.9.0 worker-driven paths are not yet live-verified.** The extension's
-  result-write change (unified `results/<id>.result` store) takes effect only on
-  a respawned REPL. The pure-bash readers and `results`/`collect`/`--json`
-  parsing + cursor logic were exercised against fabricated result files, but the
-  full loop (a real pi turn populating `results/`, `status` reason on a genuinely
-  interrupted worker, `collect` blocking on an in-flight task) needs a live run.
+- **0.9.0/0.10.0 worker-driven paths are not yet live-verified.** The extension
+  changes (unified `results/<id>.result` store; `<cs>.resume` recovery routine +
+  `/tt-resume` command) take effect only on a respawned REPL — and only
+  interruptions on the new REPL are resumable. The pure-bash readers and
+  `results`/`collect`/`--json` parsing + cursor logic were exercised against
+  fabricated result files, but the full loops need a live run: a real pi turn
+  populating `results/`; `status` reason on a genuinely interrupted worker;
+  `collect` blocking on an in-flight task; and the headline `tt pi resume` /
+  `/tt-resume` recovery (`interrupted → busy → done`) on a real interrupted turn.
 - `tt pi collect` has **no stuck guard** (like a pool wait) — bound a possibly-
   wedged worker with `--timeout`.
 - A `pool-<seq>` wait has **no stuck guard** — a pooled task legitimately waits

@@ -25,6 +25,9 @@
  *                  tracking: the extension consumes it (rename) and sends the
  *                  text steered into the current turn, or as a fresh untracked
  *                  turn if idle. This is `tt pi steer`.
+ *   <cs>.resume    recovery trigger (presence = signal): re-drive the worker's
+ *                  interrupted task to completion without a context wipe
+ *                  (interrupted → busy → done). `tt pi resume` / `/tt-resume`.
  *   results/<id>.result
  *                  the id-keyed result store for EVERY task (named + pool),
  *                  written atomically:
@@ -69,7 +72,9 @@ export default function (pi: ExtensionAPI) {
 	const poolDir = path.join(stateDir, "queue"); // shared pool — any idle worker steals
 	const resultsDir = path.join(stateDir, "results"); // <id>.result for EVERY task (named + pool)
 	const steerFile = path.join(stateDir, `${cs}.steer`);
+	const resumeFile = path.join(stateDir, `${cs}.resume`); // tt pi resume trigger
 	const resultFile = path.join(stateDir, `${cs}.result`);
+	const tasksFile = path.join(stateDir, `${cs}.tasks.jsonl`);
 	const readyFile = path.join(stateDir, `${cs}.ready`);
 	const busyFile = path.join(stateDir, `${cs}.busy`);
 	const logFile = path.join(stateDir, `${cs}.log`);
@@ -240,6 +245,85 @@ export default function (pi: ExtensionAPI) {
 		pi.sendUserMessage(text);
 	}
 
+	// --- in-place interrupt recovery (records/recovery R2) ---------------------
+	// When a tracked turn ends without a valid WORKER_DONE/BLOCKED footer (an Esc
+	// interrupt, a human typing over it), `agent_end` records `other`/`error` and
+	// the worker is `interrupted`. These recover it WITHOUT a context wipe — the
+	// live REPL keeps all its context. Driven by `/tt-resume` (typed in this
+	// worker's pane) and the `<cs>.resume` trigger that `tt pi resume` writes.
+
+	// The worker's latest-pointer (`<cs>.result`) → its id + status.
+	function readLatest(): { id: string; status: string } | null {
+		try {
+			const raw = fs.readFileSync(resultFile, "utf-8");
+			const id = (raw.match(/^id: (.*)$/m) ?? [])[1] ?? "";
+			const status = (raw.match(/^status: (.*)$/m) ?? [])[1] ?? "";
+			return id ? { id, status } : null;
+		} catch {
+			return null;
+		}
+	}
+
+	// A task's nonce + notify flag from the dispatch log, by id (newest match).
+	function lookupTask(id: string): { nonce: string; notify: boolean } {
+		try {
+			const lines = fs.readFileSync(tasksFile, "utf-8").trim().split("\n");
+			for (let i = lines.length - 1; i >= 0; i--) {
+				if (!lines[i].includes(`"id":"${id}"`)) continue;
+				return {
+					nonce: (lines[i].match(/"nonce":"([^"]*)"/) ?? [])[1] ?? "",
+					notify: /"notify":1/.test(lines[i]),
+				};
+			}
+		} catch {}
+		return { nonce: "", notify: false };
+	}
+
+	function notifyUI(msg: string) {
+		try {
+			if (agentCtx?.hasUI) agentCtx.ui.notify(`tt-worker ${cs}: ${msg}`, "info");
+		} catch {}
+	}
+
+	// Resume the interrupted task to completion: interrupted → busy → done.
+	// Rehydrate the pending id/nonce/notify so the normal `agent_end` validator
+	// closes the SAME task; the REPL context is untouched.
+	function resumeInterruptedTask() {
+		if (busy || (agentCtx && !agentCtx.isIdle())) {
+			logLine("resume: ignored — worker busy");
+			return;
+		}
+		const latest = readLatest();
+		if (!latest || (latest.status !== "other" && latest.status !== "error")) {
+			notifyUI("nothing to resume");
+			return;
+		}
+		const { nonce, notify } = lookupTask(latest.id);
+		pendingId = latest.id;
+		pendingNonce = nonce;
+		pendingNotify = notify;
+		setBusy(true);
+		writeResult(latest.id, `id: ${latest.id}\nstatus: running\n---\n`);
+		const tail = nonce
+			? ` End your response with the WORKER_DONE block (or BLOCKED), using exactly \`nonce: ${nonce}\`.`
+			: "";
+		pi.sendUserMessage(
+			`You were interrupted before finishing task ${latest.id}. Resume it from where you left off and complete the original TASK / SUCCESS criteria.${tail}`,
+		);
+	}
+
+	// Slash command the human can type in this worker's own pi pane.
+	try {
+		pi.registerCommand("tt-resume", {
+			description: "Resume this worker's interrupted task to completion (no context wipe)",
+			handler: async () => {
+				resumeInterruptedTask();
+			},
+		});
+	} catch (e) {
+		logLine("registerCommand: " + String(e));
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		agentCtx = ctx;
 		try {
@@ -296,6 +380,32 @@ export default function (pi: ExtensionAPI) {
 		} catch (e) {
 			logLine("steer watch setup: " + String(e));
 		}
+
+		// Recovery triggers: presence is the whole signal (no payload). Consume by
+		// rename — like the steer channel — so a baseline (no file) never fires.
+		const watchTrigger = (file: string, act: () => void) => {
+			try {
+				fs.watchFile(file, { interval: 200 }, () => {
+					try {
+						const consuming = file + ".consuming";
+						try {
+							fs.renameSync(file, consuming);
+						} catch {
+							return; // nothing written yet
+						}
+						try {
+							fs.unlinkSync(consuming);
+						} catch {}
+						act();
+					} catch (e) {
+						logLine("trigger callback: " + String(e));
+					}
+				});
+			} catch (e) {
+				logLine("trigger watch setup: " + String(e));
+			}
+		};
+		watchTrigger(resumeFile, resumeInterruptedTask);
 
 		// Queue pump: poll the worker's own queue dir and claim the next task
 		// whenever the REPL is idle. A 200ms interval matches the watchFile

@@ -1,8 +1,12 @@
 # Plan — task records & in-place recovery
 
 Working tracker for the two-release effort that closes the **read/recover side**
-of tt's file control channel. Confirmed 2026-05-29. Delete this file once R2 has
-landed and the content is folded into DESIGN/STATUS/CHANGELOG.
+of tt's file control channel. Confirmed 2026-05-29.
+
+**Status: both releases landed** — R1 in `0.9.0`, R2 in `0.10.0`. Reset-to-idle
+was scoped out at the user's call (resume recovers; clear wipes). Worker-driven
+paths await a live run (see STATUS). This file can be deleted once that live
+verification is done and nothing else references it.
 
 ## North star
 
@@ -21,7 +25,7 @@ fork *is* the substrate.
 ## Architecture (one substrate, three layers)
 
 ```
-Layer 3  RECOVERY      resume/reset (both sides)        ← lifecycle is reversible   [R2]
+Layer 3  RECOVERY      resume (tt pi resume / /tt-resume)← lifecycle is reversible  [R2]
 Layer 2  COLLECTION    tt pi collect (cursor)           ← fan-out is complete       [R1]
 Layer 1  OBSERVATION   state+reason · --json            ← read-projections          [R1]
 ──────────────────────────────────────────────────────────────────────────────────
@@ -55,20 +59,16 @@ Resume an interrupted worker **without a context wipe**:
 `idle → busy → interrupted → busy → done`.
 
 - `tasks.jsonl` row gains `notify` so resume can re-honor `--notify`.
-- `tt-worker.ts`: shared `resumeInterruptedTask()` — rehydrate id+nonce from
+- `tt-worker.ts`: `resumeInterruptedTask()` — rehydrate id+nonce+notify from
   `tasks.jsonl`, `setBusy(true)`, rewrite `running`, `sendUserMessage` a
   "finish + end with WORKER_DONE nonce:<n>" continuation; existing `agent_end`
   validator closes it to `done`.
-  - pi-side: `registerCommand("tt-resume", …)` + `/tt-reset` (typed in the pane).
+  - pi-side: `registerCommand("tt-resume", …)` (typed in the pane).
   - orchestrator: `tt pi resume <cs>` writes a `<cs>.resume` trigger the extension
-    watches (like `.steer`) and funnels into the same routine. `tt pi reset <cs>`
-    is pure-bash (rewrite `<cs>.result` to a terminal idle-classified status — not
-    delete, which would hang a late `wait`).
+    watches (like `.steer`) and funnels into the same routine.
+- **Reset-to-idle scoped out** (user's call). `resume` recovers an interrupted
+  task; `clear` wipes context. No `tt pi reset` / `/tt-reset`.
 
-Propagation: README · `--help` · skill (new verbs) · DESIGN (`.resume` trigger,
+Propagation (done): README · `--help` · skill · DESIGN (`.resume` trigger,
 `interrupted → busy → done` lifecycle, tasks.jsonl notify field) · CHANGELOG ·
 `VERSION=0.10.0`.
-
-**Gate:** R1 changes the extension's result store; respawn a worker and
-live-verify (results/ populated, `tt pi results`/`collect`/`--json` work) before
-starting R2, since R2 re-touches the same write path.

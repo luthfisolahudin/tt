@@ -117,6 +117,15 @@ format so the bash side needs no JSON parser:
   **steered into the current turn**, or as a fresh turn if idle. It does not
   touch the pending task id, so the in-flight task still validates its own
   completion. This is `tt pi steer` / `tt pi steer all`.
+- **`<cs>.resume`** — recovery trigger; presence is the whole signal (no
+  payload). tt writes it (atomic `mv`); the extension consumes it by rename and
+  **re-drives the worker's interrupted task to completion** — it rehydrates the
+  pending id/nonce/notify (looked up from `tasks.jsonl`), writes `running`, and
+  re-sends the turn, so the normal `agent_end` validator closes it. Indirection
+  through the extension is required: bash cannot restore the extension's
+  in-memory pending id, so a plain steer would run untracked and never reach
+  `done`. This is `tt pi resume` (and the in-pane `/tt-resume` command, which
+  calls the same routine directly).
 - **`results/<id>.result`** — the unified id-keyed result store. The extension
   writes a lifecycle file atomically for **every** task (named `<cs>-<turn>` and
   pool `pool-<seq>` alike):
@@ -147,7 +156,8 @@ format so the bash side needs no JSON parser:
 
 1. `tt pi send` assigns the task id `<callsign>-<turn>` (turn = line
    count of `tasks.jsonl` + 1), appends `<cs>.queue/<turn>.task`, and appends
-   `{turn,id,sent_at,tier,nonce}` to `tasks.jsonl`.
+   `{turn,id,sent_at,tier,nonce,notify}` to `tasks.jsonl` (the `notify` flag lets
+   `tt pi resume` re-honor the original `--notify`).
 2. `tt pi wait <cs> [task-id]` polls `results/<task-id>.result` until its `id`
    field matches; the task-id is **optional** and defaults to the worker's latest
    dispatch. Reading the per-id store (not the `<cs>.result` latest-pointer) means
@@ -215,8 +225,11 @@ State is derived from the window plus the control files:
   (the `<cs>.result` latest-pointer) is `blocked`.
 - `interrupted` — not busy, and that result is `other` (no valid completion
   marker) or `error` (extension exception). A fresh `send` refuses on an
-  interrupted worker until `tt pi clear`. `tt pi status` surfaces a one-line
-  reason from the recorded result so the recovery path is legible.
+  interrupted worker until it is recovered. `tt pi status` surfaces a one-line
+  reason from the recorded result so the recovery path is legible. Recover with
+  **`tt pi resume`** (re-drive to completion, context preserved) or `tt pi clear`
+  (wipe + fresh REPL). Resume restores the pending id/nonce, so the lifecycle is
+  `interrupted → busy → done` on the same live REPL — see `<cs>.resume` above.
 - `idle` — anything else (incl. an idle worker whose `<cs>.result` describes a
   pool/steer turn or an older task).
 
@@ -245,7 +258,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 | File | Contents |
 |------|----------|
-| `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier,nonce}`; plus a `{"clear":<gen>}` marker line per `clear`. |
+| `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier,nonce,notify}`; plus a `{"clear":<gen>}` marker line per `clear`. |
 | `<cs>.tier` | Current pi thinking tier. |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
@@ -258,6 +271,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `notify-drain.lock` | Single-instance lock for the notify drainer (holds its pid). |
 | `<cs>.ephemeral` | Marker: this worker was spawned by `tt pi auto --rm`; it never steals pool work and is reaped once idle with an empty queue. |
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
+| `<cs>.resume` | Recovery trigger for `tt pi resume` (presence = signal); consumed by the extension, which re-drives the interrupted task to completion. |
 | `<cs>.result` | Latest-pointer: a copy of this worker's newest `results/<id>.result`, read by `worker_state` for liveness/idle classification. |
 | `<cs>.busy` | Marker: the REPL is processing a turn (drives `worker_state` busy). |
 | `<cs>.starting` | Boot stamp (`date +%s`) written by `start_repl`; marks the REPL's async boot window for `repl_starting`. |
@@ -412,10 +426,12 @@ ceiling is the runaway backstop that makes auto-spawn safe.
   `rm` (destroy) and `clear` (reset context) stay.
 - Landed in 0.9.0: the JSON result envelope (`--json` on `wait`/`status`/
   `results`/`collect`), the durable per-id result store, and `tt pi results` /
-  `tt pi collect`. See CHANGELOG and `docs/PLAN-records-recovery.md`.
+  `tt pi collect`. Landed in 0.10.0: in-place interrupt recovery without a
+  context wipe (`tt pi resume` / `/tt-resume`). See CHANGELOG and
+  `docs/PLAN-records-recovery.md`.
 - Deferred until needed: `tt pi logs <cs>` (build when the orchestrator finds
-  itself steering blind); in-place interrupt recovery without a context wipe
-  (`tt pi resume`/`/tt-resume`) — Release 2 of the records/recovery plan.
+  itself steering blind); reset-to-idle of an interrupted task (scoped out —
+  `resume` recovers it, `clear` wipes it).
 
 ### Framing — the moat
 
