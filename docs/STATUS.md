@@ -90,26 +90,39 @@ landing in increments.
   not clobber the last tracked result.
 - `tt pi wait` task-id optional (defaults to latest); `all` pseudo-callsign
   joins all busy workers; untracked `id: -` result no longer pins `busy`.
-- **Verified live** against a throwaway project: lazy-spawn, queue claim,
-  two-task FIFO drain, steer (idle + into-turn), result not clobbered by steer,
-  `wait` with optional id, `wait all` with nothing busy.
 
-**Still v1 / not yet built:** the **shared pool queue + cross-worker
-work-stealing**, `tt pi auto` front door, lifecycle-by-`--rm`, `--notify`, the
-lazy zero-baseline pool (`tt up` still pre-spawns the three immortals), and
-removing the immortal caste + `tt pi add`. Immortals and `tt pi add` still
-exist.
+**Landed (0.6.0) — shared pool queue + `tt pi auto`:**
+
+- `tt pi auto` — reuse idle → spawn (under cap) → shared pool `queue/`; echoes
+  `using pi-<cs>`, prints the task id.
+- Cross-worker work-stealing: an idle worker drains its own queue then steals
+  the lowest pool task (atomic-rename claim). Pool tasks are `pool-<seq>` and
+  record to `queue-results/`; `tt pi wait pool-<seq>` polls that.
+- `worker_state` busy now keys off the `<cs>.busy` marker (set on any turn);
+  `tt pi wait` accepts a bare task-id; `tt pi status` shows a pool footer.
+- **Verified live**: lazy-spawn, queue claim, two-task FIFO drain, steer
+  (idle + into-turn), result not clobbered by steer, `wait` optional/bare id,
+  `wait all`, `auto` worker-assign, pool steal by an idle worker, `wait pool-N`.
+
+**Not yet built:** lifecycle-by-`--rm`, `--notify`, the lazy zero-baseline pool
+(`tt up` still pre-spawns the three immortals), and removing the immortal caste
++ `tt pi add`. Immortals and `tt pi add` still exist.
 
 ## Known limitations / not yet tested (v2)
 
-- A `steer` to an **idle** worker starts a fresh untracked turn; while it runs,
-  `tt pi status` reports the worker `idle` (untracked turns don't write a
-  result). Cosmetic; the queue pump still waits for true idle before claiming.
 - `<cs>.result` holds only the latest tracked task. Waiting on an older task id
   whose result has been overwritten by a newer task will not resolve — wait on
-  the latest (the default) or use `wait all`.
-- The shared pool queue path in the extension's claim logic (atomic rename) is
-  written to be multi-worker-safe but is not yet exercised (no pool queue yet).
+  the latest (the default) or use `wait all`. (Pool tasks are immune: each
+  `pool-<seq>` has its own `queue-results/` file.)
+- A `pool-<seq>` wait has **no stuck guard** — a pooled task legitimately waits
+  for a worker to free up, so an unclaimable pool task (e.g. all workers dead)
+  hangs until `--timeout`.
+- The pool steal was verified with a **single** idle worker. The atomic-rename
+  claim is written to be safe under multiple workers racing the same pool file,
+  but that concurrent contention has not been exercised live.
+- `tt pi auto`'s pool branch (all workers busy at the cap) was exercised by
+  hand-dropping a pool task; saturating the real cap to trigger it organically
+  was not (would spend a lot of quota).
 
 ## Possible next steps
 

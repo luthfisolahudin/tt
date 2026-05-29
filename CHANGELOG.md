@@ -5,6 +5,31 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.6.0] — 2026-05-29
+
+Pool model v2, increment 3 — the shared pool queue + `tt pi auto` front door.
+Verified live (auto worker-assign + lazy spawn, pool steal by an idle worker,
+`wait` on a pool id, bare-task-id wait).
+
+- **`tt pi auto [--low|--medium] (FILE|-)`** — dispatch without choosing a
+  worker: reuse an idle worker → else spawn one (under the cap) → else queue on
+  the **shared pool**. Echoes `using pi-<cs>` to stderr; the task-id goes to
+  stdout (`TID=$(tt pi auto …)`).
+- **Shared pool queue** (`queue/`) with cross-worker **work-stealing**: a task
+  with no home is claimed by the first worker to go idle (atomic-rename claim,
+  after its own pinned queue). Pool tasks use id `pool-<seq>` and record to a
+  dedicated `queue-results/<id>.result`, so a steal never clobbers the stealing
+  worker's own result. `tt pi wait pool-<seq>` polls that (no stuck guard — a
+  pool task legitimately waits for capacity; bound it with `--timeout`).
+- **`tt pi wait` accepts a bare task-id** (`tt pi wait alfa-3` derives the
+  callsign), so `tt pi wait $(tt pi auto …)` just works.
+- **`<cs>.busy` marker** — `worker_state` now keys "busy" off a marker the
+  extension maintains (set on any turn: tracked, stolen-pool, or steer), not
+  result parsing. Fixes the steer-into-idle status wrinkle and supports pool
+  tasks that record their result elsewhere.
+- **`tt pi status`** footer shows unclaimed pool tasks; it now always exits 0
+  (was returning the arithmetic-false of the pool check on an empty pool).
+
 ## [0.5.0] — 2026-05-29
 
 Pool model v2, increment 2 — a cross-cutting **control-channel** shift, so a

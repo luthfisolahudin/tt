@@ -97,6 +97,19 @@ format so the bash side needs no JSON parser:
   from inside `agent_end` (the agent is still "processing" there, so a send
   would be rejected — the bug that the idle-gated poll avoids). A busy worker
   simply leaves later tasks queued until its turn ends: `send` = run-next.
+- **`queue/`** — the **shared pool** (session-level, one dir for all workers).
+  `tt pi auto` drops a `<seq>.task` here when no worker is free. Drain priority:
+  an idle worker claims its own `<cs>.queue/` first, then **steals** the
+  lowest pool task. The atomic-rename claim is the concurrency primitive —
+  many workers race on the same file and only one rename wins. Pool tasks use
+  id `pool-<seq>` and write their result to **`queue-results/<id>.result`**
+  (not the stealing worker's `<cs>.result`), so a steal never clobbers a
+  worker's own result and `tt pi wait pool-<seq>` polls one known path.
+- **`<cs>.busy`** — a marker the extension sets while a turn is in flight (a
+  tracked task, a stolen pool task, or a steer) and clears on `agent_end`.
+  `worker_state` reads it to decide `busy`, because a pool task records its
+  result elsewhere and a steer records none — the marker is the only reliable
+  "is this REPL working" signal.
 - **`<cs>.steer`** — run-now injection, separate from the queue. tt writes it
   (atomic `mv`); the extension consumes it by rename and sends the text
   **steered into the current turn**, or as a fresh turn if idle. It does not
@@ -183,15 +196,17 @@ State is derived from the window plus the control files:
   the worker's unique `--session-dir` path via `pgrep -f`; tmux's
   `pane_current_command` is unreliable because pi runs as a grandchild)
   and it is past the boot window.
-- `busy` — the last tracked task id has no matching terminal result yet
-  (its task is queued or running), or the matching result's status is
-  `running`. A result `id` of `-` (an untracked steer/human turn) is **not**
-  treated as busy: a terminal untracked result reads as `idle`.
-- `blocked` — the last result's status is `blocked`.
-- `interrupted` — the last result's status is `other` (no valid
-  completion marker) or `error` (extension exception). A fresh `send`
-  refuses on an interrupted worker until `tt pi clear`.
-- `idle` — anything else.
+- `busy` — the `<cs>.busy` marker is set: the REPL is processing something (a
+  tracked task, a stolen pool task, or a steer). The marker is the signal,
+  not the result file — a pool task records to `queue-results/` and a steer
+  records nothing, so result-parsing alone would miss them.
+- `blocked` — not busy, and the worker's own last assigned-task result
+  (`<cs>.result`) is `blocked`.
+- `interrupted` — not busy, and that result is `other` (no valid completion
+  marker) or `error` (extension exception). A fresh `send` refuses on an
+  interrupted worker until `tt pi clear`.
+- `idle` — anything else (incl. an idle worker whose `<cs>.result` describes a
+  pool/steer turn or an older task).
 
 ## Model tiers
 
@@ -222,9 +237,13 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `<cs>.tier` | Current pi thinking tier. |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
-| `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming` is the transient mid-claim rename. |
+| `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming.<cs>` is the transient mid-claim rename. |
+| `queue/<seq>.task` | Shared pool task from `tt pi auto` (id `pool-<seq>`); any idle worker steals it after draining its own queue. |
+| `queue-results/<pool-id>.result` | Result of a stolen pool task, written by whichever worker ran it. |
+| `pool.seq` | Monotonic counter for pool task ids. |
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
-| `<cs>.result` | Latest tracked turn result (id / status / text). |
+| `<cs>.result` | Latest tracked (worker-assigned) turn result (id / status / text). |
+| `<cs>.busy` | Marker: the REPL is processing a turn (drives `worker_state` busy). |
 | `<cs>.starting` | Boot stamp (`date +%s`) written by `start_repl`; marks the REPL's async boot window for `repl_starting`. |
 | `<cs>.ready` | Marker: the REPL's queue pump + steer watch are live. |
 | `<cs>.log` | Append-only extension diagnostics for failures with no result. |
@@ -286,9 +305,13 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 >   single `<cs>.trigger` is gone); `send` enqueues (run-next) and lazy-spawns;
 >   `tt pi steer` / `steer all` add a run-now channel; `wait`'s task-id is
 >   optional and `all` is a pseudo-callsign for every busy worker.
-> - **Still pending:** the shared pool queue + cross-worker stealing, `tt pi
->   auto`, `--rm`, `--notify`, the lazy zero-baseline pool, and removing the
->   immortal caste + `tt pi add`. Immortals and `add` still exist.
+> - **0.6.0:** the **shared pool queue** (`queue/`) + cross-worker work-stealing
+>   and the **`tt pi auto`** front door; pool tasks (`pool-<seq>`) record to
+>   `queue-results/`; `worker_state` keys busy off the `<cs>.busy` marker;
+>   `wait` accepts a bare task-id / pool id.
+> - **Still pending:** `--rm` (ephemeral lifecycle), `--notify`, the lazy
+>   zero-baseline pool, and removing the immortal caste + `tt pi add`.
+>   Immortals and `add` still exist.
 
 ### Motivation
 

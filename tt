@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -354,6 +354,7 @@ start_repl() {
   # (a respawn means fresh context, so queued work is abandoned), the steer
   # channel, the last result, and the readiness marker.
   rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.ready" \
+        "$(state_dir)/$name.busy" \
         "$(state_dir)/$name.steer" "$(state_dir)/$name.steer.consuming"
   rm -rf "$(state_dir)/$name.queue"
   mkdir -p "$(state_dir)/$name.queue"
@@ -426,9 +427,11 @@ auto_launch_claude() {
   tmux send-keys -t "=$s:claude" 'claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions' Enter
 }
 
-# Fields of the worker's result file (written by the tt-worker extension).
-result_head() {
-  local f="$(state_dir)/$1.result" content id status
+# Fields of a result file (written by the tt-worker extension). The *_file
+# forms take a path so they serve both `<cs>.result` and the shared pool's
+# `queue-results/<pool-id>.result`.
+result_head_file() {
+  local f=$1 content id status
   [[ -f $f ]] || return 1
   content=$(cat "$f" 2>/dev/null) || return 1
   id=$(printf '%s\n' "$content" | sed -n 's/^id: //p' | head -n1)
@@ -436,7 +439,9 @@ result_head() {
   [[ -n $id ]] || id=-
   printf '%s %s\n' "$id" "$status"
 }
-result_text()   { sed -n '/^---$/,$p'     "$(state_dir)/$1.result" 2>/dev/null | sed '1d'; }
+result_text_file() { sed -n '/^---$/,$p' "$1" 2>/dev/null | sed '1d'; }
+result_head() { result_head_file "$(state_dir)/$1.result"; }
+result_text() { result_text_file "$(state_dir)/$1.result"; }
 
 last_task_row() {
   local f="$(state_dir)/$1.tasks.jsonl"
@@ -454,15 +459,21 @@ last_task_id() {
 
 # State is derived from the worker's window + control files:
 #   missing     — no window
-#   starting    — REPL is within its boot window (process or trigger
-#                 watch not yet up); becomes idle/down once it settles
+#   starting    — REPL is within its boot window (process or queue pump
+#                 not yet up); becomes idle/down once it settles
 #   down        — window exists but the REPL process is not running
-#   busy        — the last task sent has no matching terminal result yet
-#   blocked     — the last task's result status is `blocked`
-#   interrupted — last task ended without a valid WORKER_DONE/BLOCKED footer,
-#                 or the worker reported an internal error; requires
-#                 `tt pi clear` before the next dispatch
+#   busy        — the `<cs>.busy` marker is set: the REPL is processing
+#                 something (a tracked task, a stolen pool task, or a steer)
+#   blocked     — not busy, and the worker's last assigned-task result is blocked
+#   interrupted — not busy, and the last assigned-task result ended without a
+#                 valid WORKER_DONE/BLOCKED footer or with an internal error;
+#                 requires `tt pi clear` before the next dispatch
 #   idle        — anything else
+#
+# `busy` keys off the marker, not the result file, because a stolen pool task
+# records to `queue-results/` (not `<cs>.result`) and a steer records nothing —
+# so the marker is the only reliable "is this REPL working" signal. blocked /
+# interrupted are read from the worker's own `<cs>.result` once it is idle.
 worker_state() {
   local name=$1
   window_exists "pi-$name" || { printf 'missing'; return; }
@@ -471,23 +482,16 @@ worker_state() {
     printf 'down'; return
   fi
   [[ -f "$(state_dir)/$name.ready" ]] || { printf 'starting'; return; }
+  [[ -f "$(state_dir)/$name.busy" ]] && { printf 'busy'; return; }
+  # Idle REPL: classify from its own last assigned-task result (if any).
   local tid; tid=$(last_task_id "$name") || { printf 'idle'; return; }
   local head rid rst
-  head=$(result_head "$name") || { printf 'busy'; return; }
+  head=$(result_head "$name") || { printf 'idle'; return; }
   if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
-  if [[ $tid != "$rid" ]]; then
-    # An untracked turn (steer / human-typed) records id `-`; that is not a
-    # tracked task in flight, so a terminal result means idle. Any other
-    # mismatch means a newer tracked task is queued or running → busy.
-    if [[ $rid == "-" ]]; then
-      [[ $rst == running ]] && printf 'busy' || printf 'idle'
-    else
-      printf 'busy'
-    fi
-    return
-  fi
+  # A result for a different id (a pool/steer turn, or overwritten) does not
+  # describe this worker's last assigned task → treat as idle.
+  [[ $tid == "$rid" ]] || { printf 'idle'; return; }
   case "$rst" in
-    running)     printf 'busy'        ;;
     blocked)     printf 'blocked'     ;;
     other|error) printf 'interrupted' ;;
     *)           printf 'idle'        ;;
@@ -597,26 +601,29 @@ pi_send_cmd() {
   [[ $(worker_state "$name") == interrupted ]] && \
     die "pi-$name has an interrupted task; run \`tt pi clear $name\` first"
 
+  enqueue_to_worker "$name" "$tier" "$src"
+}
+
+# Assign id `<name>-<turn>`, persist the prompt (+nonce), log the task, and
+# append it to the worker's own queue dir; echo the id. Assumes pi-<name> is
+# ready. Shared by `send` and the worker-assigned path of `auto`. Each queue
+# file is line 1 = `<task id> <tier> <nonce>`, remainder = prompt body; the
+# extension validates nonce + terminal-position on agent_end.
+enqueue_to_worker() {
+  local name=$1 tier=$2 src=$3
   local f="$(state_dir)/$name.tasks.jsonl"
   local turn=1
   [[ -s $f ]] && turn=$(($(wc -l <"$f") + 1))
   local id="$name-$turn"
-  local nonce
-  nonce=$(openssl rand -hex 8)
+  local nonce; nonce=$(openssl rand -hex 8)
 
   local promptfile="$(state_dir)/$name.in.$turn.txt"
   if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
-  # Inject the per-dispatch nonce. The model copies it into the nonce: field
-  # of the WORKER_DONE/BLOCKED block; tt-worker.ts validates it on agent_end.
   printf '\nnonce: %s\n' "$nonce" >> "$promptfile"
 
   printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s"}\n' \
     "$turn" "$id" "$(date +%s)" "$tier" "$nonce" >> "$f"
 
-  # Enqueue: tt always appends to the worker's queue dir; the tt-worker
-  # extension claims the next `<turn>.task` when the REPL goes idle. Each
-  # file is line 1 = `<task id> <tier> <nonce>`, remainder = prompt body;
-  # the extension validates nonce + terminal-position on agent_end.
   local qdir="$(state_dir)/$name.queue"
   mkdir -p "$qdir"
   local qf="$qdir/$turn.task"
@@ -624,6 +631,96 @@ pi_send_cmd() {
   mv "$qf.tmp" "$qf"
 
   printf '%s\n' "$id"
+}
+
+# Pick a worker for a task with no explicit callsign and dispatch it:
+#   reuse an idle worker → else spawn one (under the cap) → else queue it on the
+# shared pool, where the first worker to go idle steals it. The chosen worker is
+# echoed to stderr ("using pi-<cs>"); the task-id goes to stdout so
+# `TID=$(tt pi auto …)` captures just the id.
+pi_auto_cmd() {
+  local req_tier="" src=""
+  while (( $# )); do
+    case $1 in
+      --low)    req_tier=low;    shift ;;
+      --medium) req_tier=medium; shift ;;
+      -)        src=-;           shift ;;
+      -*)       die "unknown flag for auto: $1" ;;
+      *)        [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  [[ -n $src ]] || die "auto: prompt source required (file path or -)"
+  if [[ $src != - && ! -r $src ]]; then
+    die "auto: '$src' is not a readable file. Source must be a FILE path or '-' for stdin."
+  fi
+  require_session
+
+  # Reuse the first idle worker (NATO order).
+  local chosen="" n
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    [[ $(worker_state "$n") == idle ]] && { chosen=$n; break; }
+  done
+  # None idle but room under the cap → spawn the next free callsign.
+  if [[ -z $chosen ]] && (( $(count_workers) < $(pi_cap) )); then
+    for n in "${NATO[@]}"; do
+      window_exists "pi-$n" || { chosen=$n; spawn_pi_window "$n"; break; }
+    done
+  fi
+
+  if [[ -n $chosen ]]; then
+    local cur_tier; cur_tier=$(current_tier "$chosen")
+    local tier="${req_tier:-$cur_tier}"
+    ensure_repl_ready "$chosen"
+    [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
+      printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
+    note "using pi-$chosen"
+    enqueue_to_worker "$chosen" "$tier" "$src"
+    return 0
+  fi
+
+  # Everyone exists and is busy at the cap → shared pool queue.
+  local tier="${req_tier:-$PI_DEFAULT_TIER}"
+  local pooldir="$(state_dir)/queue"; mkdir -p "$pooldir"
+  local seqf="$(state_dir)/pool.seq" seq=1
+  [[ -f $seqf ]] && seq=$(($(cat "$seqf") + 1))
+  printf '%d' "$seq" > "$seqf"
+  local id="pool-$seq"
+  local nonce; nonce=$(openssl rand -hex 8)
+  local promptfile="$(state_dir)/pool.$seq.txt"
+  if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
+  printf '\nnonce: %s\n' "$nonce" >> "$promptfile"
+  local qf="$pooldir/$seq.task"
+  { printf '%s %s %s\n' "$id" "$tier" "$nonce"; cat "$promptfile"; } > "$qf.tmp"
+  mv "$qf.tmp" "$qf"
+  note "all workers busy at cap ($(pi_cap)); queued $id — the next idle worker claims it"
+  printf '%s\n' "$id"
+}
+
+# Wait on a shared-pool task by its `pool-<seq>` id. Its result lives in
+# `queue-results/`, written by whichever worker stole it. No stuck guard: a
+# pool task legitimately waits for a worker to free up (bound it with --timeout).
+pi_wait_pool() {
+  local id=$1 timeout=$2
+  require_session
+  local prf="$(state_dir)/queue-results/$id.result"
+  local deadline=0; (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
+  while true; do
+    local head rid rst
+    head=$(result_head_file "$prf") || head=""
+    if [[ -n $head ]]; then
+      if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
+      if [[ $rid == "$id" ]]; then
+        case "$rst" in
+          done|blocked) result_text_file "$prf"; return 0 ;;
+          error) result_text_file "$prf" >&2; die "pool task $id reported an internal error" ;;
+          other) result_text_file "$prf" >&2; die "pool task $id finished without WORKER_DONE/BLOCKED (text above)" ;;
+        esac
+      fi
+    fi
+    deadline_expired "$deadline" && die "wait timeout for $id (${timeout}s)"
+    sleep 1
+  done
 }
 
 pi_wait_cmd() {
@@ -647,6 +744,19 @@ pi_wait_cmd() {
     [[ -z $task_id ]] || die "wait all: a task-id cannot be combined with 'all'"
     if (( timeout > 0 )); then pi_wait_all_cmd --timeout "$timeout"; else pi_wait_all_cmd; fi
     return $?
+  fi
+  # A pool task id is its own handle (results live in queue-results/).
+  if [[ $name == pool-* ]]; then
+    [[ -z $task_id ]] || die "wait: a pool id takes no second argument"
+    pi_wait_pool "$name" "$timeout"; return $?
+  fi
+  # Accept a bare task-id (`alfa-3`) as the sole argument — the callsign is
+  # embedded, so `tt pi wait $(tt pi auto …)` just works.
+  if [[ -z $task_id && $name == *-* ]]; then
+    local _cs="${name%-*}" _turn="${name##*-}"
+    if [[ $_turn =~ ^[0-9]+$ ]] && valid_callsign "$_cs"; then
+      task_id=$name; name=$_cs
+    fi
   fi
   valid_callsign "$name" || die "invalid callsign: $name"
   require_session
@@ -879,6 +989,15 @@ pi_status_cmd() {
     fi
     printf '%-9s  %-11s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
   done
+  # Shared pool: tasks dispatched via `tt pi auto` while every worker was busy,
+  # awaiting a free worker to steal them.
+  local pooldir="$(state_dir)/queue" pending=0
+  if [[ -d $pooldir ]]; then
+    pending=$(find "$pooldir" -maxdepth 1 -name '*.task' 2>/dev/null | wc -l)
+  fi
+  if (( pending )); then
+    printf 'pool: %d task(s) queued (unclaimed)\n' "$pending"
+  fi
 }
 
 pi_rm_cmd() {
@@ -1351,21 +1470,29 @@ PI WORKER VERBS
       to a BUSY worker queues behind the current turn (run-next; use
       `tt pi steer` for run-now). Prints task-id (e.g. "alfa-3").
 
+  tt pi auto [--low|--medium] (FILE | -)
+      Dispatch without naming a worker: reuse an idle worker, else spawn one
+      (under the cap), else queue on the shared pool where the first worker
+      to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
+      task-id to stdout (`<cs>-<n>` when assigned, `pool-<n>` when pooled), so
+      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id.
+
   tt pi steer <callsign|all> (FILE | -)
       Inject a message NOW — steered into the worker's current turn (or a
       fresh turn if idle), bypassing the queue. Unlike `send`, it is not a
       tracked task (no task-id, no result of its own). `all` fans the
       message out to every live worker.
 
-  tt pi wait [--timeout SECONDS] <callsign|all> [task-id]
-      Block until the tt-worker extension records the task's result. The
-      task-id is optional and defaults to the worker's latest dispatch.
-      `tt pi wait all` joins every busy worker and prints one consolidated
-      report (a `== <cs> (<id>) <status> ==` header per worker). By default
+  tt pi wait [--timeout SECONDS] <callsign|task-id|pool-id|all> [task-id]
+      Block until the task's result is recorded. The target may be a callsign
+      (waits on its latest dispatch — task-id optional), a bare task-id like
+      `alfa-3` (callsign derived), a `pool-<n>` id (a `tt pi auto` pool task),
+      or `all` (join every busy worker, one consolidated report). By default
       it waits forever; Ctrl-C cancels. --timeout SECONDS bounds it
-      (--timeout 0 also waits forever); a task left queued on an idle worker
-      still fails fast at 20s. Prints the WORKER_DONE / BLOCKED block.
-      Exit 0 on done/blocked, non-zero on timeout / unexpected completion.
+      (--timeout 0 also waits forever); a worker task left queued on an idle
+      worker fails fast at 20s (a pool task has no such guard — it waits for
+      capacity). Prints the WORKER_DONE / BLOCKED block. Exit 0 on
+      done/blocked, non-zero on timeout / unexpected completion.
 
   tt pi status
       One row per existing worker: CALLSIGN, STATE
@@ -1441,7 +1568,10 @@ STATE
   $XDG_STATE_HOME/tt/<session>/<callsign>.queue/        per-worker task queue (<turn>.task)
   $XDG_STATE_HOME/tt/<session>/<callsign>.steer         run-now injection (tt pi steer)
   $XDG_STATE_HOME/tt/<session>/<callsign>.result        latest tracked turn result
+  $XDG_STATE_HOME/tt/<session>/<callsign>.busy          marker: REPL is processing a turn
   $XDG_STATE_HOME/tt/<session>/<callsign>.ready         REPL queue-pump + steer-watch are live
+  $XDG_STATE_HOME/tt/<session>/queue/                   shared pool queue (<seq>.task, tt pi auto)
+  $XDG_STATE_HOME/tt/<session>/queue-results/           pool task results (pool-<seq>.result)
   $XDG_STATE_HOME/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
 
 EXIT CODES
@@ -1472,6 +1602,10 @@ PROMPT
   # See who's free
   tt pi status
 
+  # Let tt pick the worker (idle → spawn → pool); wait on the returned id
+  TID=$(tt pi auto - <<<'TASK: ...')   # stderr: "using pi-bravo"
+  tt pi wait "$TID"                    # works for alfa-3 or pool-3 alike
+
   # Fan out distinct tasks, then join them all in one call
   tt pi send alfa  - <<<'TASK: ...'
   tt pi send bravo - <<<'TASK: ...'
@@ -1501,6 +1635,7 @@ case "$cmd" in
       add)      pi_add_cmd "$@" ;;
       clear)    pi_clear_cmd "$@" ;;
       send)     pi_send_cmd "$@" ;;
+      auto)     pi_auto_cmd "$@" ;;
       steer)    pi_steer_cmd "$@" ;;
       steer-all) pi_steer_all_cmd "$@" ;;
       wait)     pi_wait_cmd "$@" ;;

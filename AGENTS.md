@@ -75,6 +75,8 @@ P
                                # dispatch; prints task-id like "alfa-3"
                                # (queues behind a busy worker; lazy-spawns absent)
 tt pi wait alfa                # block on alfa's latest task (task-id optional)
+TID=$(tt pi auto - <<<'...')   # let tt pick a worker (idle→spawn→pool); echoes "using pi-X"
+tt pi wait "$TID"              # waits on alfa-3 or pool-3 alike
 tt pi steer alfa - <<<'...'    # inject NOW into the current turn (run-now)
 tt pi wait all                 # fan-out join across all busy workers
 tt pi status                   # show all workers: state, last task, tier, gen

@@ -48,15 +48,38 @@ export default function (pi: ExtensionAPI) {
 	if (!cs) return; // inert outside tt-spawned workers
 
 	const stateDir = process.env.TT_WORKER_STATE ?? "/tmp/tt";
-	const queueDir = path.join(stateDir, `${cs}.queue`);
+	const queueDir = path.join(stateDir, `${cs}.queue`); // this worker's own queue
+	const poolDir = path.join(stateDir, "queue"); // shared pool — any idle worker steals
+	const poolResultsDir = path.join(stateDir, "queue-results"); // pool-<seq>.result
 	const steerFile = path.join(stateDir, `${cs}.steer`);
 	const resultFile = path.join(stateDir, `${cs}.result`);
 	const readyFile = path.join(stateDir, `${cs}.ready`);
+	const busyFile = path.join(stateDir, `${cs}.busy`);
 	const logFile = path.join(stateDir, `${cs}.log`);
 	let pendingId = "-";
 	let pendingNonce = "";
 	let busy = false; // a turn is in flight (tt-claimed task or steer-started)
 	let agentCtx: any = null; // captured at session_start; exposes isIdle()
+
+	// `busy` mirrored to a marker file so the bash side can detect "this REPL
+	// is processing something" (tracked task, stolen pool task, or steer)
+	// without parsing results — which a pool task writes elsewhere anyway.
+	function setBusy(b: boolean) {
+		busy = b;
+		try {
+			if (b) fs.writeFileSync(busyFile, "1");
+			else fs.unlinkSync(busyFile);
+		} catch {}
+	}
+
+	// Pool tasks (id `pool-<seq>`) record to a shared, id-keyed result file so a
+	// steal never clobbers the stealing worker's own `.result`, and a waiter
+	// polls one known path. Worker-assigned tasks use `<cs>.result`.
+	function resultFileFor(id: string): string {
+		return id.startsWith("pool-")
+			? path.join(poolResultsDir, `${id}.result`)
+			: resultFile;
+	}
 
 	function lastAssistantText(messages: any[]): string {
 		let text = "";
@@ -88,6 +111,40 @@ export default function (pi: ExtensionAPI) {
 	// sendUserMessage, so the interval poll and agent_end can never interleave
 	// mid-claim. Claiming is an atomic rename, so it is safe even when several
 	// workers later share a queue (the pool queue).
+	// Atomically claim the lowest-numbered `<n>.task` in `dir` and return its
+	// raw contents (or null if none / lost the race). The rename is the
+	// concurrency primitive: for the shared pool, many workers race here and
+	// only one rename of a given file succeeds — the rest get ENOENT.
+	function claimFrom(dir: string): string | null {
+		let entries: string[];
+		try {
+			entries = fs.readdirSync(dir);
+		} catch {
+			return null; // dir absent (e.g. no pool yet)
+		}
+		const tasks = entries
+			.filter((f) => f.endsWith(".task"))
+			.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+		if (tasks.length === 0) return null;
+		const src = path.join(dir, tasks[0]);
+		const claimed = `${src}.claiming.${cs}`;
+		try {
+			fs.renameSync(src, claimed);
+		} catch {
+			return null; // another worker claimed it first
+		}
+		try {
+			return fs.readFileSync(claimed, "utf-8");
+		} catch (e) {
+			logLine("read task: " + String(e));
+			return null;
+		} finally {
+			try {
+				fs.unlinkSync(claimed);
+			} catch {}
+		}
+	}
+
 	function pump() {
 		if (busy) return;
 		// Only claim when the runtime is genuinely idle. `busy` is set
@@ -98,34 +155,12 @@ export default function (pi: ExtensionAPI) {
 		// poll keeps sendUserMessage from ever being rejected (which would
 		// consume a task that then never runs).
 		if (!agentCtx || !agentCtx.isIdle()) return;
-		let entries: string[];
-		try {
-			entries = fs.readdirSync(queueDir);
-		} catch {
-			return;
-		}
-		const tasks = entries
-			.filter((f) => f.endsWith(".task"))
-			.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
-		if (tasks.length === 0) return;
-		const claimed = path.join(queueDir, tasks[0]) + ".claiming";
-		try {
-			fs.renameSync(path.join(queueDir, tasks[0]), claimed);
-		} catch {
-			return; // lost the race / already gone
-		}
-		let raw = "";
-		try {
-			raw = fs.readFileSync(claimed, "utf-8");
-		} catch (e) {
-			logLine("read task: " + String(e));
-			return;
-		} finally {
-			try {
-				fs.unlinkSync(claimed);
-			} catch {}
-		}
-		if (!raw.trim()) return;
+		// Drain priority: this worker's own pinned queue first, then steal from
+		// the shared pool. Own-queue tasks need this worker's context; pool
+		// tasks are stealable for throughput.
+		let raw = claimFrom(queueDir);
+		if (raw === null) raw = claimFrom(poolDir);
+		if (raw === null || !raw.trim()) return;
 		const nl = raw.indexOf("\n");
 		if (nl < 0) return; // need an id line + body
 		// line 1 = `<id> <tier> <nonce>`; tier and nonce are optional.
@@ -137,8 +172,8 @@ export default function (pi: ExtensionAPI) {
 		if (!text) return;
 		pendingId = id;
 		pendingNonce = nonce;
-		busy = true;
-		atomicWrite(resultFile, "id: " + id + "\nstatus: running\n---\n");
+		setBusy(true);
+		atomicWrite(resultFileFor(id), "id: " + id + "\nstatus: running\n---\n");
 		// Reasoning effort is a runtime knob — no REPL respawn.
 		if (tier === "low" || tier === "medium") {
 			try {
@@ -152,6 +187,11 @@ export default function (pi: ExtensionAPI) {
 		agentCtx = ctx;
 		try {
 			fs.mkdirSync(queueDir, { recursive: true });
+			fs.mkdirSync(poolResultsDir, { recursive: true });
+			// fresh REPL → not processing anything yet
+			try {
+				fs.unlinkSync(busyFile);
+			} catch {}
 			// create-if-missing only — never clobber a steer tt may have written
 			if (!fs.existsSync(steerFile)) fs.writeFileSync(steerFile, "");
 		} catch (e) {
@@ -187,7 +227,7 @@ export default function (pi: ExtensionAPI) {
 					if (agentCtx && agentCtx.isIdle()) {
 						// No turn to steer into — start a fresh untracked turn.
 						// busy=true so the queue pump does not race a claim into it.
-						busy = true;
+						setBusy(true);
 						pi.sendUserMessage(text);
 					} else {
 						pi.sendUserMessage(text, { deliverAs: "steer" });
@@ -225,9 +265,10 @@ export default function (pi: ExtensionAPI) {
 		// must NOT clobber the last tracked task's result — `tt pi wait` reads
 		// that file for the tracked task. Just go idle and let the pump resume.
 		if (pendingId === "-") {
-			busy = false;
+			setBusy(false);
 			return;
 		}
+		const resultDst = resultFileFor(pendingId);
 		try {
 			const text = lastAssistantText(event?.messages);
 			// For both done and blocked: require matching nonce as a dedicated field
@@ -265,14 +306,14 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 			}
-			atomicWrite(resultFile, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
+			atomicWrite(resultDst, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
 		} catch (e) {
 			logLine("agent_end: " + String(e));
-			atomicWrite(resultFile, "id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n");
+			atomicWrite(resultDst, "id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n");
 		} finally {
 			pendingId = "-";
 			pendingNonce = "";
-			busy = false;
+			setBusy(false);
 			// Do NOT claim the next task here: agent_end fires while the agent
 			// is still "processing", so sendUserMessage would be rejected. The
 			// idle-gated interval pump claims it on the next tick instead.
