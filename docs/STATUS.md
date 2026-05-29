@@ -1,7 +1,8 @@
 # tt — status & handoff
 
-_v0.4.0._ Read before touching `tt`. Design rationale lives in `docs/DESIGN.md`;
-version history in `CHANGELOG.md`.
+_v0.9.0._ Read before touching `tt`. Design rationale lives in `docs/DESIGN.md`;
+version history in `CHANGELOG.md`. The records/recovery effort is tracked in
+`docs/PLAN-records-recovery.md` (R1 landed in 0.9.0; R2 — in-place resume — next).
 
 ## Current state
 
@@ -21,6 +22,12 @@ version history in `CHANGELOG.md`.
   preserving pi context (no respawn).
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
+- **Results are durable and id-addressable (0.9.0).** Every task — named and pool
+  alike — records to `results/<id>.result`; `<cs>.result` is just the worker's
+  latest-pointer for liveness. `tt pi wait <id>` resolves any id (older ones too);
+  `tt pi results` re-reads outcomes after the fact; `tt pi collect` joins a
+  fan-out via a per-worker cursor without dropping already-finished tasks;
+  `--json` on `wait`/`status`/`results`/`collect` emits a stable envelope.
 
 ## Verified (manual)
 
@@ -99,10 +106,14 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Known limitations / not yet tested
 
-- `<cs>.result` holds only the latest tracked task. Waiting on an older task id
-  whose result has been overwritten by a newer task will not resolve — wait on
-  the latest (the default) or use `wait all`. (Pool tasks are immune: each
-  `pool-<seq>` has its own `queue-results/` file.)
+- **0.9.0 worker-driven paths are not yet live-verified.** The extension's
+  result-write change (unified `results/<id>.result` store) takes effect only on
+  a respawned REPL. The pure-bash readers and `results`/`collect`/`--json`
+  parsing + cursor logic were exercised against fabricated result files, but the
+  full loop (a real pi turn populating `results/`, `status` reason on a genuinely
+  interrupted worker, `collect` blocking on an in-flight task) needs a live run.
+- `tt pi collect` has **no stuck guard** (like a pool wait) — bound a possibly-
+  wedged worker with `--timeout`.
 - A `pool-<seq>` wait has **no stuck guard** — a pooled task legitimately waits
   for a worker to free up, so an unclaimable pool task (e.g. all workers dead)
   hangs until `--timeout`.

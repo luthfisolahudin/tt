@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.8.2"
+VERSION="0.9.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -409,8 +409,8 @@ auto_launch_claude() {
 }
 
 # Fields of a result file (written by the tt-worker extension). The *_file
-# forms take a path so they serve both `<cs>.result` and the shared pool's
-# `queue-results/<pool-id>.result`.
+# forms take a path so they serve both `<cs>.result` (the worker's latest-
+# pointer) and the unified id-keyed store `results/<id>.result`.
 result_head_file() {
   local f=$1 content id status
   [[ -f $f ]] || return 1
@@ -423,6 +423,58 @@ result_head_file() {
 result_text_file() { sed -n '/^---$/,$p' "$1" 2>/dev/null | sed '1d'; }
 result_head() { result_head_file "$(state_dir)/$1.result"; }
 result_text() { result_text_file "$(state_dir)/$1.result"; }
+# The unified id-keyed store: every task (named `<cs>-<turn>` and pool
+# `pool-<seq>`) records to `results/<id>.result`. `<cs>.result` is only the
+# worker's latest-pointer, read by `worker_state`; per-id reads use these.
+result_path_by_id() { printf '%s' "$(state_dir)/results/$1.result"; }
+result_head_by_id() { result_head_file "$(state_dir)/results/$1.result"; }
+result_text_by_id() { result_text_file "$(state_dir)/results/$1.result"; }
+
+# A task id is `<callsign>-<turn>` or `pool-<seq>` — both match this; a bare
+# callsign does not. Used to disambiguate `results`/`collect` targets.
+is_task_id() { [[ $1 =~ ^[a-z]+-[0-9]+$ ]]; }
+
+# Minimal JSON string escaper — no `jq` dependency, in keeping with the
+# bash-only, no-JSON-parser ethos. Covers the characters that actually occur in
+# result text (backslash, quote, the three whitespace controls).
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/\\r}
+  printf '%s' "$s"
+}
+
+# Pull the last `<field>: value` line from a result body — the WORKER_DONE /
+# BLOCKED block is terminal, so `tail -n1` prefers it over any earlier prose.
+result_field() { sed -n "s/^$2: //p" <<<"$1" | tail -n1; }
+
+# Emit one task's result as a JSON envelope. Parsed WORKER_DONE/BLOCKED fields
+# are always present (empty when absent) for a stable schema; `text` (the raw
+# body) is included only for other/error, where there is no structured block.
+emit_result_json() {
+  local id=$1 status=$2 text=$3 fc sm nt rs
+  fc=$(result_field "$text" files_changed)
+  sm=$(result_field "$text" summary)
+  nt=$(result_field "$text" notes)
+  rs=$(result_field "$text" reason)
+  printf '{"id":"%s","status":"%s","summary":"%s","files_changed":"%s","notes":"%s","reason":"%s"' \
+    "$(json_escape "$id")" "$(json_escape "$status")" "$(json_escape "$sm")" \
+    "$(json_escape "$fc")" "$(json_escape "$nt")" "$(json_escape "$rs")"
+  case $status in
+    other|error) printf ',"text":"%s"' "$(json_escape "$text")" ;;
+  esac
+  printf '}'
+}
+
+# A short one-line hint for `tt pi status` interrupted/blocked rows: the blocked
+# reason or done summary if present, else the first non-empty line of the text.
+result_reason_hint() {
+  local text=$1 r
+  r=$(result_field "$text" reason)
+  [[ -z $r ]] && r=$(result_field "$text" summary)
+  [[ -z $r ]] && r=$(grep -m1 -v '^[[:space:]]*$' <<<"$text" || true)
+  printf '%s' "${r:0:80}"
+}
 
 last_task_row() {
   local f="$(state_dir)/$1.tasks.jsonl"
@@ -452,9 +504,10 @@ last_task_id() {
 #   idle        — anything else
 #
 # `busy` keys off the marker, not the result file, because a stolen pool task
-# records to `queue-results/` (not `<cs>.result`) and a steer records nothing —
-# so the marker is the only reliable "is this REPL working" signal. blocked /
-# interrupted are read from the worker's own `<cs>.result` once it is idle.
+# is not mirrored to `<cs>.result` (it records only to `results/<id>.result`)
+# and a steer records nothing — so the marker is the only reliable "is this REPL
+# working" signal. blocked / interrupted are read from the worker's own
+# `<cs>.result` latest-pointer once it is idle.
 worker_state() {
   local name=$1
   window_exists "pi-$name" || { printf 'missing'; return; }
@@ -712,13 +765,13 @@ pi_auto_cmd() {
   printf '%s\n' "$id"
 }
 
-# Wait on a shared-pool task by its `pool-<seq>` id. Its result lives in
-# `queue-results/`, written by whichever worker stole it. No stuck guard: a
-# pool task legitimately waits for a worker to free up (bound it with --timeout).
+# Wait on a shared-pool task by its `pool-<seq>` id. Its result lives in the
+# unified `results/` store, written by whichever worker stole it. No stuck guard:
+# a pool task legitimately waits for a worker to free up (bound it with --timeout).
 pi_wait_pool() {
-  local id=$1 timeout=$2
+  local id=$1 timeout=$2 json=${3:-0}
   require_session
-  local prf="$(state_dir)/queue-results/$id.result"
+  local prf; prf=$(result_path_by_id "$id")
   local deadline=0; (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
   while true; do
     local head rid rst
@@ -727,9 +780,16 @@ pi_wait_pool() {
       if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
       if [[ $rid == "$id" ]]; then
         case "$rst" in
-          done|blocked) result_text_file "$prf"; return 0 ;;
-          error) result_text_file "$prf" >&2; die "pool task $id reported an internal error" ;;
-          other) result_text_file "$prf" >&2; die "pool task $id finished without WORKER_DONE/BLOCKED (text above)" ;;
+          done|blocked)
+            if (( json )); then emit_result_json "$id" "$rst" "$(result_text_file "$prf")"; printf '\n'
+            else result_text_file "$prf"; fi
+            return 0 ;;
+          error)
+            (( json )) && { emit_result_json "$id" error "$(result_text_file "$prf")"; printf '\n'; exit 1; }
+            result_text_file "$prf" >&2; die "pool task $id reported an internal error" ;;
+          other)
+            (( json )) && { emit_result_json "$id" other "$(result_text_file "$prf")"; printf '\n'; exit 1; }
+            result_text_file "$prf" >&2; die "pool task $id finished without WORKER_DONE/BLOCKED (text above)" ;;
         esac
       fi
     fi
@@ -739,12 +799,13 @@ pi_wait_pool() {
 }
 
 pi_wait_cmd() {
-  local name="" task_id="" timeout=0
+  local name="" task_id="" timeout=0 json=0
   while (( $# )); do
     case $1 in
       --timeout)
         shift; [[ $# -gt 0 ]] || die "wait: --timeout requires seconds"
         valid_timeout_arg "wait" "$1"; timeout=$1; shift ;;
+      --json) json=1; shift ;;
       -*) die "unknown flag for wait: $1" ;;
       *)
         if [[ -z $name ]]; then name=$1
@@ -757,13 +818,13 @@ pi_wait_cmd() {
   # `all` is a pseudo-callsign meaning every busy worker — fan-out join.
   if [[ $name == all ]]; then
     [[ -z $task_id ]] || die "wait all: a task-id cannot be combined with 'all'"
-    if (( timeout > 0 )); then pi_wait_all_cmd --timeout "$timeout"; else pi_wait_all_cmd; fi
-    return $?
+    local -a a=(); (( json )) && a+=(--json); (( timeout > 0 )) && a+=(--timeout "$timeout")
+    pi_wait_all_cmd "${a[@]}"; return $?
   fi
-  # A pool task id is its own handle (results live in queue-results/).
+  # A pool task id is its own handle (results live in the unified store).
   if [[ $name == pool-* ]]; then
     [[ -z $task_id ]] || die "wait: a pool id takes no second argument"
-    pi_wait_pool "$name" "$timeout"; return $?
+    pi_wait_pool "$name" "$timeout" "$json"; return $?
   fi
   # Accept a bare task-id (`alfa-3`) as the sole argument — the callsign is
   # embedded, so `tt pi wait $(tt pi auto …)` just works.
@@ -792,23 +853,32 @@ pi_wait_cmd() {
   local stuck_since=0
   while true; do
     local head="" rid="" rst=""
-    head=$(result_head "$name") || true
+    # Read the unified per-id store, so waiting on an OLDER task-id (whose
+    # `<cs>.result` latest-pointer has since been overwritten) still resolves.
+    head=$(result_head_by_id "$task_id") || true
     if [[ -n $head ]]; then
       if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
       if [[ $rid == "$task_id" ]]; then
         case "$rst" in
           done|blocked)
-            result_text "$name"
+            if (( json )); then emit_result_json "$task_id" "$rst" "$(result_text_by_id "$task_id")"; printf '\n'
+            else result_text_by_id "$task_id"; fi
             # Reap promptly if this was an ephemeral (`--rm`) worker's last task.
             [[ -f "$(state_dir)/$name.ephemeral" ]] && reap_ephemeral_workers
             return 0
             ;;
           error)
-            result_text "$name" >&2
+            if (( json )); then
+              emit_result_json "$task_id" error "$(result_text_by_id "$task_id")"; printf '\n'; exit 1
+            fi
+            result_text_by_id "$task_id" >&2
             die "pi-$name reported an internal error for $task_id"
             ;;
           other)
-            result_text "$name" >&2
+            if (( json )); then
+              emit_result_json "$task_id" other "$(result_text_by_id "$task_id")"; printf '\n'; exit 1
+            fi
+            result_text_by_id "$task_id" >&2
             die "pi finished $task_id without WORKER_DONE/BLOCKED (text above)"
             ;;
         esac
@@ -843,12 +913,13 @@ pi_wait_cmd() {
 # This is the fan-out join that keeps a multi-worker dispatch O(1) in the
 # orchestrator's context instead of one `wait` round-trip per worker.
 pi_wait_all_cmd() {
-  local timeout=0; local -a names=()
+  local timeout=0 json=0; local -a names=()
   while (( $# )); do
     case $1 in
       --timeout)
         shift; [[ $# -gt 0 ]] || die "wait-all: --timeout requires seconds"
         valid_timeout_arg "wait-all" "$1"; timeout=$1; shift ;;
+      --json) json=1; shift ;;
       -*) die "unknown flag for wait-all: $1" ;;
       *)  valid_callsign "$1" || die "invalid callsign: $1"; names+=("$1"); shift ;;
     esac
@@ -864,6 +935,7 @@ pi_wait_all_cmd() {
     done
   fi
   if (( ${#names[@]} == 0 )); then
+    (( json )) && { printf '[]\n'; return 0; }
     note "wait-all: no busy workers"
     return 0
   fi
@@ -887,14 +959,14 @@ pi_wait_all_cmd() {
     for i in "${!names[@]}"; do
       (( ${pend[i]} )) || continue
       local nm=${names[i]} tid=${tids[i]} head rid rst
-      head=$(result_head "$nm") || head=""
+      head=$(result_head_by_id "$tid") || head=""
       if [[ -n $head ]]; then
         if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
         if [[ $rid == "$tid" ]]; then
           case "$rst" in
-            done|blocked) statuses[i]=$rst;  texts[i]=$(result_text "$nm"); pend[i]=0; continue ;;
-            error)        statuses[i]=error; texts[i]=$(result_text "$nm"); pend[i]=0; rc=1; continue ;;
-            other)        statuses[i]=other; texts[i]=$(result_text "$nm"); pend[i]=0; rc=1; continue ;;
+            done|blocked) statuses[i]=$rst;  texts[i]=$(result_text_by_id "$tid"); pend[i]=0; continue ;;
+            error)        statuses[i]=error; texts[i]=$(result_text_by_id "$tid"); pend[i]=0; rc=1; continue ;;
+            other)        statuses[i]=other; texts[i]=$(result_text_by_id "$tid"); pend[i]=0; rc=1; continue ;;
           esac
         fi
       fi
@@ -914,6 +986,15 @@ pi_wait_all_cmd() {
     sleep 1
   done
 
+  if (( json )); then
+    printf '['
+    for i in "${!names[@]}"; do
+      (( i )) && printf ','
+      emit_result_json "${tids[i]}" "${statuses[i]}" "${texts[i]}"
+    done
+    printf ']\n'
+    return $rc
+  fi
   for i in "${!names[@]}"; do
     printf '== %s (%s) %s ==\n' "${names[i]}" "${tids[i]}" "${statuses[i]}"
     printf '%s\n\n' "${texts[i]}"
@@ -991,13 +1072,188 @@ pi_steer_all_cmd() {
   (( sent )) || note "steer-all: no live workers"
 }
 
+# List or re-read durable task outcomes from the unified `results/` store.
+#   tt pi results              all recorded tasks, newest first (table)
+#   tt pi results <cs>         filtered to one worker's tasks
+#   tt pi results <task-id>    print that one result's block
+# --json emits a JSON array (listing) or a single envelope (task-id). This is
+# the recover-an-id-you-lost path: nothing depends on having kept the id live.
+pi_results_cmd() {
+  local json=0 target=""
+  while (( $# )); do
+    case $1 in
+      --json) json=1; shift ;;
+      -*) die "unknown flag for results: $1" ;;
+      *)  [[ -z $target ]] && target=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  require_session
+  local rdir="$(state_dir)/results"
+
+  # A single task-id → print (or emit) that one result.
+  if [[ -n $target ]] && is_task_id "$target"; then
+    local f; f=$(result_path_by_id "$target")
+    [[ -f $f ]] || die "no result recorded for $target"
+    local head rst text
+    head=$(result_head_file "$f" 2>/dev/null || true)
+    rst=${head#* }; [[ $rst == "$head" ]] && rst=""
+    text=$(result_text_file "$f")
+    if (( json )); then emit_result_json "$target" "$rst" "$text"; printf '\n'
+    else printf '== %s (%s) ==\n%s\n' "$target" "$rst" "$text"; fi
+    return 0
+  fi
+
+  # Otherwise a listing; an optional callsign filters to that worker's tasks.
+  [[ -z $target ]] || valid_callsign "$target" \
+    || die "results: '$target' is not a callsign or task-id"
+  local -a files=()
+  if [[ -d $rdir ]]; then
+    local g
+    while IFS= read -r g; do [[ -n $g ]] && files+=("$g"); done \
+      < <(ls -1t "$rdir"/*.result 2>/dev/null || true)
+  fi
+
+  local f base head rst text sm shown=0
+  if (( json )); then
+    printf '['
+    local first=1
+    for f in "${files[@]}"; do
+      base=$(basename "$f" .result)
+      [[ -n $target && $base != "$target"-* ]] && continue
+      head=$(result_head_file "$f" 2>/dev/null || true)
+      rst=${head#* }; [[ $rst == "$head" ]] && rst=""
+      text=$(result_text_file "$f")
+      (( first )) || printf ','; first=0
+      emit_result_json "$base" "$rst" "$text"
+    done
+    printf ']\n'
+    return 0
+  fi
+
+  printf '%-12s  %-8s  %s\n' TASK STATUS SUMMARY
+  for f in "${files[@]}"; do
+    base=$(basename "$f" .result)
+    [[ -n $target && $base != "$target"-* ]] && continue
+    head=$(result_head_file "$f" 2>/dev/null || true)
+    rst=${head#* }; [[ $rst == "$head" ]] && rst=""
+    text=$(result_text_file "$f")
+    sm=$(result_field "$text" summary); [[ -z $sm ]] && sm=$(result_reason_hint "$text")
+    printf '%-12s  %-8s  %s\n' "$base" "$rst" "${sm:0:80}"
+    shown=1
+  done
+  (( shown )) || note "no results recorded${target:+ for $target}"
+}
+
+# Cursor-based fan-out join: return every result with turn > the per-worker
+# `<cs>.collected` cursor, blocking on in-flight ones, then advance the cursor.
+# Unlike `wait all` (which joins only workers busy *right now*), `collect` never
+# drops a task that finished before you asked. No stuck-guard — bound it with
+# --timeout if a worker might wedge.
+pi_collect_cmd() {
+  local json=0 timeout=0 target=""
+  while (( $# )); do
+    case $1 in
+      --json) json=1; shift ;;
+      --timeout) shift; [[ $# -gt 0 ]] || die "collect: --timeout requires seconds"
+                 valid_timeout_arg "collect" "$1"; timeout=$1; shift ;;
+      -*) die "unknown flag for collect: $1" ;;
+      *)  [[ -z $target ]] && target=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  require_session
+  local -a targets=()
+  if [[ -z $target || $target == all ]]; then
+    local n; for n in "${NATO[@]}"; do window_exists "pi-$n" && targets+=("$n"); done
+  else
+    valid_callsign "$target" || die "collect: '$target' is not a callsign or 'all'"
+    window_exists "pi-$target" || die "pi-$target does not exist"
+    targets=("$target")
+  fi
+
+  local deadline=0; (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
+  local -a envelopes=()
+  local printed=0 cs
+  for cs in "${targets[@]}"; do
+    local cursor; cursor=$(cat "$(state_dir)/$cs.collected" 2>/dev/null || printf 0)
+    [[ $cursor =~ ^[0-9]+$ ]] || cursor=0
+    local tf="$(state_dir)/$cs.tasks.jsonl"
+    [[ -s $tf ]] || continue
+    local -a turns=()
+    local line t
+    while IFS= read -r line; do
+      [[ $line == *'"id":"'* ]] || continue          # skip {"clear":N} markers
+      t=$(sed -n 's/.*"turn":\([0-9]*\).*/\1/p' <<<"$line")
+      [[ $t =~ ^[0-9]+$ ]] && (( t > cursor )) && turns+=("$t")
+    done < "$tf"
+    (( ${#turns[@]} )) || continue
+    IFS=$'\n' turns=($(printf '%s\n' "${turns[@]}" | sort -n)); unset IFS
+    local newcursor=$cursor id rst head text
+    for t in "${turns[@]}"; do
+      id="$cs-$t"; rst=""
+      while true; do                                  # block until terminal
+        head=$(result_head_by_id "$id" 2>/dev/null || true)
+        if [[ -n $head ]]; then
+          rst=${head#* }; [[ $rst == "$head" ]] && rst=""
+          case "$rst" in done|blocked|other|error) break ;; esac
+        fi
+        repl_running "$cs" || { rst=down; break; }
+        deadline_expired "$deadline" && { rst=timeout; break; }
+        sleep 1
+      done
+      [[ $rst == timeout || $rst == down ]] && break  # stop; never skip a turn
+      text=$(result_text_by_id "$id")
+      if (( json )); then envelopes+=("$(emit_result_json "$id" "$rst" "$text")")
+      else printf '== %s (%s) ==\n%s\n\n' "$id" "$rst" "$text"; fi
+      newcursor=$t; printed=1
+    done
+    (( newcursor > cursor )) && printf '%s' "$newcursor" > "$(state_dir)/$cs.collected"
+  done
+
+  if (( json )); then
+    printf '['; local i
+    for i in "${!envelopes[@]}"; do (( i )) && printf ','; printf '%s' "${envelopes[i]}"; done
+    printf ']\n'
+  elif (( ! printed )); then
+    note "collect: nothing new"
+  fi
+}
+
 pi_status_cmd() {
+  local json=0
+  while (( $# )); do
+    case $1 in
+      --json) json=1; shift ;;
+      -*) die "unknown flag for status: $1" ;;
+      *)  die "status: unexpected arg: $1" ;;
+    esac
+  done
   require_session
   reap_ephemeral_workers
+
+  if (( json )); then
+    printf '['
+    local first=1 n
+    for n in "${NATO[@]}"; do
+      window_exists "pi-$n" || continue
+      local s tier gen last_id reason=""
+      s=$(worker_state "$n"); tier=$(current_tier "$n"); gen=$(current_gen "$n")
+      last_id=$(last_task_id "$n" 2>/dev/null || true)
+      case $s in
+        interrupted|blocked) [[ -n $last_id ]] && \
+          reason=$(result_reason_hint "$(result_text_by_id "$last_id")") ;;
+      esac
+      (( first )) || printf ','; first=0
+      printf '{"callsign":"%s","state":"%s","last_task":"%s","tier":"%s","gen":%s,"reason":"%s"}' \
+        "$n" "$s" "$(json_escape "$last_id")" "$tier" "$gen" "$(json_escape "$reason")"
+    done
+    printf ']\n'
+    return 0
+  fi
+
   printf '%-9s  %-11s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
-    local s tier gen last_id="-"
+    local s tier gen last_id="-" reason=""
     s=$(worker_state "$n")
     tier=$(current_tier "$n")
     gen=$(current_gen "$n")
@@ -1005,7 +1261,17 @@ pi_status_cmd() {
     if lt=$(last_task_id "$n"); then
       last_id="$lt"
     fi
-    printf '%-9s  %-11s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
+    # interrupted/blocked carry a one-line reason from the recorded result, so
+    # the recovery path is obvious without a separate `wait`/`results` call.
+    case $s in
+      interrupted|blocked) [[ $last_id != - ]] && \
+        reason=$(result_reason_hint "$(result_text_by_id "$last_id")") ;;
+    esac
+    if [[ -n $reason ]]; then
+      printf '%-9s  %-11s  %-12s  %-6s  g%-4s — %s\n' "$n" "$s" "$last_id" "$tier" "$gen" "$reason"
+    else
+      printf '%-9s  %-11s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
+    fi
   done
   # Shared pool: tasks dispatched via `tt pi auto` while every worker was busy,
   # awaiting a free worker to steal them.
@@ -1037,6 +1303,7 @@ pi_rm_cmd() {
   fi
   tmux kill-window -t "=$(session_name):pi-$name" 2>/dev/null || true
   rm -rf "$(state_dir)/$name."*
+  rm -f  "$(state_dir)/results/$name"-*.result
   rm -rf "$(state_dir)/pi-sessions/$name"
 }
 
@@ -1050,6 +1317,7 @@ pi_popidle_cmd() {
     if ensure_idle_or_blocked "$n"; then
       tmux kill-window -t "=$(session_name):pi-$n" 2>/dev/null || true
       rm -rf "$(state_dir)/$n."*
+      rm -f  "$(state_dir)/results/$n"-*.result
       rm -rf "$(state_dir)/pi-sessions/$n"
       printf '%s\n' "$n"
       return 0
@@ -1590,25 +1858,46 @@ PI WORKER VERBS
       tracked task (no task-id, no result of its own). `all` fans the
       message out to every live worker.
 
-  tt pi wait [--timeout SECONDS] <callsign|task-id|pool-id|all> [task-id]
+  tt pi wait [--timeout SECONDS] [--json] <callsign|task-id|pool-id|all> [task-id]
       Block until the task's result is recorded. The target may be a callsign
       (waits on its latest dispatch — task-id optional), a bare task-id like
       `alfa-3` (callsign derived), a `pool-<n>` id (a `tt pi auto` pool task),
-      or `all` (join every busy worker, one consolidated report). By default
-      it waits forever; Ctrl-C cancels. --timeout SECONDS bounds it
-      (--timeout 0 also waits forever); a worker task left queued on an idle
-      worker fails fast at 20s (a pool task has no such guard — it waits for
-      capacity). Prints the WORKER_DONE / BLOCKED block. Exit 0 on
-      done/blocked, non-zero on timeout / unexpected completion.
+      or `all` (join every busy worker, one consolidated report). Any task-id
+      resolves — even an older one whose latest-pointer has since advanced —
+      because results are read from the per-id store. By default it waits
+      forever; Ctrl-C cancels. --timeout SECONDS bounds it (--timeout 0 also
+      waits forever); a worker task left queued on an idle worker fails fast at
+      20s (a pool task has no such guard — it waits for capacity). Prints the
+      WORKER_DONE / BLOCKED block, or with --json a result envelope
+      ({id,status,summary,files_changed,notes,reason}; an array for `all`).
+      Exit 0 on done/blocked, non-zero on timeout / unexpected completion.
 
-  tt pi status
+  tt pi collect [--timeout SECONDS] [--json] [all|<callsign>]
+      Fan-out join that never drops a finished task. Returns every result with
+      turn greater than the per-worker collected cursor — blocking on any still
+      in flight — then advances the cursor. Unlike `wait all` (which joins only
+      workers busy right now), a task that finished before you asked is still
+      collected. Default target is every existing worker; name one to scope it.
+      --json emits an array of result envelopes. No stuck-guard — bound a
+      possibly-wedged worker with --timeout.
+
+  tt pi results [--json] [<callsign>|<task-id>]
+      Read durable task outcomes from the per-id store. No argument lists every
+      recorded task (newest first); a callsign filters to that worker; a task-id
+      prints that one result's block. --json emits an array (listing) or a
+      single envelope (task-id). The recover-an-id-you-lost path — nothing
+      depends on having kept the id from the original dispatch.
+
+  tt pi status [--json]
       One row per existing worker: CALLSIGN, STATE
-      (idle/busy/blocked/down/missing), LAST-TASK, TIER, GEN.
+      (idle/busy/blocked/interrupted/down/missing), LAST-TASK, TIER, GEN.
+      interrupted/blocked rows carry a one-line reason from the recorded result.
+      --json emits an array of {callsign,state,last_task,tier,gen,reason}.
 
   tt pi rm [--force] <callsign>
   tt pi remove [--force] <callsign>
-      Remove a worker (kill its REPL + window, wipe its state). Refuses
-      unless idle/blocked without --force.
+      Remove a worker (kill its REPL + window, wipe its state incl. its durable
+      results). Refuses unless idle/blocked without --force.
 
   tt pi popidle
       Remove the highest-NATO idle worker. No-op if none idle. Prints the
@@ -1672,11 +1961,12 @@ STATE
   $XDG_STATE_HOME/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
   $XDG_STATE_HOME/tt/<session>/<callsign>.queue/        per-worker task queue (<turn>.task)
   $XDG_STATE_HOME/tt/<session>/<callsign>.steer         run-now injection (tt pi steer)
-  $XDG_STATE_HOME/tt/<session>/<callsign>.result        latest tracked turn result
+  $XDG_STATE_HOME/tt/<session>/<callsign>.result        worker's latest-turn result (liveness pointer)
+  $XDG_STATE_HOME/tt/<session>/<callsign>.collected     tt pi collect cursor (last collected turn)
   $XDG_STATE_HOME/tt/<session>/<callsign>.busy          marker: REPL is processing a turn
   $XDG_STATE_HOME/tt/<session>/<callsign>.ready         REPL queue-pump + steer-watch are live
   $XDG_STATE_HOME/tt/<session>/queue/                   shared pool queue (<seq>.task, tt pi auto)
-  $XDG_STATE_HOME/tt/<session>/queue-results/           pool task results (pool-<seq>.result)
+  $XDG_STATE_HOME/tt/<session>/results/                 unified per-id result store (<id>.result, named + pool)
   $XDG_STATE_HOME/tt/<session>/notify/                  --notify completion queue (drained to orchestrator)
   $XDG_STATE_HOME/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
 
@@ -1716,6 +2006,11 @@ PROMPT
   tt pi send alfa  - <<<'TASK: ...'
   tt pi send bravo - <<<'TASK: ...'
   tt pi wait all                     # one round-trip; joins all busy workers
+  tt pi collect                      # or: drain every finished-but-uncollected result
+
+  # Re-read a past outcome you no longer have the id for; machine-readable too
+  tt pi results                      # all recorded tasks, newest first
+  tt pi results alfa-3 --json        # one envelope: {id,status,summary,files_changed,...}
 
   # One-shot on a fresh ephemeral worker at medium effort (reaped after)
   TID=$(tt pi auto --medium --rm - <<<'TASK: ...')
@@ -1745,6 +2040,8 @@ case "$cmd" in
       wait)     pi_wait_cmd "$@" ;;
       wait-all) pi_wait_all_cmd "$@" ;;
       status)   pi_status_cmd "$@" ;;
+      results)  pi_results_cmd "$@" ;;
+      collect)  pi_collect_cmd "$@" ;;
       rm|remove) pi_rm_cmd "$@" ;;
       popidle)  pi_popidle_cmd "$@" ;;
       "")       die "pi: subcommand required (try \`tt --help\`)" ;;

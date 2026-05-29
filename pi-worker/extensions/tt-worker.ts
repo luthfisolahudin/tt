@@ -25,14 +25,19 @@
  *                  tracking: the extension consumes it (rename) and sends the
  *                  text steered into the current turn, or as a fresh untracked
  *                  turn if idle. This is `tt pi steer`.
- *   <cs>.result    lifecycle file written atomically:
- *                      id: <task id | -->
+ *   results/<id>.result
+ *                  the id-keyed result store for EVERY task (named + pool),
+ *                  written atomically:
+ *                      id: <task id>
  *                      status: running|done|blocked|other|error
  *                      ---
  *                      <text>
  *                  `running` is written when a task is claimed; done/blocked/
- *                  other on `agent_end`; error for caught extension
- *                  exceptions. id is `-` for a human-typed / steered turn.
+ *                  other on `agent_end`; error for caught extension exceptions.
+ *   <cs>.result    a worker's own assigned tasks are mirrored here as a
+ *                  latest-pointer — the file `worker_state`/liveness reads.
+ *                  Pool tasks are not mirrored (not this worker's). Untracked
+ *                  turns (human/steer, id `-`) write no result at all.
  *   <cs>.busy      marker present while a turn is in flight (tracked task,
  *                  stolen pool task, or steer); tt's `worker_state` reads it.
  *   <cs>.ready     written once the queue pump + steer watch are live, so tt
@@ -41,7 +46,7 @@
  *                  no result to attach to.
  *
  * Also drained here: the shared pool queue `queue/` (id `pool-<seq>`, result to
- * `queue-results/`), stolen by any idle worker after its own queue; and the
+ * `results/`), stolen by any idle worker after its own queue; and the
  * `--notify` queue `notify/`, to which a finished task appends `<id> <status>`
  * before spawning the `tt pi notify-drain` drainer.
  *
@@ -62,7 +67,7 @@ export default function (pi: ExtensionAPI) {
 	const stateDir = process.env.TT_WORKER_STATE ?? "/tmp/tt";
 	const queueDir = path.join(stateDir, `${cs}.queue`); // this worker's own queue
 	const poolDir = path.join(stateDir, "queue"); // shared pool — any idle worker steals
-	const poolResultsDir = path.join(stateDir, "queue-results"); // pool-<seq>.result
+	const resultsDir = path.join(stateDir, "results"); // <id>.result for EVERY task (named + pool)
 	const steerFile = path.join(stateDir, `${cs}.steer`);
 	const resultFile = path.join(stateDir, `${cs}.result`);
 	const readyFile = path.join(stateDir, `${cs}.ready`);
@@ -119,13 +124,16 @@ export default function (pi: ExtensionAPI) {
 		} catch {}
 	}
 
-	// Pool tasks (id `pool-<seq>`) record to a shared, id-keyed result file so a
-	// steal never clobbers the stealing worker's own `.result`, and a waiter
-	// polls one known path. Worker-assigned tasks use `<cs>.result`.
-	function resultFileFor(id: string): string {
-		return id.startsWith("pool-")
-			? path.join(poolResultsDir, `${id}.result`)
-			: resultFile;
+	// Single id-keyed result store: EVERY task (named `<cs>-<turn>` and pool
+	// `pool-<seq>`) records to `results/<id>.result`, so a waiter polls one known
+	// path and `tt pi results` can re-read any past outcome by id. A worker's own
+	// assigned tasks are ALSO mirrored to `<cs>.result` as a latest-pointer — the
+	// only file `worker_state`/liveness reads (pool tasks are not this worker's,
+	// so they are never mirrored and never clobber its state).
+	function writeResult(id: string, data: string) {
+		if (id === "-") return; // untracked turn — nothing to record
+		atomicWrite(path.join(resultsDir, `${id}.result`), data);
+		if (!id.startsWith("pool-")) atomicWrite(resultFile, data);
 	}
 
 	function lastAssistantText(messages: any[]): string {
@@ -222,7 +230,7 @@ export default function (pi: ExtensionAPI) {
 		pendingNonce = nonce;
 		pendingNotify = notify;
 		setBusy(true);
-		atomicWrite(resultFileFor(id), "id: " + id + "\nstatus: running\n---\n");
+		writeResult(id, "id: " + id + "\nstatus: running\n---\n");
 		// Reasoning effort is a runtime knob — no REPL respawn.
 		if (tier === "low" || tier === "medium") {
 			try {
@@ -236,7 +244,7 @@ export default function (pi: ExtensionAPI) {
 		agentCtx = ctx;
 		try {
 			fs.mkdirSync(queueDir, { recursive: true });
-			fs.mkdirSync(poolResultsDir, { recursive: true });
+			fs.mkdirSync(resultsDir, { recursive: true });
 			// fresh REPL → not processing anything yet
 			try {
 				fs.unlinkSync(busyFile);
@@ -317,7 +325,6 @@ export default function (pi: ExtensionAPI) {
 			setBusy(false);
 			return;
 		}
-		const resultDst = resultFileFor(pendingId);
 		try {
 			const text = lastAssistantText(event?.messages);
 			// For both done and blocked: require matching nonce as a dedicated field
@@ -355,11 +362,11 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 			}
-			atomicWrite(resultDst, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
+			writeResult(pendingId, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
 			if (pendingNotify) fireNotify(pendingId, status);
 		} catch (e) {
 			logLine("agent_end: " + String(e));
-			atomicWrite(resultDst, "id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n");
+			writeResult(pendingId, "id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n");
 			if (pendingNotify) fireNotify(pendingId, "error");
 		} finally {
 			pendingId = "-";

@@ -67,9 +67,11 @@ Run `tt --help` for the full block. Summary:
 | `tt pi send [--low\|--medium] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--notify`: ping the orchestrator on completion. |
 | `tt pi auto [--low\|--medium] [--rm] [--notify] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |
-| `tt pi wait [--timeout N] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id, a pool id, or `all` (join all busy). |
-| `tt pi status` | One row per worker: state, last task, tier, generation. |
-| `tt pi rm [--force] <cs>`, `tt pi remove [--force] <cs>` | Remove a worker (kill REPL + window, wipe state). |
+| `tt pi wait [--timeout N] [--json] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id (any id resolves, even an old one), a pool id, or `all` (join all busy). `--json`: result envelope(s). |
+| `tt pi collect [--timeout N] [--json] [all\|<cs>]` | Cursor-based fan-out join: every result with turn past the per-worker cursor, blocking on in-flight ones, then advances the cursor. Never drops a task that finished before you asked (vs `wait all`, busy-now only). |
+| `tt pi results [--json] [<cs>\|<task-id>]` | Read durable outcomes from the per-id store: list all (newest first), filter to a worker, or re-read one by id. Recovers an id you no longer have. |
+| `tt pi status [--json]` | One row per worker: state, last task, tier, generation; interrupted/blocked rows carry a reason hint. |
+| `tt pi rm [--force] <cs>`, `tt pi remove [--force] <cs>` | Remove a worker (kill REPL + window, wipe state incl. its durable results). |
 | `tt pi popidle` | Remove the highest-NATO idle worker. |
 | `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to safely accept input, then send + submit a message. Waits forever by default. |
 | `tt x ls [--all]`, `tt x list [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |

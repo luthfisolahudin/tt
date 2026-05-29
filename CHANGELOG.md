@@ -5,6 +5,36 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.9.0] — 2026-05-29
+
+Task records & observability (Release 1 of the records/recovery plan, see
+`docs/PLAN-records-recovery.md`). Closes the read side of the control channel:
+durable, id-addressable, machine-readable results. **Extension result-write path
+changed — workers must be respawned (`tt pi clear <cs>`) to pick it up.** Live
+verification of the worker-driven paths is pending (the pure-bash readers,
+`results`/`collect`/`--json` parsing, and cursor logic were exercised against
+fabricated result files).
+
+- **Unified result store.** Every task — named `<cs>-<turn>` and pool
+  `pool-<seq>` alike — records to `results/<id>.result`. `<cs>.result` is demoted
+  to the worker's latest-pointer (the only file `worker_state` reads); pool
+  results migrate off `queue-results/`. The named and pool `wait` read paths now
+  share one per-id store, so **any task-id resolves** — including an older one
+  whose latest-pointer has since advanced (removes the v1 "overwritten result
+  won't resolve" limitation).
+- **`tt pi results [<cs>|<task-id>]`** — list every recorded outcome (newest
+  first), filter to a worker, or re-read one result by id. The recover-an-id-you-
+  lost path; nothing depends on having kept the id from dispatch.
+- **`tt pi collect [all|<cs>]`** — cursor-based fan-out join (`<cs>.collected`):
+  returns every result with turn > cursor, blocking on in-flight ones, then
+  advances the cursor. Unlike `wait all` (busy-now only), it never drops a task
+  that finished before you asked. `--timeout` bounds it (no stuck-guard).
+- **`--json`** on `wait`/`wait all`/`status`/`results`/`collect` — a stable
+  envelope `{id,status,summary,files_changed,notes,reason}` (raw `text` added for
+  other/error), parsed from the result without a `jq` dependency.
+- **`tt pi status`** interrupted/blocked rows now carry a one-line reason hint
+  from the recorded result, so the recovery path is obvious at a glance.
+
 ## [0.8.2] — 2026-05-29
 
 Docs/consumer reconciliation closing out pool model v2 — **no behavior change**

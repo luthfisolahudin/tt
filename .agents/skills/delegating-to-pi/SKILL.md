@@ -236,11 +236,16 @@ tt pi wait "$TID"          # works for a callsign id (alfa-3) or pool id (pool-3
 ```
 
 - `--medium` for safety-critical work (see triggers); omit for default `--low`.
-- `wait` accepts a callsign (latest task), a bare task-id (`alfa-3`), a pool id
-  (`pool-3`), or `all` (join every busy worker in one report). It anchors on the
-  task-id, so it won't false-positive on a stale `WORKER_DONE`.
+- `wait` accepts a callsign (latest task), a bare task-id (`alfa-3`, **any** id —
+  even an older one resolves), a pool id (`pool-3`), or `all` (join every busy
+  worker in one report). It anchors on the task-id, so it won't false-positive on
+  a stale `WORKER_DONE`. Add `--json` for a parsed envelope
+  (`{id,status,summary,files_changed,notes,reason}`) instead of the raw block.
 - `--notify` makes dispatch fire-and-forget: the worker pings this session when
   it finishes, so you can move on instead of blocking on `wait`.
+- **Lost the task-id** (e.g. after a compaction)? `tt pi results` lists every
+  recorded outcome (newest first); `tt pi results <id>` re-reads one. Nothing
+  depends on having kept the id from dispatch.
 - Inline prompts use `-` (stdin) with a heredoc/here-string, **not** process
   substitution.
 - **Steer a running worker**: `tt pi steer <cs> - <<<'...'` injects a correction
@@ -253,3 +258,9 @@ detect overlap; the orchestrator must. Fan out with several `tt pi send`s (or
 `tt pi auto`s), then **join them in one call with `tt pi wait all`** rather than
 one `wait` per worker. The cap is `min(cores-2, 26)`; past it, `auto` queues on
 the shared pool for the next free worker to claim.
+
+`wait all` joins only workers busy *at the instant it runs* — if some tasks may
+have finished already (fast tasks, or a `--notify` batch), use **`tt pi collect`**
+instead: it returns every result you have not collected yet (blocking on
+in-flight ones) via a per-worker cursor, so a fan-out is joined completely
+without you tracking each id. Add `--json` to either for parsed envelopes.

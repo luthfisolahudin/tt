@@ -95,9 +95,9 @@ format so the bash side needs no JSON parser:
   an idle worker claims its own `<cs>.queue/` first, then **steals** the
   lowest pool task. The atomic-rename claim is the concurrency primitive —
   many workers race on the same file and only one rename wins. Pool tasks use
-  id `pool-<seq>` and write their result to **`queue-results/<id>.result`**
-  (not the stealing worker's `<cs>.result`), so a steal never clobbers a
-  worker's own result and `tt pi wait pool-<seq>` polls one known path.
+  id `pool-<seq>` and write their result to the unified **`results/<id>.result`**
+  store (not the stealing worker's `<cs>.result`), so a steal never clobbers a
+  worker's own latest-pointer and `tt pi wait pool-<seq>` polls one known path.
 - **`<cs>.busy`** — a marker the extension sets while a turn is in flight (a
   tracked task, a stolen pool task, or a steer) and clears on `agent_end`.
   `worker_state` reads it to decide `busy`, because a pool task records its
@@ -117,19 +117,27 @@ format so the bash side needs no JSON parser:
   **steered into the current turn**, or as a fresh turn if idle. It does not
   touch the pending task id, so the in-flight task still validates its own
   completion. This is `tt pi steer` / `tt pi steer all`.
-- **`<cs>.result`** — a lifecycle file the extension writes atomically:
+- **`results/<id>.result`** — the unified id-keyed result store. The extension
+  writes a lifecycle file atomically for **every** task (named `<cs>-<turn>` and
+  pool `pool-<seq>` alike):
   ```
-  id: <task id | ->
+  id: <task id>
   status: running|done|blocked|other|error
   ---
   <text>
   ```
   `running` is written when a task is claimed (empty text);
   `done`/`blocked`/`other` on `agent_end`; `error` when the extension
-  catches an internal exception (text = the message). **Untracked turns**
-  (a steered message, or a human typing into the REPL) carry no pending id
-  and **do not write a result at all** — so they never clobber the last
-  tracked task's result, which `tt pi wait` reads.
+  catches an internal exception (text = the message). Because results are
+  id-keyed and never overwritten by a later task, `tt pi wait <id>` resolves
+  any task — even an older one — and `tt pi results <id>` re-reads it long after.
+- **`<cs>.result`** — a **latest-pointer**: the extension mirrors a worker's own
+  assigned-task result here (a copy of its newest `results/<id>.result`). This is
+  the only result file `worker_state` reads, for liveness/idle classification.
+  Pool tasks are **not** this worker's, so they are never mirrored. **Untracked
+  turns** (a steered message, or a human typing into the REPL) carry no pending
+  id and **do not write a result at all** — so they never clobber the last
+  tracked task's latest-pointer.
 - **`<cs>.ready`** — the extension touches it once the queue pump + steer
   watch are live, so `launch_repl` knows when it is safe to enqueue.
 - **`<cs>.log`** — append-only, timestamped diagnostics for failures
@@ -140,9 +148,10 @@ format so the bash side needs no JSON parser:
 1. `tt pi send` assigns the task id `<callsign>-<turn>` (turn = line
    count of `tasks.jsonl` + 1), appends `<cs>.queue/<turn>.task`, and appends
    `{turn,id,sent_at,tier,nonce}` to `tasks.jsonl`.
-2. `tt pi wait <cs> [task-id]` polls `<cs>.result` until its `id` field
-   equals the task-id; the task-id is **optional** and defaults to the
-   worker's latest dispatch. It waits forever by default; `--timeout N` bounds
+2. `tt pi wait <cs> [task-id]` polls `results/<task-id>.result` until its `id`
+   field matches; the task-id is **optional** and defaults to the worker's latest
+   dispatch. Reading the per-id store (not the `<cs>.result` latest-pointer) means
+   an **older** task-id still resolves. It waits forever by default; `--timeout N` bounds
    the wait, and `--timeout 0` is explicit forever. `status` of `done`/`blocked`
    prints the assistant text and exits 0; `other` (pi answered without a
    marker) and `error` (extension exception) exit 1; `running` keeps polling.
@@ -200,13 +209,14 @@ State is derived from the window plus the control files:
   and it is past the boot window.
 - `busy` — the `<cs>.busy` marker is set: the REPL is processing something (a
   tracked task, a stolen pool task, or a steer). The marker is the signal,
-  not the result file — a pool task records to `queue-results/` and a steer
+  not the result file — a pool task is not mirrored to `<cs>.result` and a steer
   records nothing, so result-parsing alone would miss them.
 - `blocked` — not busy, and the worker's own last assigned-task result
-  (`<cs>.result`) is `blocked`.
+  (the `<cs>.result` latest-pointer) is `blocked`.
 - `interrupted` — not busy, and that result is `other` (no valid completion
   marker) or `error` (extension exception). A fresh `send` refuses on an
-  interrupted worker until `tt pi clear`.
+  interrupted worker until `tt pi clear`. `tt pi status` surfaces a one-line
+  reason from the recorded result so the recovery path is legible.
 - `idle` — anything else (incl. an idle worker whose `<cs>.result` describes a
   pool/steer turn or an older task).
 
@@ -241,13 +251,14 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
 | `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming.<cs>` is the transient mid-claim rename. |
 | `queue/<seq>.task` | Shared pool task from `tt pi auto` (id `pool-<seq>`); any idle worker steals it after draining its own queue. |
-| `queue-results/<pool-id>.result` | Result of a stolen pool task, written by whichever worker ran it. |
+| `results/<id>.result` | Unified id-keyed result store for **every** task (named + pool). Durable, never overwritten by a later task; read by `wait`/`collect`/`results`. |
+| `<cs>.collected` | `tt pi collect` cursor: the highest turn whose result has been collected for this worker. |
 | `pool.seq` | Monotonic counter for pool task ids. |
 | `notify/<ts>-<pid>-<n>.msg` | `--notify` completion ping (`<id> <status>`), drained to the orchestrator. |
 | `notify-drain.lock` | Single-instance lock for the notify drainer (holds its pid). |
 | `<cs>.ephemeral` | Marker: this worker was spawned by `tt pi auto --rm`; it never steals pool work and is reaped once idle with an empty queue. |
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
-| `<cs>.result` | Latest tracked (worker-assigned) turn result (id / status / text). |
+| `<cs>.result` | Latest-pointer: a copy of this worker's newest `results/<id>.result`, read by `worker_state` for liveness/idle classification. |
 | `<cs>.busy` | Marker: the REPL is processing a turn (drives `worker_state` busy). |
 | `<cs>.starting` | Boot stamp (`date +%s`) written by `start_repl`; marks the REPL's async boot window for `repl_starting`. |
 | `<cs>.ready` | Marker: the REPL's queue pump + steer watch are live. |
@@ -374,6 +385,12 @@ The distinction is **pinned vs stealable**:
   one consolidated report. The main fix for v1's coordination context-cost:
   one round-trip joins a fan-out instead of one `wait` per worker. (Distinct-task
   fan-out is just batched `send`s in one shell call.)
+- `tt pi collect` — the join that survives timing. `wait all` targets only
+  workers busy *at the instant it runs*, so a task that finished before the join
+  is silently missed and the orchestrator must have kept its id. `collect`
+  tracks a per-worker cursor over the durable result store and returns every
+  uncollected result (blocking on in-flight ones), so a fan-out is joined
+  completely without hand-tracking ids — the bookkeeping the pool should absorb.
 - `--notify` (on `send`/`auto`) — fire-and-forget completion ping. The worker
   appends to a notify queue and a lazy single drainer delivers a coalesced line
   into the `claude` pane via the `tt x send` safe-input path. Built from parts
@@ -393,8 +410,12 @@ ceiling is the runaway backstop that makes auto-spawn safe.
   and lazy spawn covers every case, so there is no spawn-only verb (a human
   wanting a bare REPL opens a window and runs pi, or sends a trivial task).
   `rm` (destroy) and `clear` (reset context) stay.
+- Landed in 0.9.0: the JSON result envelope (`--json` on `wait`/`status`/
+  `results`/`collect`), the durable per-id result store, and `tt pi results` /
+  `tt pi collect`. See CHANGELOG and `docs/PLAN-records-recovery.md`.
 - Deferred until needed: `tt pi logs <cs>` (build when the orchestrator finds
-  itself steering blind), a JSON result envelope (`wait --json`).
+  itself steering blind); in-place interrupt recovery without a context wipe
+  (`tt pi resume`/`/tt-resume`) — Release 2 of the records/recovery plan.
 
 ### Framing — the moat
 
