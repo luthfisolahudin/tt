@@ -163,11 +163,11 @@ format so the bash side needs no JSON parser:
    dispatch. Reading the per-id store (not the `<cs>.result` latest-pointer) means
    an **older** task-id still resolves. It waits forever by default; `--timeout N` bounds
    the wait, and `--timeout 0` is explicit forever. `status` of `done`/`blocked`
-   prints the assistant text and exits 0; `other` (pi answered without a
+   prints the assistant text and exits 0; `other` (pi answered without a valid
    marker) and `error` (extension exception) exit 1; `running` keeps polling.
-   `BLOCKED` is classified ahead of `WORKER_DONE` so a real block is never
-   masked by a trailing wrapper. `tt pi wait all` joins every busy worker
-   (consolidated report).
+   Whichever of `WORKER_DONE`/`BLOCKED` appears **last** is the terminal marker,
+   so a final `WORKER_DONE` is never masked by an earlier `BLOCKED` wrapper (or
+   vice-versa). `tt pi wait all` joins every busy worker (consolidated report).
 3. Stuck guard: if this task's `<cs>.queue/<turn>.task` is still present while
    the worker is **not running anything** for 20 s (a dead pump/watch), `wait`
    fails fast — even on an infinite wait. If the worker is running an earlier
@@ -190,8 +190,10 @@ tt-worker.ts  (inside the pi REPL)
     → sends body as a fresh user turn (pi.sendUserMessage)
 
   on agent_end:
-    → tracked task: validates WORKER_DONE/BLOCKED at terminal position AND
-      nonce matches → writes <cs>.result (id / status / text); goes idle
+    → tracked task: locates the last WORKER_DONE/BLOCKED marker; a matching
+      `nonce:` at/after it → done/blocked (the unguessable per-task nonce is the
+      proof, so multi-line field values and trailing prose are tolerated). Writes
+      <cs>.result (id / status / text); goes idle
     → untracked turn (steer/human): no result write
     → next idle poll claims the next queued task
 

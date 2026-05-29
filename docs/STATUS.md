@@ -61,6 +61,16 @@ session — what a handoff can trust without retesting:
   against fabricated result files; the `status` reason hint is covered by those
   + logic — the live interrupt landed before any assistant text, so its body was
   empty and no hint was shown, which is correct.)
+- **Completion-footer robustness (0.10.1), verified live 2026-05-29** against the
+  repo's own session: a turn whose `WORKER_DONE` footer carried a **multi-line
+  `notes:` value** (the exact shape that previously scored `other`/`interrupted`)
+  now classifies `done` — the validator trusts the per-task nonce and tolerates
+  multi-line values/trailing prose. `tt pi wait all`'s one-line tally lands on
+  **stderr** (`wait-all: N task(s) — …`) while stdout stays the joined bodies, and
+  exit code follows the documented contract. The negative guard (no-footer
+  interrupt / wrong nonce → still `other`) is unchanged by construction — `status`
+  defaults to `other` and only flips on a matching nonce at the terminal marker —
+  but was not re-exercised live this round (needs a manual Esc).
 
 ## Known limitations / not yet tested
 

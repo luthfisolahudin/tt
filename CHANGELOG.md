@@ -5,6 +5,20 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.1] — 2026-05-29
+
+Completion-footer robustness. The `agent_end` validator no longer demands that
+every line after `WORKER_DONE`/`BLOCKED` be a `field: value` pair — it trusts the
+unguessable per-task **nonce** as proof of completion and tolerates multi-line
+field values and trailing prose, so a genuinely finished turn with an untidy
+footer is `done`, not a false `interrupted` that wastes a `resume`. The terminal
+marker is now whichever of the two appears *last* (a final `WORKER_DONE` is no
+longer masked by an earlier `BLOCKED`). `tt pi wait all` gains a one-line tally on
+stderr (e.g. `2 done · 1 other`; stdout stays the joined bodies) and a documented
+exit-code contract. Worker contract (`APPEND_SYSTEM.md`) is unchanged — it still
+asks for one clean block; only the parser is forgiving. **Extension changed —
+respawn workers (`tt pi clear <cs>`) to load it.**
+
 ## [0.10.0] — 2026-05-29
 
 In-place interrupt recovery (Release 2 of the records/recovery plan). Recover an

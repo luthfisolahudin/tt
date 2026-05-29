@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.10.0"
+VERSION="0.10.1"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -1028,6 +1028,16 @@ pi_wait_all_cmd() {
     printf '== %s (%s) %s ==\n' "${names[i]}" "${tids[i]}" "${statuses[i]}"
     printf '%s\n\n' "${texts[i]}"
   done
+  # One-line verdict on stderr — stdout stays exactly the joined bodies so a
+  # caller can still capture them cleanly. rc is set above: 0 iff every target
+  # reached a valid terminal footer (done/blocked).
+  local -A tally=(); local st
+  for st in "${statuses[@]}"; do tally[$st]=$(( ${tally[$st]:-0} + 1 )); done
+  local parts="" s
+  for s in done blocked other error down timeout; do
+    [[ -n ${tally[$s]:-} ]] && parts+="${parts:+ · }${tally[$s]} $s"
+  done
+  note "wait-all: ${#names[@]} task(s) — $parts"
   return $rc
 }
 
@@ -1909,6 +1919,8 @@ PI WORKER VERBS
       WORKER_DONE / BLOCKED block, or with --json a result envelope
       ({id,status,summary,files_changed,notes,reason}; an array for `all`).
       Exit 0 on done/blocked, non-zero on timeout / unexpected completion.
+      `all` prints a one-line tally on stderr (e.g. `2 done · 1 other`) and
+      exits non-zero if any joined worker ended error/other/down/timeout.
 
   tt pi collect [--timeout SECONDS] [--json] [all|<callsign>]
       Fan-out join that never drops a finished task. Returns every result with

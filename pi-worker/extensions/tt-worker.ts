@@ -446,30 +446,26 @@ export default function (pi: ExtensionAPI) {
 			const nonceField = `nonce: ${pendingNonce}`;
 			let status = "other";
 			if (pendingNonce) {
-				// BLOCKED block: `BLOCKED\nnonce: <N>\nreason: <...>` at end of response
-				const blockedPos = text.lastIndexOf("\nBLOCKED\n");
-				const blockedStart =
-					blockedPos >= 0 ? blockedPos + 1 : text.startsWith("BLOCKED\n") ? 0 : -1;
-				if (blockedStart >= 0) {
-					const block = text.slice(blockedStart).trimEnd();
-					// Terminal: only `field: value` lines after BLOCKED
-					const isTerminal = /^BLOCKED(\n[\w][\w_-]*:[^\n]*)*$/.test(block);
-					if (isTerminal && block.includes(nonceField)) {
-						status = "blocked";
-					}
-				}
-				// WORKER_DONE block: `WORKER_DONE\nfield: value\n...nonce: <N>` at end
-				if (status === "other") {
-					const wdPos = text.lastIndexOf("\nWORKER_DONE\n");
-					const wdStart =
-						wdPos >= 0 ? wdPos + 1 : text.startsWith("WORKER_DONE\n") ? 0 : -1;
-					if (wdStart >= 0) {
-						const block = text.slice(wdStart).trimEnd();
-						// Terminal: only `field: value` lines after WORKER_DONE
-						const isTerminal =
-							/^WORKER_DONE(\n[\w][\w_-]*:[^\n]*)*$/.test(block);
-						if (isTerminal && block.includes(nonceField)) status = "done";
-					}
+				// Start index of a terminal marker: its last occurrence (or start of
+				// text). The marker that appears *last* is the turn's true terminal
+				// block — a mid-response BLOCKED must not beat a final WORKER_DONE.
+				const markerStart = (m: string) => {
+					const p = text.lastIndexOf(`\n${m}\n`);
+					return p >= 0 ? p + 1 : text.startsWith(`${m}\n`) ? 0 : -1;
+				};
+				const wdStart = markerStart("WORKER_DONE");
+				const blkStart = markerStart("BLOCKED");
+				// Authentication rests on the per-task nonce: it is unguessable and
+				// freshly minted per dispatch, so it cannot appear in prior context —
+				// a matching `nonce:` field at/after the terminal marker is itself
+				// proof this turn completed this task. We deliberately tolerate
+				// multi-line field values and trailing prose: the worker contract
+				// (APPEND_SYSTEM.md) still asks for one clean block, but a formatting
+				// slip must not discard genuinely completed work.
+				if (wdStart >= 0 && wdStart >= blkStart && text.slice(wdStart).includes(nonceField)) {
+					status = "done";
+				} else if (blkStart >= 0 && text.slice(blkStart).includes(nonceField)) {
+					status = "blocked";
 				}
 			}
 			writeResult(pendingId, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
