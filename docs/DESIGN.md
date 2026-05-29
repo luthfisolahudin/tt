@@ -81,18 +81,27 @@ passed as `PI_CODING_AGENT_DIR`). Normal user pi sessions continue using
 inert unless `TT_WORKER_CS` is set; tt sets that env var (and
 `TT_WORKER_STATE`) only for the workers it spawns.
 
-The extension and tt exchange two plain files under
-`${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, both in a trivial line format so the bash side
-needs no JSON parser:
+The extension and tt exchange plain files under
+`${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, all in a trivial line
+format so the bash side needs no JSON parser:
 
-- **`<cs>.trigger`** — tt writes it (atomic `mv`): line 1 is
-  `<task id> <tier> <nonce>`, the rest is the prompt body. The
-  extension's `fs.watchFile` fires; it **consumes the trigger by
-  renaming it** to `<cs>.trigger.consuming`, reads that private path,
-  and deletes it — so a concurrent tt write is never clobbered by a
-  truncate. It then writes a `running` result, applies the tier
-  (`pi.setThinkingLevel`), and sends the body to the REPL as a user
-  message (`pi.sendUserMessage`, steered if pi is mid-turn).
+- **`<cs>.queue/`** — a per-worker task queue (directory). `tt pi send`
+  always **appends** a `<turn>.task` file (atomic `mv`): line 1 is
+  `<task id> <tier> <nonce>`, the rest is the prompt body. The extension
+  **claims** the lowest-numbered task — but only when the REPL is genuinely
+  idle (`ctx.isIdle()`) — by renaming it to `<file>.claiming`, reading that
+  private path, and deleting it (so a concurrent tt write is never clobbered).
+  It then writes a `running` result, applies the tier (`pi.setThinkingLevel`),
+  and sends the body as a fresh user turn (`pi.sendUserMessage`). Claiming is
+  driven by a 200 ms poll plus a claim at `session_start`; it is **never** done
+  from inside `agent_end` (the agent is still "processing" there, so a send
+  would be rejected — the bug that the idle-gated poll avoids). A busy worker
+  simply leaves later tasks queued until its turn ends: `send` = run-next.
+- **`<cs>.steer`** — run-now injection, separate from the queue. tt writes it
+  (atomic `mv`); the extension consumes it by rename and sends the text
+  **steered into the current turn**, or as a fresh turn if idle. It does not
+  touch the pending task id, so the in-flight task still validates its own
+  completion. This is `tt pi steer` / `tt pi steer all`.
 - **`<cs>.result`** — a lifecycle file the extension writes atomically:
   ```
   id: <task id | ->
@@ -100,60 +109,64 @@ needs no JSON parser:
   ---
   <text>
   ```
-  `running` is written the instant a trigger is consumed (empty text);
+  `running` is written when a task is claimed (empty text);
   `done`/`blocked`/`other` on `agent_end`; `error` when the extension
-  catches an internal exception (text = the message). `id` is the
-  trigger's id for a tt-injected turn, or `-` for a human-typed one — so
-  a person typing into the REPL never confuses tt's `wait`.
-- **`<cs>.ready`** — the extension touches it once its trigger watch is
-  live, so `launch_repl` knows when it is safe to write a trigger.
+  catches an internal exception (text = the message). **Untracked turns**
+  (a steered message, or a human typing into the REPL) carry no pending id
+  and **do not write a result at all** — so they never clobber the last
+  tracked task's result, which `tt pi wait` reads.
+- **`<cs>.ready`** — the extension touches it once the queue pump + steer
+  watch are live, so `launch_repl` knows when it is safe to enqueue.
 - **`<cs>.log`** — append-only, timestamped diagnostics for failures
-  that have no result to attach to (watch setup, trigger read).
+  that have no result to attach to (watch setup, task read, pump).
 
 ## Task IDs & completion
 
 1. `tt pi send` assigns the task id `<callsign>-<turn>` (turn = line
-   count of `tasks.jsonl` + 1), writes the trigger, and appends
-   `{turn,id,sent_at,tier}` to `tasks.jsonl`.
-2. `tt pi wait <cs> <task-id>` polls `<cs>.result` until its `id` field
-   equals the task-id. It waits forever by default; `--timeout N` bounds
-   the top-level completion wait, and `--timeout 0` is explicit forever.
-   `status` of `done`/`blocked` prints the assistant text and exits 0;
-   `other` (pi answered without a marker) and `error` (extension
-   exception) exit 1; `running` keeps polling. `BLOCKED` is classified
-   ahead of `WORKER_DONE` so a real block is never masked by a trailing
-   wrapper.
-3. If the trigger is still sitting unconsumed 20 s after dispatch (the
-   worker is wedged or its watch is dead), `wait` fails fast with a
-   diagnostic even when the top-level wait is infinite.
+   count of `tasks.jsonl` + 1), appends `<cs>.queue/<turn>.task`, and appends
+   `{turn,id,sent_at,tier,nonce}` to `tasks.jsonl`.
+2. `tt pi wait <cs> [task-id]` polls `<cs>.result` until its `id` field
+   equals the task-id; the task-id is **optional** and defaults to the
+   worker's latest dispatch. It waits forever by default; `--timeout N` bounds
+   the wait, and `--timeout 0` is explicit forever. `status` of `done`/`blocked`
+   prints the assistant text and exits 0; `other` (pi answered without a
+   marker) and `error` (extension exception) exit 1; `running` keeps polling.
+   `BLOCKED` is classified ahead of `WORKER_DONE` so a real block is never
+   masked by a trailing wrapper. `tt pi wait all` joins every busy worker
+   (consolidated report).
+3. Stuck guard: if this task's `<cs>.queue/<turn>.task` is still present while
+   the worker is **not running anything** for 20 s (a dead pump/watch), `wait`
+   fails fast — even on an infinite wait. If the worker is running an earlier
+   queued task, the wait is legitimate and the timer is held off.
 
 ## Send → wait flow
 
 ```
 orchestrator
   tt pi send <cs> <prompt-file>
-    → writes <cs>.trigger  (line 1: <id> <tier> <nonce>; rest: prompt body)
+    → appends <cs>.queue/<turn>.task  (line 1: <id> <tier> <nonce>; rest: body)
     → appends to <cs>.tasks.jsonl
-    → prints task-id
+    → prints task-id          (busy worker? the task just queues — run-next)
 
 tt-worker.ts  (inside the pi REPL)
-  fs.watchFile fires on <cs>.trigger
-    → renames <cs>.trigger → <cs>.trigger.consuming, reads, deletes it
+  200ms poll / session_start — pump(), only when ctx.isIdle():
+    → claims lowest <turn>.task by rename → reads → deletes
     → writes <cs>.result  (status: running)
-    → applies tier via pi.setThinkingLevel
-    → stores nonce for completion validation
-    → sends prompt body as a user message (pi.sendUserMessage)
+    → applies tier via pi.setThinkingLevel; stores nonce
+    → sends body as a fresh user turn (pi.sendUserMessage)
 
   on agent_end:
-    → validates: WORKER_DONE at terminal position AND nonce matches
-    → writes <cs>.result  (id / status / text)
+    → tracked task: validates WORKER_DONE/BLOCKED at terminal position AND
+      nonce matches → writes <cs>.result (id / status / text); goes idle
+    → untracked turn (steer/human): no result write
+    → next idle poll claims the next queued task
 
 orchestrator
-  tt pi wait <cs> <task-id>
+  tt pi wait <cs> [task-id]        (task-id defaults to latest; `all` = all busy)
     → polls <cs>.result until id matches task-id
-    → waits forever by default; --timeout N bounds completion wait
+    → waits forever by default; --timeout N bounds the wait
     → exits 0 on done/blocked; exits 1 on other/error/timeout
-    → fast-fails if the trigger is unconsumed 20s after dispatch
+    → fast-fails if the task stays queued 20s while the worker is idle
 ```
 
 ## Worker state detection
@@ -170,19 +183,21 @@ State is derived from the window plus the control files:
   the worker's unique `--session-dir` path via `pgrep -f`; tmux's
   `pane_current_command` is unreliable because pi runs as a grandchild)
   and it is past the boot window.
-- `busy` — the last task id in `tasks.jsonl` has no matching terminal
-  result yet, or the matching result's status is `running`.
+- `busy` — the last tracked task id has no matching terminal result yet
+  (its task is queued or running), or the matching result's status is
+  `running`. A result `id` of `-` (an untracked steer/human turn) is **not**
+  treated as busy: a terminal untracked result reads as `idle`.
 - `blocked` — the last result's status is `blocked`.
 - `interrupted` — the last result's status is `other` (no valid
-  completion marker) or `error` (extension exception). Requires
-  `tt pi clear` before the next dispatch.
+  completion marker) or `error` (extension exception). A fresh `send`
+  refuses on an interrupted worker until `tt pi clear`.
 - `idle` — anything else.
 
 ## Model tiers
 
 Default tier is `low`; `--medium` on `send` is for safety-critical work.
 Reasoning effort is a **runtime knob**: `send` writes the tier into the
-trigger and the `tt-worker` extension applies it with
+queued task and the `tt-worker` extension applies it with
 `pi.setThinkingLevel` before the turn. A tier change therefore does
 **not** respawn the REPL — pi context is preserved across it. The tier
 sticks (remembered in `<callsign>.tier`) until the next explicit
@@ -207,11 +222,11 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `<cs>.tier` | Current pi thinking tier. |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
-| `<cs>.trigger` | Prompt handed to the REPL (id line + body). |
-| `<cs>.trigger.consuming` | Transient: the trigger mid-consumption (renamed by the extension). |
-| `<cs>.result` | Latest turn result (id / status / text). |
+| `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming` is the transient mid-claim rename. |
+| `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
+| `<cs>.result` | Latest tracked turn result (id / status / text). |
 | `<cs>.starting` | Boot stamp (`date +%s`) written by `start_repl`; marks the REPL's async boot window for `repl_starting`. |
-| `<cs>.ready` | Marker: the REPL's trigger watch is live. |
+| `<cs>.ready` | Marker: the REPL's queue pump + steer watch are live. |
 | `<cs>.log` | Append-only extension diagnostics for failures with no result. |
 | `pi-sessions/<cs>/g<N>/` | pi `--session-dir` for generation N. |
 
@@ -263,12 +278,17 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 
 ## Pool model v2 (proposed — not yet implemented)
 
-> **Status: landing incrementally.** This section is the target design. The
-> live system is still largely the v1 model above (immortals, `tt pi add`,
-> single-`trigger` channel); see `docs/STATUS.md` "Pool model v2 — in progress"
-> for exactly what has landed. As of 0.4.1: `wait-all`, the `min(cores-2,26)`
-> cap, and generalized `popidle`. The trigger/result control channel is
-> unchanged so far.
+> **Status: landing incrementally.** This section is the target design; the
+> sections above already describe the parts that have landed. See
+> `docs/STATUS.md` "Pool model v2 — in progress" for the exact ledger.
+> - **0.4.1:** `wait-all`, the `min(cores-2,26)` cap, generalized `popidle`.
+> - **0.5.0:** the **control channel is now the per-worker `<cs>.queue/`** (the
+>   single `<cs>.trigger` is gone); `send` enqueues (run-next) and lazy-spawns;
+>   `tt pi steer` / `steer all` add a run-now channel; `wait`'s task-id is
+>   optional and `all` is a pseudo-callsign for every busy worker.
+> - **Still pending:** the shared pool queue + cross-worker stealing, `tt pi
+>   auto`, `--rm`, `--notify`, the lazy zero-baseline pool, and removing the
+>   immortal caste + `tt pi add`. Immortals and `add` still exist.
 
 ### Motivation
 

@@ -10,24 +10,30 @@
  * Files live under `<TT_WORKER_STATE>/`, all in a dead-simple line format
  * so the bash side needs no JSON parser:
  *
- *   <cs>.trigger   line 1 = `<task id> <tier> <nonce>` (tier+nonce optional),
- *                  rest = prompt text. tt writes it atomically; the extension
- *                  consumes it by renaming to `<cs>.trigger.consuming`, then
- *                  reads and deletes that private path, applies the tier via
- *                  setThinkingLevel, and sends the text as a user message
- *                  (steered if busy). The prompt body ends with a required
- *                  footer; agent_end validates nonce + terminal-position.
+ *   <cs>.queue/    a per-worker task queue (directory). Each `<turn>.task`
+ *                  file is line 1 = `<task id> <tier> <nonce>` (tier+nonce
+ *                  optional), rest = prompt text. tt always appends; the
+ *                  extension claims the lowest-numbered task when the REPL is
+ *                  idle by renaming it to `<file>.claiming`, then reads and
+ *                  deletes that private path, applies the tier via
+ *                  setThinkingLevel, and sends the text as a fresh user turn.
+ *                  agent_end validates nonce + terminal-position. A busy
+ *                  worker leaves later tasks queued until its turn ends
+ *                  (send = run next; see <cs>.steer for run-now).
+ *   <cs>.steer     immediate injection, bypassing the queue and tt's task
+ *                  tracking: the extension consumes it (rename) and sends the
+ *                  text steered into the current turn, or as a fresh untracked
+ *                  turn if idle. This is `tt pi steer`.
  *   <cs>.result    lifecycle file written atomically:
  *                      id: <task id | -->
  *                      status: running|done|blocked|other|error
  *                      ---
  *                      <text>
- *                  `running` is written immediately after trigger consumption;
- *                  done/blocked/other are written on `agent_end`; error is
- *                  written for caught extension exceptions. id is `-` for a
- *                  human-typed turn.
- *   <cs>.ready     written once the trigger watch is live, so tt knows it
- *                  is safe to write a trigger without a startup race.
+ *                  `running` is written when a task is claimed; done/blocked/
+ *                  other on `agent_end`; error for caught extension
+ *                  exceptions. id is `-` for a human-typed / steered turn.
+ *   <cs>.ready     written once the queue pump + steer watch are live, so tt
+ *                  knows it is safe to enqueue without a startup race.
  *   <cs>.log       append-only timestamped diagnostics for failures that have
  *                  no result to attach to.
  *
@@ -42,12 +48,15 @@ export default function (pi: ExtensionAPI) {
 	if (!cs) return; // inert outside tt-spawned workers
 
 	const stateDir = process.env.TT_WORKER_STATE ?? "/tmp/tt";
-	const triggerFile = path.join(stateDir, `${cs}.trigger`);
+	const queueDir = path.join(stateDir, `${cs}.queue`);
+	const steerFile = path.join(stateDir, `${cs}.steer`);
 	const resultFile = path.join(stateDir, `${cs}.result`);
 	const readyFile = path.join(stateDir, `${cs}.ready`);
 	const logFile = path.join(stateDir, `${cs}.log`);
 	let pendingId = "-";
 	let pendingNonce = "";
+	let busy = false; // a turn is in flight (tt-claimed task or steer-started)
+	let agentCtx: any = null; // captured at session_start; exposes isIdle()
 
 	function lastAssistantText(messages: any[]): string {
 		let text = "";
@@ -75,21 +84,90 @@ export default function (pi: ExtensionAPI) {
 		} catch {}
 	}
 
-	pi.on("session_start", async (_event, ctx) => {
+	// Claim and run the next queued task — only when idle. Synchronous up to
+	// sendUserMessage, so the interval poll and agent_end can never interleave
+	// mid-claim. Claiming is an atomic rename, so it is safe even when several
+	// workers later share a queue (the pool queue).
+	function pump() {
+		if (busy) return;
+		// Only claim when the runtime is genuinely idle. `busy` is set
+		// synchronously below to close the gap before the runtime flips
+		// isIdle() to false; isIdle() guards the inverse gap — agent_end fires
+		// while the agent is still "processing", so claiming from there throws
+		// "Agent is already processing". Claiming only from this idle-gated
+		// poll keeps sendUserMessage from ever being rejected (which would
+		// consume a task that then never runs).
+		if (!agentCtx || !agentCtx.isIdle()) return;
+		let entries: string[];
 		try {
-			fs.mkdirSync(stateDir, { recursive: true });
-			// create-if-missing only — never clobber a trigger tt may have
-			// already written during the startup window
-			if (!fs.existsSync(triggerFile)) fs.writeFileSync(triggerFile, "");
+			entries = fs.readdirSync(queueDir);
+		} catch {
+			return;
+		}
+		const tasks = entries
+			.filter((f) => f.endsWith(".task"))
+			.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+		if (tasks.length === 0) return;
+		const claimed = path.join(queueDir, tasks[0]) + ".claiming";
+		try {
+			fs.renameSync(path.join(queueDir, tasks[0]), claimed);
+		} catch {
+			return; // lost the race / already gone
+		}
+		let raw = "";
+		try {
+			raw = fs.readFileSync(claimed, "utf-8");
+		} catch (e) {
+			logLine("read task: " + String(e));
+			return;
+		} finally {
+			try {
+				fs.unlinkSync(claimed);
+			} catch {}
+		}
+		if (!raw.trim()) return;
+		const nl = raw.indexOf("\n");
+		if (nl < 0) return; // need an id line + body
+		// line 1 = `<id> <tier> <nonce>`; tier and nonce are optional.
+		const head = raw.slice(0, nl).trim().split(/\s+/);
+		const id = head[0] || "-";
+		const tier = head[1];
+		const nonce = head[2] || "";
+		const text = raw.slice(nl + 1).trim();
+		if (!text) return;
+		pendingId = id;
+		pendingNonce = nonce;
+		busy = true;
+		atomicWrite(resultFile, "id: " + id + "\nstatus: running\n---\n");
+		// Reasoning effort is a runtime knob — no REPL respawn.
+		if (tier === "low" || tier === "medium") {
+			try {
+				pi.setThinkingLevel(tier);
+			} catch {}
+		}
+		pi.sendUserMessage(text);
+	}
+
+	pi.on("session_start", async (_event, ctx) => {
+		agentCtx = ctx;
+		try {
+			fs.mkdirSync(queueDir, { recursive: true });
+			// create-if-missing only — never clobber a steer tt may have written
+			if (!fs.existsSync(steerFile)) fs.writeFileSync(steerFile, "");
 		} catch (e) {
 			logLine("session_start setup: " + String(e));
 		}
+
+		// Steer channel: run-now injection, separate from the queue. It does
+		// not touch pendingId/pendingNonce — the in-flight task still validates
+		// its own completion. Consume by rename so a concurrent tt write is
+		// never clobbered.
 		try {
-			fs.watchFile(triggerFile, { interval: 200 }, () => {
+			fs.watchFile(steerFile, { interval: 200 }, () => {
 				try {
-					const consuming = triggerFile + ".consuming";
+					const consuming = steerFile + ".consuming";
 					try {
-						fs.renameSync(triggerFile, consuming);
+						fs.renameSync(steerFile, consuming);
 					} catch {
 						return;
 					}
@@ -97,53 +175,59 @@ export default function (pi: ExtensionAPI) {
 					try {
 						raw = fs.readFileSync(consuming, "utf-8");
 					} catch (e) {
-						logLine("read trigger: " + String(e));
+						logLine("read steer: " + String(e));
 						return;
 					} finally {
 						try {
 							fs.unlinkSync(consuming);
 						} catch {}
 					}
-					if (!raw.trim()) return;
-					const nl = raw.indexOf("\n");
-					if (nl < 0) return; // need an id line + body
-					// line 1 = `<id> <tier> <nonce>`; tier and nonce are optional.
-					const head = raw.slice(0, nl).trim().split(/\s+/);
-					const id = head[0] || "-";
-					const tier = head[1];
-					const nonce = head[2] || "";
-					const text = raw.slice(nl + 1).trim();
+					const text = raw.trim();
 					if (!text) return;
-					pendingId = id;
-					pendingNonce = nonce;
-					atomicWrite(resultFile, "id: " + id + "\nstatus: running\n---\n");
-					// Reasoning effort is a runtime knob — no REPL respawn.
-					if (tier === "low" || tier === "medium") {
-						try {
-							pi.setThinkingLevel(tier);
-						} catch {}
+					if (agentCtx && agentCtx.isIdle()) {
+						// No turn to steer into — start a fresh untracked turn.
+						// busy=true so the queue pump does not race a claim into it.
+						busy = true;
+						pi.sendUserMessage(text);
+					} else {
+						pi.sendUserMessage(text, { deliverAs: "steer" });
 					}
-					if (ctx.isIdle()) pi.sendUserMessage(text);
-					else pi.sendUserMessage(text, { deliverAs: "steer" });
 				} catch (e) {
-					logLine("trigger callback: " + String(e));
-					if (pendingId !== "-") {
-						atomicWrite(
-							resultFile,
-							"id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n",
-						);
-					}
+					logLine("steer callback: " + String(e));
 				}
 			});
 		} catch (e) {
-			logLine("watch setup: " + String(e));
-			return;
+			logLine("steer watch setup: " + String(e));
 		}
+
+		// Queue pump: poll the worker's own queue dir and claim the next task
+		// whenever the REPL is idle. A 200ms interval matches the watchFile
+		// cadence and is robust where fs.watch on a directory is not.
+		try {
+			setInterval(() => {
+				try {
+					pump();
+				} catch (e) {
+					logLine("pump: " + String(e));
+				}
+			}, 200);
+		} catch (e) {
+			logLine("pump setup: " + String(e));
+		}
+
 		atomicWrite(readyFile, `${Date.now()}\n`);
-		if (ctx.hasUI) ctx.ui.notify(`tt-worker ${cs}: watching trigger`, "info");
+		pump(); // pick up anything enqueued during the startup window
+		if (ctx.hasUI) ctx.ui.notify(`tt-worker ${cs}: watching queue`, "info");
 	});
 
 	pi.on("agent_end", async (event: any, _ctx) => {
+		// Untracked turns (steer / human-typed) have no pending task id. They
+		// must NOT clobber the last tracked task's result — `tt pi wait` reads
+		// that file for the tracked task. Just go idle and let the pump resume.
+		if (pendingId === "-") {
+			busy = false;
+			return;
+		}
 		try {
 			const text = lastAssistantText(event?.messages);
 			// For both done and blocked: require matching nonce as a dedicated field
@@ -188,6 +272,10 @@ export default function (pi: ExtensionAPI) {
 		} finally {
 			pendingId = "-";
 			pendingNonce = "";
+			busy = false;
+			// Do NOT claim the next task here: agent_end fires while the agent
+			// is still "processing", so sendUserMessage would be rejected. The
+			// idle-gated interval pump claims it on the next tick instead.
 		}
 	});
 }

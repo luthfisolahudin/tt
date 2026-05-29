@@ -68,8 +68,10 @@ CHANGE: ...
 SUCCESS: ...
 P
                                # dispatch; prints task-id like "alfa-3"
-tt pi wait alfa alfa-3         # block until WORKER_DONE / BLOCKED
-tt pi wait-all alfa bravo      # fan-out join; bare = all busy workers
+                               # (queues behind a busy worker; lazy-spawns absent)
+tt pi wait alfa                # block on alfa's latest task (task-id optional)
+tt pi steer alfa - <<<'...'    # inject NOW into the current turn (run-now)
+tt pi wait all                 # fan-out join across all busy workers
 tt pi status                   # show all workers: state, last task, tier, gen
 tt pi clear alfa               # wipe context; required before reuse
 bash -n tt                     # syntax-check after editing tt

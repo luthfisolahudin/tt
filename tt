@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.4.1"
+VERSION="0.5.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -350,8 +350,13 @@ start_repl() {
   ensure_pi_worker_dir
   tier=$(current_tier "$name")
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
-  rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.trigger" \
-        "$(state_dir)/$name.trigger.consuming" "$(state_dir)/$name.ready"
+  # Reset the control channel for the fresh REPL: drop any pending queue
+  # (a respawn means fresh context, so queued work is abandoned), the steer
+  # channel, the last result, and the readiness marker.
+  rm -f "$(state_dir)/$name.result" "$(state_dir)/$name.ready" \
+        "$(state_dir)/$name.steer" "$(state_dir)/$name.steer.consuming"
+  rm -rf "$(state_dir)/$name.queue"
+  mkdir -p "$(state_dir)/$name.queue"
   local global_append="$TT_PI_WORKER_DIR/APPEND_SYSTEM.md"
   local append_flag=""
   if [[ ! -f "$PWD/.pi/APPEND_SYSTEM.md" && -f "$global_append" ]]; then
@@ -470,7 +475,17 @@ worker_state() {
   local head rid rst
   head=$(result_head "$name") || { printf 'busy'; return; }
   if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
-  [[ $tid == "$rid" ]] || { printf 'busy'; return; }
+  if [[ $tid != "$rid" ]]; then
+    # An untracked turn (steer / human-typed) records id `-`; that is not a
+    # tracked task in flight, so a terminal result means idle. Any other
+    # mismatch means a newer tracked task is queued or running → busy.
+    if [[ $rid == "-" ]]; then
+      [[ $rst == running ]] && printf 'busy' || printf 'idle'
+    else
+      printf 'busy'
+    fi
+    return
+  fi
   case "$rst" in
     running)     printf 'busy'        ;;
     blocked)     printf 'blocked'     ;;
@@ -554,9 +569,16 @@ pi_send_cmd() {
   fi
   valid_callsign "$name" || die "invalid callsign: $name"
   require_session
-  window_exists "pi-$name" || die "pi-$name does not exist"
+  # Lazy spawn: a send to an absent worker brings it up (under the cap)
+  # rather than erroring — the orchestrator never has to `add` first.
+  if ! window_exists "pi-$name"; then
+    local cap; cap=$(pi_cap)
+    (( $(count_workers) >= cap )) && \
+      die "pi worker cap of $cap reached (cores-2, max 26)"
+    spawn_pi_window "$name"
+  fi
 
-  # Reasoning effort is a runtime knob: the tier travels in the trigger
+  # Reasoning effort is a runtime knob: the tier travels in the queued task
   # and the tt-worker extension applies it via setThinkingLevel — no
   # respawn, pi context is preserved. ensure_repl_ready waits for the
   # REPL to be ready (relaunching only one that has actually died), so a
@@ -568,10 +590,11 @@ pi_send_cmd() {
   [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
     printf '%s' "$tier" > "$(state_dir)/$name.tier"
 
-  local ws; ws=$(worker_state "$name")
-  [[ $ws == busy ]] && \
-    die "pi-$name is busy; wait for current task or \`tt pi clear $name --force\`"
-  [[ $ws == interrupted ]] && \
+  # A busy worker no longer refuses — the task is appended to the worker's
+  # queue and runs when the current turn ends (`send` = run-next; use
+  # `tt pi steer` for run-now). An interrupted worker still needs an
+  # explicit clear: its context is suspect.
+  [[ $(worker_state "$name") == interrupted ]] && \
     die "pi-$name has an interrupted task; run \`tt pi clear $name\` first"
 
   local f="$(state_dir)/$name.tasks.jsonl"
@@ -590,11 +613,15 @@ pi_send_cmd() {
   printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s"}\n' \
     "$turn" "$id" "$(date +%s)" "$tier" "$nonce" >> "$f"
 
-  # Trigger file: line 1 = `<task id> <tier> <nonce>`, remainder = prompt body.
-  # The tt-worker extension validates nonce + terminal-position on agent_end.
-  local tf="$(state_dir)/$name.trigger"
-  { printf '%s %s %s\n' "$id" "$tier" "$nonce"; cat "$promptfile"; } > "$tf.tmp"
-  mv "$tf.tmp" "$tf"
+  # Enqueue: tt always appends to the worker's queue dir; the tt-worker
+  # extension claims the next `<turn>.task` when the REPL goes idle. Each
+  # file is line 1 = `<task id> <tier> <nonce>`, remainder = prompt body;
+  # the extension validates nonce + terminal-position on agent_end.
+  local qdir="$(state_dir)/$name.queue"
+  mkdir -p "$qdir"
+  local qf="$qdir/$turn.task"
+  { printf '%s %s %s\n' "$id" "$tier" "$nonce"; cat "$promptfile"; } > "$qf.tmp"
+  mv "$qf.tmp" "$qf"
 
   printf '%s\n' "$id"
 }
@@ -614,20 +641,30 @@ pi_wait_cmd() {
         shift ;;
     esac
   done
-  [[ -n $name && -n $task_id ]] || die "wait: callsign and task-id required"
+  [[ -n $name ]] || die "wait: callsign (or 'all') required"
+  # `all` is a pseudo-callsign meaning every busy worker — fan-out join.
+  if [[ $name == all ]]; then
+    [[ -z $task_id ]] || die "wait all: a task-id cannot be combined with 'all'"
+    if (( timeout > 0 )); then pi_wait_all_cmd --timeout "$timeout"; else pi_wait_all_cmd; fi
+    return $?
+  fi
   valid_callsign "$name" || die "invalid callsign: $name"
   require_session
   window_exists "pi-$name" || die "pi-$name does not exist"
 
+  # Task-id is optional: default to the worker's latest dispatch.
+  if [[ -z $task_id ]]; then
+    task_id=$(last_task_id "$name") || die "wait: pi-$name has no task to wait on"
+  fi
   local expected_callsign="${task_id%-*}"
   [[ $expected_callsign == "$name" ]] || die "task-id callsign mismatch ($expected_callsign vs $name)"
 
   # Block until the tt-worker extension records this task's result.
   local deadline=0
   (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
-  local grace_deadline=$(( $(date +%s) + 20 ))
-  local consumed=0
-  local tf="$(state_dir)/$name.trigger"
+  local turn="${task_id#*-}"
+  local qf="$(state_dir)/$name.queue/$turn.task"
+  local stuck_since=0
   while true; do
     local head="" rid="" rst=""
     head=$(result_head "$name") || true
@@ -635,7 +672,6 @@ pi_wait_cmd() {
       if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
       if [[ $rid == "$task_id" ]]; then
         case "$rst" in
-          running) consumed=1 ;;
           done|blocked)
             result_text "$name"
             return 0
@@ -653,8 +689,19 @@ pi_wait_cmd() {
     fi
     repl_running "$name" \
       || die "pi REPL on pi-$name stopped before $task_id completed"
-    if (( ! consumed && $(date +%s) >= grace_deadline )) && [[ -s $tf ]]; then
-      die "pi-$name never consumed the trigger for $task_id (worker stuck or trigger watch dead)"
+    # Stuck guard: our task is still sitting in the queue while the worker is
+    # NOT running anything — a dead pump / watch. If it is running another
+    # task (an earlier queue entry), queuing is legitimate, so reset the timer.
+    if [[ -e $qf ]]; then
+      if [[ $rst == running ]]; then
+        stuck_since=0
+      else
+        (( stuck_since == 0 )) && stuck_since=$(date +%s)
+        (( $(date +%s) - stuck_since >= 20 )) && \
+          die "pi-$name never picked up $task_id (worker idle but task still queued; pump/watch dead)"
+      fi
+    else
+      stuck_since=0
     fi
     deadline_expired "$deadline" && die "wait timeout for $task_id (${timeout}s)"
     sleep 1
@@ -747,6 +794,76 @@ pi_wait_all_cmd() {
   return $rc
 }
 
+# Write the steer channel atomically — an immediate injection the extension
+# delivers into the worker's current turn (or a fresh untracked turn if idle),
+# bypassing the queue. Run-now, vs `send`'s run-next.
+write_steer_file() {
+  local name=$1 body=$2 sf
+  sf="$(state_dir)/$name.steer"
+  printf '%s' "$body" > "$sf.tmp"
+  mv "$sf.tmp" "$sf"
+}
+
+pi_steer_cmd() {
+  local name="" src=""
+  while (( $# )); do
+    case $1 in
+      -)  src=-; shift ;;
+      -*) die "unknown flag for steer: $1" ;;
+      *)
+        if [[ -z $name ]]; then name=$1
+        elif [[ -z $src ]]; then src=$1
+        else die "extra arg: $1"; fi
+        shift ;;
+    esac
+  done
+  [[ -n $name ]] || die "steer: callsign required"
+  [[ -n $src ]]  || die "steer: message source required (file path or -)"
+  if [[ $src != - && ! -r $src ]]; then
+    die "steer: '$src' is not a readable file. Source must be a FILE path or '-' for stdin."
+  fi
+  # `all` fans the steer out to every live worker.
+  if [[ $name == all ]]; then
+    pi_steer_all_cmd "$src"; return $?
+  fi
+  valid_callsign "$name" || die "invalid callsign: $name"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+  ensure_repl_ready "$name"
+  local body
+  if [[ $src == - ]]; then body=$(cat); else body=$(cat "$src"); fi
+  [[ -n $body ]] || die "steer: empty message"
+  write_steer_file "$name" "$body"
+}
+
+pi_steer_all_cmd() {
+  local src=""
+  while (( $# )); do
+    case $1 in
+      -)  src=-; shift ;;
+      -*) die "unknown flag for steer-all: $1" ;;
+      *)  [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  [[ -n $src ]] || die "steer-all: message source required (file path or -)"
+  if [[ $src != - && ! -r $src ]]; then
+    die "steer-all: '$src' is not a readable file. Source must be a FILE path or '-' for stdin."
+  fi
+  require_session
+  local body
+  if [[ $src == - ]]; then body=$(cat); else body=$(cat "$src"); fi
+  [[ -n $body ]] || die "steer-all: empty message"
+  local n sent=0
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    repl_running "$n"      || continue
+    write_steer_file "$n" "$body"
+    printf '%s\n' "$n"
+    sent=$((sent + 1))
+  done
+  (( sent )) || note "steer-all: no live workers"
+}
+
 pi_status_cmd() {
   require_session
   printf '%-9s  %-11s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
@@ -783,7 +900,7 @@ pi_rm_cmd() {
     die "pi-$name is busy; use --force"
   fi
   tmux kill-window -t "=$(session_name):pi-$name" 2>/dev/null || true
-  rm -f "$(state_dir)/$name."*
+  rm -rf "$(state_dir)/$name."*
   rm -rf "$(state_dir)/pi-sessions/$name"
 }
 
@@ -797,7 +914,7 @@ pi_popidle_cmd() {
     window_exists "pi-$n" || continue
     if ensure_idle_or_blocked "$n"; then
       tmux kill-window -t "=$(session_name):pi-$n" 2>/dev/null || true
-      rm -f "$(state_dir)/$n."*
+      rm -rf "$(state_dir)/$n."*
       rm -rf "$(state_dir)/pi-sessions/$n"
       printf '%s\n' "$n"
       return 0
@@ -1230,26 +1347,25 @@ PI WORKER VERBS
       `tt pi send alfa - <<<'TASK: ...'`.
       --low/--medium selects pi thinking effort; it takes effect at
       runtime (no respawn, context preserved) and the tier sticks.
-      Refuses if the worker is busy. Prints task-id (e.g. "alfa-3").
+      A send to an absent worker lazily spawns it (under the cap). A send
+      to a BUSY worker queues behind the current turn (run-next; use
+      `tt pi steer` for run-now). Prints task-id (e.g. "alfa-3").
 
-  tt pi wait <callsign> <task-id> [--timeout SECONDS]
-      Block until the tt-worker extension records the matching task's
-      result. By default it waits forever; Ctrl-C cancels. Use
-      --timeout SECONDS to fail instead of waiting indefinitely
-      (--timeout 0 also waits forever). The 20s unconsumed-trigger
-      stuck-worker guard still fails fast. Prints the last assistant
-      message (the WORKER_DONE / BLOCKED block). Exit 0 on done/blocked,
-      non-zero on timeout / unexpected completion.
+  tt pi steer <callsign|all> (FILE | -)
+      Inject a message NOW — steered into the worker's current turn (or a
+      fresh turn if idle), bypassing the queue. Unlike `send`, it is not a
+      tracked task (no task-id, no result of its own). `all` fans the
+      message out to every live worker.
 
-  tt pi wait-all [--timeout SECONDS] [callsign...]
-      Join several workers in one call: block until each given worker's
-      latest task reaches a terminal result, then print one consolidated
-      report (a `== <cs> (<id>) <status> ==` header per worker followed by
-      its output). With no callsigns, waits on every worker currently busy.
-      Waits forever by default; --timeout SECONDS bounds it. Exit 0 only if
-      every target finished done/blocked; non-zero on any error/other/
-      timeout/dead-REPL. Use after fanning out distinct `send`s so the
-      coordination costs one round-trip, not one wait per worker.
+  tt pi wait <callsign|all> [task-id] [--timeout SECONDS]
+      Block until the tt-worker extension records the task's result. The
+      task-id is optional and defaults to the worker's latest dispatch.
+      `tt pi wait all` joins every busy worker and prints one consolidated
+      report (a `== <cs> (<id>) <status> ==` header per worker). By default
+      it waits forever; Ctrl-C cancels. --timeout SECONDS bounds it
+      (--timeout 0 also waits forever); a task left queued on an idle worker
+      still fails fast at 20s. Prints the WORKER_DONE / BLOCKED block.
+      Exit 0 on done/blocked, non-zero on timeout / unexpected completion.
 
   tt pi status
       One row per existing worker: CALLSIGN, STATE
@@ -1261,8 +1377,8 @@ PI WORKER VERBS
       Refuses on alfa/bravo/charlie unconditionally.
 
   tt pi popidle
-      Remove the highest-NATO idle non-immortal worker (echo, then
-      delta). No-op if none idle. Prints the removed callsign.
+      Remove the highest-NATO idle non-immortal worker. No-op if none
+      idle. Prints the removed callsign.
 
 CROSS-SESSION VERBS
   tt x send [--timeout SECONDS] <session-id> (FILE | -)
@@ -1306,11 +1422,11 @@ WINDOW LAYOUT (created by `tt up`)
   5+ pi-delta…zulu  Optional, on-demand via `tt pi add`. Cap cores-2 (max 26).
   +  user windows Ad-hoc, created with Ctrl-b c. Not managed by tt.
 
-  Pi windows host a live, interactive pi REPL. `tt pi send` injects the
-  prompt through the worker-installed `tt-worker` extension (which
-  watches a per-worker trigger file); `tt pi wait` reads the result the
-  extension records. You can watch, type into, and steer any pi-* REPL
-  by hand — tt's file channel and your keystrokes coexist.
+  Pi windows host a live, interactive pi REPL. `tt pi send` appends to a
+  per-worker queue (`<cs>.queue/`) that the worker-installed `tt-worker`
+  extension drains when idle; `tt pi wait` reads the result the extension
+  records. You can watch, type into, and steer any pi-* REPL by hand — tt's
+  file channel and your keystrokes coexist.
 
 SESSION NAMING
   <basename($PWD)>-<sha1($PWD)[:4]>     e.g. /home/me/proj/foo → foo-a3f1
@@ -1322,9 +1438,10 @@ STATE
   $XDG_STATE_HOME/tt/<session>/<callsign>.tier          current pi thinking tier
   $XDG_STATE_HOME/tt/<session>/<callsign>.gen           current context generation
   $XDG_STATE_HOME/tt/<session>/<callsign>.in.<N>.txt    prompt body for turn N
-  $XDG_STATE_HOME/tt/<session>/<callsign>.trigger       prompt handed to the REPL
-  $XDG_STATE_HOME/tt/<session>/<callsign>.result        latest turn result
-  $XDG_STATE_HOME/tt/<session>/<callsign>.ready         REPL trigger-watch is live
+  $XDG_STATE_HOME/tt/<session>/<callsign>.queue/        per-worker task queue (<turn>.task)
+  $XDG_STATE_HOME/tt/<session>/<callsign>.steer         run-now injection (tt pi steer)
+  $XDG_STATE_HOME/tt/<session>/<callsign>.result        latest tracked turn result
+  $XDG_STATE_HOME/tt/<session>/<callsign>.ready         REPL queue-pump + steer-watch are live
   $XDG_STATE_HOME/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
 
 EXIT CODES
@@ -1344,9 +1461,13 @@ CHANGE: rename the local variable only; do not touch other identifiers.
 SUCCESS: `pnpm typecheck` passes; no other diffs.
 PROMPT
 
-  # Capture id, then wait
-  TID=$(tt pi send bravo - <<<'TASK: ...')
-  tt pi wait bravo "$TID"
+  # Send, then wait on the worker's latest task (task-id optional)
+  tt pi send bravo - <<<'TASK: ...'
+  tt pi wait bravo                   # waits on bravo's latest dispatch
+
+  # Queue a follow-up on a busy worker (runs next); or steer it NOW
+  tt pi send  bravo - <<<'TASK: then update the test'   # run-next
+  tt pi steer bravo - <<<'also keep the old export'     # run-now, this turn
 
   # See who's free
   tt pi status
@@ -1354,12 +1475,12 @@ PROMPT
   # Fan out distinct tasks, then join them all in one call
   tt pi send alfa  - <<<'TASK: ...'
   tt pi send bravo - <<<'TASK: ...'
-  tt pi wait-all alfa bravo          # one round-trip; or bare for all busy
+  tt pi wait all                     # one round-trip; joins all busy workers
 
   # Add a 4th worker, run a safety-critical task on medium, drop it
   CS=$(tt pi add)
-  TID=$(tt pi send "$CS" --medium - <<<'TASK: ...')
-  tt pi wait "$CS" "$TID"
+  tt pi send "$CS" --medium - <<<'TASK: ...'
+  tt pi wait "$CS"
   tt pi popidle
 HELP
 }
@@ -1380,6 +1501,8 @@ case "$cmd" in
       add)      pi_add_cmd "$@" ;;
       clear)    pi_clear_cmd "$@" ;;
       send)     pi_send_cmd "$@" ;;
+      steer)    pi_steer_cmd "$@" ;;
+      steer-all) pi_steer_all_cmd "$@" ;;
       wait)     pi_wait_cmd "$@" ;;
       wait-all) pi_wait_all_cmd "$@" ;;
       status)   pi_status_cmd "$@" ;;

@@ -73,21 +73,43 @@ test tasks trivial.
 ## Pool model v2 — in progress
 
 The full successor to the v1 pool is specified in DESIGN "Pool model v2". It is
-landing in increments; the trigger/result control channel is unchanged so far.
+landing in increments.
 
 **Landed (0.4.1):**
 
-- `tt pi wait-all [--timeout N] [cs...]` — fan-out join, consolidated report;
-  bare form waits on all busy workers. (`bash -n` clean; live happy-path not
-  yet exercised against real workers.)
-- Worker cap `min(cores-2, 26)`, enforced on `add`; NATO roster expanded to 26.
-- `tt pi popidle` generalized to the highest existing non-immortal worker.
+- `tt pi wait-all` (now also reachable as `tt pi wait all`); worker cap
+  `min(cores-2, 26)`, NATO roster expanded to 26; `popidle` generalized.
 
-**Still v1 / not yet built:** lazy zero-baseline pool (`tt up` still pre-spawns
-the three immortals), lifecycle-by-`--rm`, `tt pi auto` front door, the
-two-queue work-stealing model, `send`-enqueues / `steer` split, `--notify`,
-and the single-`trigger` → queue-dir control-channel change. Immortals and
-`tt pi add` still exist.
+**Landed (0.5.0) — control channel is now a per-worker queue:**
+
+- `<cs>.queue/` replaces the single `<cs>.trigger`; the extension claims the
+  next `<turn>.task` only when idle (200ms poll, never from `agent_end`).
+- `tt pi send` enqueues behind a busy worker (run-next) and lazy-spawns an
+  absent one; interrupted still needs `clear`.
+- `tt pi steer <cs|all>` — run-now injection (`<cs>.steer`), untracked, does
+  not clobber the last tracked result.
+- `tt pi wait` task-id optional (defaults to latest); `all` pseudo-callsign
+  joins all busy workers; untracked `id: -` result no longer pins `busy`.
+- **Verified live** against a throwaway project: lazy-spawn, queue claim,
+  two-task FIFO drain, steer (idle + into-turn), result not clobbered by steer,
+  `wait` with optional id, `wait all` with nothing busy.
+
+**Still v1 / not yet built:** the **shared pool queue + cross-worker
+work-stealing**, `tt pi auto` front door, lifecycle-by-`--rm`, `--notify`, the
+lazy zero-baseline pool (`tt up` still pre-spawns the three immortals), and
+removing the immortal caste + `tt pi add`. Immortals and `tt pi add` still
+exist.
+
+## Known limitations / not yet tested (v2)
+
+- A `steer` to an **idle** worker starts a fresh untracked turn; while it runs,
+  `tt pi status` reports the worker `idle` (untracked turns don't write a
+  result). Cosmetic; the queue pump still waits for true idle before claiming.
+- `<cs>.result` holds only the latest tracked task. Waiting on an older task id
+  whose result has been overwritten by a newer task will not resolve — wait on
+  the latest (the default) or use `wait all`.
+- The shared pool queue path in the extension's claim logic (atomic rename) is
+  written to be multi-worker-safe but is not yet exercised (no pool queue yet).
 
 ## Possible next steps
 

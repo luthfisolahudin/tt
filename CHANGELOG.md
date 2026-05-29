@@ -5,6 +5,32 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.5.0] — 2026-05-29
+
+Pool model v2, increment 2 — a cross-cutting **control-channel** shift, so a
+minor bump. The single-slot `<cs>.trigger` is gone. Verified live against a
+throwaway project (lazy-spawn, queue claim, two-task FIFO drain, steer,
+steer-not-clobbering-results, `wait all`).
+
+- **Per-worker task queue.** `tt pi send` now appends `<cs>.queue/<turn>.task`;
+  the `tt-worker` extension claims the lowest-numbered task — only when the
+  REPL is genuinely idle — via a 200ms poll (never from inside `agent_end`,
+  where a send is rejected as "already processing"). Claiming is an atomic
+  rename, ready for the shared pool queue to come.
+- **`send` enqueues instead of refusing.** A send to a busy worker queues
+  behind the current turn (run-next) rather than erroring; a send to an absent
+  worker lazily spawns it (under the cap). Interrupted workers still need
+  `clear`.
+- **`tt pi steer <cs|all>`** — run-now injection on a separate `<cs>.steer`
+  channel, steered into the current turn (or a fresh turn if idle), bypassing
+  the queue. Untracked: no task-id, no result of its own, and it never
+  clobbers the last tracked task's result.
+- **`tt pi wait` task-id is optional** (defaults to the worker's latest
+  dispatch), and **`all` is a pseudo-callsign**: `tt pi wait all` joins every
+  busy worker. `wait-all` / `steer-all` remain as aliases.
+- **Worker-state fix:** an untracked turn's `id: -` result no longer pins a
+  worker to `busy` forever — a terminal untracked result reads as `idle`.
+
 ## [0.4.1] — 2026-05-29
 
 First increment of the **pool model v2** (see DESIGN). Additive, no change to the
