@@ -61,18 +61,22 @@ interface, update that skill too.
 ## AI quick reference
 
 ```sh
-tt pi send alfa <(cat <<'P'
+tt pi send alfa - <<'P'
 TASK: ...
 FILES: path/to/file
 CHANGE: ...
 SUCCESS: ...
 P
-)                              # dispatch; prints task-id like "alfa-3"
+                               # dispatch; prints task-id like "alfa-3"
 tt pi wait alfa alfa-3         # block until WORKER_DONE / BLOCKED
+tt pi wait-all alfa bravo      # fan-out join; bare = all busy workers
 tt pi status                   # show all workers: state, last task, tier, gen
 tt pi clear alfa               # wipe context; required before reuse
 bash -n tt                     # syntax-check after editing tt
 ```
+
+Inline prompts use `-` (stdin) with a heredoc/here-string — `tt pi send alfa -
+<<<'TASK: ...'` — not process substitution.
 
 Worker states: `idle` · `busy` · `blocked` · `interrupted` · `starting` · `down` · `missing`
 

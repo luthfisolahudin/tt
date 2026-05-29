@@ -55,7 +55,11 @@ session — what a handoff can trust without retesting:
 ```sh
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
 env -u TMUX tt up                       # attach fails harmlessly off-tty
-TID=$(tt pi send alfa <(printf 'TASK: reply WORKER_DONE\nSUCCESS: done\n'))
+TID=$(tt pi send alfa - <<'P'
+TASK: reply WORKER_DONE
+SUCCESS: done
+P
+)
 tt pi wait alfa "$TID"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)"
 tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
@@ -66,13 +70,24 @@ launched REPL — respawn workers (`tt pi clear <cs>`) after changing it. After
 syntax changes run `bash -n tt`. Live `pi` steps spend OpenAI Codex quota — keep
 test tasks trivial.
 
-## Planned: pool model v2
+## Pool model v2 — in progress
 
-The current immortal-caste / fixed-cap / single-`trigger` pool is **v1**. An
-agreed successor (lazy zero-baseline pool, lifecycle-by-`--rm`, `tt pi auto`
-front door, two-queue work-stealing, `send`-enqueues/`steer`-interrupts split,
-cap `min(cores-2,26)`, `wait-all`/`--notify`) is specified in DESIGN
-"Pool model v2 (proposed — not yet implemented)". Not built or tested yet.
+The full successor to the v1 pool is specified in DESIGN "Pool model v2". It is
+landing in increments; the trigger/result control channel is unchanged so far.
+
+**Landed (0.4.1):**
+
+- `tt pi wait-all [--timeout N] [cs...]` — fan-out join, consolidated report;
+  bare form waits on all busy workers. (`bash -n` clean; live happy-path not
+  yet exercised against real workers.)
+- Worker cap `min(cores-2, 26)`, enforced on `add`; NATO roster expanded to 26.
+- `tt pi popidle` generalized to the highest existing non-immortal worker.
+
+**Still v1 / not yet built:** lazy zero-baseline pool (`tt up` still pre-spawns
+the three immortals), lifecycle-by-`--rm`, `tt pi auto` front door, the
+two-queue work-stealing model, `send`-enqueues / `steer` split, `--notify`,
+and the single-`trigger` → queue-dir control-channel change. Immortals and
+`tt pi add` still exist.
 
 ## Possible next steps
 

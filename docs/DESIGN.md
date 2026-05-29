@@ -263,9 +263,12 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 
 ## Pool model v2 (proposed — not yet implemented)
 
-> **Status: design only.** The live system is the immortal/cap/single-trigger
-> model described above (v1). This section records the agreed successor so it
-> survives design discussion; nothing here is built or tested yet.
+> **Status: landing incrementally.** This section is the target design. The
+> live system is still largely the v1 model above (immortals, `tt pi add`,
+> single-`trigger` channel); see `docs/STATUS.md` "Pool model v2 — in progress"
+> for exactly what has landed. As of 0.4.1: `wait-all`, the `min(cores-2,26)`
+> cap, and generalized `popidle`. The trigger/result control channel is
+> unchanged so far.
 
 ### Motivation
 

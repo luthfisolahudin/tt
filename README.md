@@ -38,13 +38,13 @@ the three `pi-*` windows are immortal pre-spawned workers.
 ## Delegating to a pi worker
 
 ```sh
-TID=$(tt pi send alfa <(cat <<'PROMPT'
+TID=$(tt pi send alfa - <<'PROMPT'
 TASK: rename `foo` to `bar` in app/root.tsx
 FILES: app/root.tsx
 CHANGE: rename the local variable only; do not touch other identifiers.
 SUCCESS: `pnpm typecheck` passes; no other diffs.
 PROMPT
-))
+)
 tt pi wait alfa "$TID"     # blocks, prints the WORKER_DONE / BLOCKED block
 ```
 
@@ -62,10 +62,11 @@ Run `tt --help` for the full block. Summary:
 | `tt name` | Print the computed session name. |
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
 | `tt down` | Kill the project session (with confirmation). |
-| `tt pi add` | Spawn the next worker (`delta`, then `echo`). Cap of 5. |
+| `tt pi add` | Spawn the next worker (`delta`, `echo`, …, `zulu`). Cap `min(cores-2, 26)`. |
 | `tt pi clear <cs> [--force]` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
 | `tt pi send <cs> [--low\|--medium] (FILE\|-)` | Send a prompt; print task ID. |
 | `tt pi wait <cs> <task-id> [--timeout N]` | Block until `WORKER_DONE`/`BLOCKED:`. Waits forever by default. |
+| `tt pi wait-all [--timeout N] [cs...]` | Join several workers in one call; consolidated report. Bare = all busy. |
 | `tt pi status` | One row per worker: state, last task, tier, generation. |
 | `tt pi rm <cs> [--force]`, `tt pi remove <cs> [--force]` | Remove a non-immortal worker. |
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |
@@ -73,8 +74,8 @@ Run `tt --help` for the full block. Summary:
 | `tt x list [--all]`, `tt x ls [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
 | `tt x observe [run] [--interval N] [--duration N] [--all]` | Passively sample Claude panes to SQLite for improving `tt x send` safe-input detection; duplicate non-`ts` payloads are ignored. |
 
-Workers: `alfa`, `bravo`, `charlie` are immortal (always present); `delta`,
-`echo` are optional. Hard cap of 5.
+Workers: `alfa`, `bravo`, `charlie` are immortal (always present); `delta`
+through `zulu` are optional, spawned on demand. Hard cap `min(cores-2, 26)`.
 
 ## Checking a session's tt version
 

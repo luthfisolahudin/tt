@@ -5,6 +5,21 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.4.1] — 2026-05-29
+
+First increment of the **pool model v2** (see DESIGN). Additive, no change to the
+trigger/result control channel yet.
+
+- **`tt pi wait-all [--timeout N] [callsign...]`** — join several workers in one
+  call. Blocks until each target's latest task reaches a terminal result, then
+  prints one consolidated report. Bare form waits on all busy workers. This is
+  the fan-out join that keeps a multi-worker dispatch O(1) in the orchestrator's
+  context instead of one `wait` per worker.
+- **Worker cap is now `min(cores-2, 26)`** (was a fixed 5), enforced on `add`.
+  26 = NATO-letter exhaustion (`zulu`); the NATO roster is expanded to all 26.
+- **`tt pi popidle`** generalized to the highest existing non-immortal worker
+  (was hard-coded to `echo`/`delta`).
+
 ## [0.4.0] — 2026-05-29
 
 - **Session version stamping.** `tt up` writes the running tt version to the

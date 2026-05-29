@@ -3,10 +3,11 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.4.0"
-NATO=(alfa bravo charlie delta echo)
+VERSION="0.4.1"
+NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
+      mike november oscar papa quebec romeo sierra tango uniform victor whiskey
+      xray yankee zulu)
 IMMORTALS=(alfa bravo charlie)
-MAX_PI=5
 PI_HISTORY_LIMIT=50000
 PI_DEFAULT_TIER=low
 PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
@@ -54,6 +55,25 @@ is_immortal() {
 
 valid_callsign() {
   local n=$1; for i in "${NATO[@]}"; do [[ $i == "$n" ]] && return 0; done; return 1
+}
+
+cpu_count() { nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || printf '4'; }
+
+# Hard worker ceiling, enforced on every spawn path: cores-2, floored at 1
+# and capped at 26 (NATO-letter exhaustion, `zulu`). The ceiling is the
+# runaway backstop that keeps lazy/auto spawning safe.
+pi_cap() {
+  local c m; c=$(cpu_count); m=$((c - 2))
+  (( m < 1 ))  && m=1
+  (( m > 26 )) && m=26
+  printf '%d' "$m"
+}
+
+# Number of pi worker windows that currently exist.
+count_workers() {
+  local n c=0
+  for n in "${NATO[@]}"; do window_exists "pi-$n" && c=$((c + 1)); done
+  printf '%d' "$c"
 }
 
 window_exists() {
@@ -468,6 +488,9 @@ ensure_idle_or_blocked() {
 
 pi_add_cmd() {
   require_session
+  local cap; cap=$(pi_cap)
+  (( $(count_workers) >= cap )) && \
+    die "pi worker cap of $cap reached (cores-2, max 26)"
   for n in "${NATO[@]}"; do
     if ! window_exists "pi-$n"; then
       spawn_pi_window "$n"
@@ -475,7 +498,7 @@ pi_add_cmd() {
       return 0
     fi
   done
-  die "pi worker cap of $MAX_PI reached"
+  die "no free callsign available"
 }
 
 pi_clear_cmd() {
@@ -638,6 +661,92 @@ pi_wait_cmd() {
   done
 }
 
+# Join primitive: block until several workers reach a terminal result, then
+# print one consolidated report. With no callsigns, the target set is every
+# worker currently busy. Each target is anchored on its latest dispatch
+# (`last_task_id`), so `wait-all` means "wait for whatever each worker is
+# doing right now". Exit 0 only if every target finished done/blocked.
+# This is the fan-out join that keeps a multi-worker dispatch O(1) in the
+# orchestrator's context instead of one `wait` round-trip per worker.
+pi_wait_all_cmd() {
+  local timeout=0; local -a names=()
+  while (( $# )); do
+    case $1 in
+      --timeout)
+        shift; [[ $# -gt 0 ]] || die "wait-all: --timeout requires seconds"
+        valid_timeout_arg "wait-all" "$1"; timeout=$1; shift ;;
+      -*) die "unknown flag for wait-all: $1" ;;
+      *)  valid_callsign "$1" || die "invalid callsign: $1"; names+=("$1"); shift ;;
+    esac
+  done
+  require_session
+
+  # Default target set: every existing worker that is currently busy.
+  if (( ${#names[@]} == 0 )); then
+    local n
+    for n in "${NATO[@]}"; do
+      window_exists "pi-$n" || continue
+      [[ $(worker_state "$n") == busy ]] && names+=("$n")
+    done
+  fi
+  if (( ${#names[@]} == 0 )); then
+    note "wait-all: no busy workers"
+    return 0
+  fi
+
+  # Resolve each target's task id (its latest dispatch) up front.
+  local -a tids=() pend=() statuses=() texts=()
+  local i
+  for i in "${!names[@]}"; do
+    local nm=${names[i]} tid
+    window_exists "pi-$nm" || die "pi-$nm does not exist"
+    tid=$(last_task_id "$nm") || die "pi-$nm has no task to wait on"
+    tids[i]=$tid; pend[i]=1
+  done
+
+  local deadline=0
+  (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
+  local rc=0
+
+  while true; do
+    local remaining=0
+    for i in "${!names[@]}"; do
+      (( ${pend[i]} )) || continue
+      local nm=${names[i]} tid=${tids[i]} head rid rst
+      head=$(result_head "$nm") || head=""
+      if [[ -n $head ]]; then
+        if [[ $head == *' '* ]]; then rid=${head%% *}; rst=${head#* }; else rid=$head; rst=""; fi
+        if [[ $rid == "$tid" ]]; then
+          case "$rst" in
+            done|blocked) statuses[i]=$rst;  texts[i]=$(result_text "$nm"); pend[i]=0; continue ;;
+            error)        statuses[i]=error; texts[i]=$(result_text "$nm"); pend[i]=0; rc=1; continue ;;
+            other)        statuses[i]=other; texts[i]=$(result_text "$nm"); pend[i]=0; rc=1; continue ;;
+          esac
+        fi
+      fi
+      if ! repl_running "$nm"; then
+        statuses[i]=down; texts[i]="(pi REPL stopped before $tid completed)"; pend[i]=0; rc=1; continue
+      fi
+      remaining=1
+    done
+    (( remaining )) || break
+    if deadline_expired "$deadline"; then
+      for i in "${!names[@]}"; do
+        (( ${pend[i]} )) || continue
+        statuses[i]=timeout; texts[i]="(timed out after ${timeout}s)"; pend[i]=0; rc=1
+      done
+      break
+    fi
+    sleep 1
+  done
+
+  for i in "${!names[@]}"; do
+    printf '== %s (%s) %s ==\n' "${names[i]}" "${tids[i]}" "${statuses[i]}"
+    printf '%s\n\n' "${texts[i]}"
+  done
+  return $rc
+}
+
 pi_status_cmd() {
   require_session
   printf '%-9s  %-11s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
@@ -681,7 +790,10 @@ pi_rm_cmd() {
 pi_popidle_cmd() {
   require_session
   # Highest NATO first, only non-immortals.
-  for n in echo delta; do
+  local i n
+  for (( i=${#NATO[@]}-1; i>=0; i-- )); do
+    n=${NATO[i]}
+    is_immortal "$n" && continue
     window_exists "pi-$n" || continue
     if ensure_idle_or_blocked "$n"; then
       tmux kill-window -t "=$(session_name):pi-$n" 2>/dev/null || true
@@ -1103,9 +1215,9 @@ SESSION VERBS
 
 PI WORKER VERBS
   tt pi add
-      Spawn the next pi worker in NATO order
-      (alfa→bravo→charlie→delta→echo). Auto-assigned, no callsign arg.
-      Errors at cap of 5. Prints the new callsign.
+      Spawn the next pi worker in NATO order (alfa→bravo→…→zulu).
+      Auto-assigned, no callsign arg. Errors at the worker cap
+      (cores-2, max 26). Prints the new callsign.
 
   tt pi clear <callsign> [--force]
       Wipe the worker's context: bumps a generation counter and respawns
@@ -1114,8 +1226,8 @@ PI WORKER VERBS
 
   tt pi send <callsign> [--low|--medium] (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
-      or `-` for stdin. Use process substitution to skip temp files:
-      `tt pi send alfa <(printf 'TASK: ...\n')`.
+      or `-` for stdin — feed inline text with a here-string or heredoc:
+      `tt pi send alfa - <<<'TASK: ...'`.
       --low/--medium selects pi thinking effort; it takes effect at
       runtime (no respawn, context preserved) and the tier sticks.
       Refuses if the worker is busy. Prints task-id (e.g. "alfa-3").
@@ -1128,6 +1240,16 @@ PI WORKER VERBS
       stuck-worker guard still fails fast. Prints the last assistant
       message (the WORKER_DONE / BLOCKED block). Exit 0 on done/blocked,
       non-zero on timeout / unexpected completion.
+
+  tt pi wait-all [--timeout SECONDS] [callsign...]
+      Join several workers in one call: block until each given worker's
+      latest task reaches a terminal result, then print one consolidated
+      report (a `== <cs> (<id>) <status> ==` header per worker followed by
+      its output). With no callsigns, waits on every worker currently busy.
+      Waits forever by default; --timeout SECONDS bounds it. Exit 0 only if
+      every target finished done/blocked; non-zero on any error/other/
+      timeout/dead-REPL. Use after fanning out distinct `send`s so the
+      coordination costs one round-trip, not one wait per worker.
 
   tt pi status
       One row per existing worker: CALLSIGN, STATE
@@ -1149,8 +1271,8 @@ CROSS-SESSION VERBS
       safely accept input: empty prompt, suggestion prompt, or queued-message
       state. By default it waits forever; Ctrl-C cancels. Use
       --timeout SECONDS to fail instead of waiting indefinitely.
-      Source is a file path, or `-` for stdin. Use process substitution:
-      `tt x send brainstorm-a3f1 <(printf 'hi\n')`.
+      Source is a file path, or `-` for stdin (here-string or heredoc):
+      `tt x send brainstorm-a3f1 - <<<'hi'`.
       <session-id> is the exact tmux session name; run `tt name` in the
       other project to get it. The message is prefixed `[tt x from
       <sender>]` so the receiver sees it is cross-session traffic.
@@ -1181,7 +1303,7 @@ WINDOW LAYOUT (created by `tt up`)
   2  pi-alfa      Live pi REPL (immortal).
   3  pi-bravo     Live pi REPL (immortal).
   4  pi-charlie   Live pi REPL (immortal).
-  5+ pi-delta/echo  Optional, on-demand via `tt pi add`. Hard cap 5 pi.
+  5+ pi-delta…zulu  Optional, on-demand via `tt pi add`. Cap cores-2 (max 26).
   +  user windows Ad-hoc, created with Ctrl-b c. Not managed by tt.
 
   Pi windows host a live, interactive pi REPL. `tt pi send` injects the
@@ -1215,24 +1337,28 @@ EXAMPLES
   tt
 
   # Send a heredoc to alfa
-  tt pi send alfa <(cat <<'PROMPT'
+  tt pi send alfa - <<'PROMPT'
 TASK: rename `foo` to `bar` in app/root.tsx
 FILES: app/root.tsx
 CHANGE: rename the local variable only; do not touch other identifiers.
 SUCCESS: `pnpm typecheck` passes; no other diffs.
 PROMPT
-)
 
   # Capture id, then wait
-  TID=$(tt pi send bravo <(printf 'TASK: ...\n'))
+  TID=$(tt pi send bravo - <<<'TASK: ...')
   tt pi wait bravo "$TID"
 
   # See who's free
   tt pi status
 
+  # Fan out distinct tasks, then join them all in one call
+  tt pi send alfa  - <<<'TASK: ...'
+  tt pi send bravo - <<<'TASK: ...'
+  tt pi wait-all alfa bravo          # one round-trip; or bare for all busy
+
   # Add a 4th worker, run a safety-critical task on medium, drop it
   CS=$(tt pi add)
-  TID=$(tt pi send "$CS" --medium <(printf 'TASK: ...\n'))
+  TID=$(tt pi send "$CS" --medium - <<<'TASK: ...')
   tt pi wait "$CS" "$TID"
   tt pi popidle
 HELP
@@ -1255,6 +1381,7 @@ case "$cmd" in
       clear)    pi_clear_cmd "$@" ;;
       send)     pi_send_cmd "$@" ;;
       wait)     pi_wait_cmd "$@" ;;
+      wait-all) pi_wait_all_cmd "$@" ;;
       status)   pi_status_cmd "$@" ;;
       rm|remove) pi_rm_cmd "$@" ;;
       popidle)  pi_popidle_cmd "$@" ;;
