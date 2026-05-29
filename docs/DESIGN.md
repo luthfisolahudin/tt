@@ -269,7 +269,7 @@ tt session's orchestrator and submits it once that Claude Code TUI can safely
 accept input.
 
 Unlike pi workers, the orchestrator is a live Claude Code TUI with no
-file/trigger control channel, so delivery uses tmux directly. `tt x send`
+file control channel, so delivery uses tmux directly. `tt x send`
 serializes per target with `<target-state>/x-send.lock`, then waits for a safe
 input state: it rejects in-flight/interrupt states and a non-empty `❯` draft,
 and treats an empty prompt, dim suggestion text, and queued-message banners as
@@ -300,30 +300,11 @@ or sends keys — but it does log pane text, so it prints a startup warning.
 `--duration 0` runs until Ctrl-C; `--all` also samples down/no-orchestrator
 sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 
-## Pool model v2 (proposed — not yet implemented)
+## Pool model — design rationale
 
-> **Status: landing incrementally.** This section is the target design; the
-> sections above already describe the parts that have landed. See
-> `docs/STATUS.md` "Pool model v2 — in progress" for the exact ledger.
-> - **0.4.1:** `wait-all`, the `min(cores-2,26)` cap, generalized `popidle`.
-> - **0.5.0:** the **control channel is now the per-worker `<cs>.queue/`** (the
->   single `<cs>.trigger` is gone); `send` enqueues (run-next) and lazy-spawns;
->   `tt pi steer` / `steer all` add a run-now channel; `wait`'s task-id is
->   optional and `all` is a pseudo-callsign for every busy worker.
-> - **0.6.0:** the **shared pool queue** (`queue/`) + cross-worker work-stealing
->   and the **`tt pi auto`** front door; pool tasks (`pool-<seq>`) record to
->   `queue-results/`; `worker_state` keys busy off the `<cs>.busy` marker;
->   `wait` accepts a bare task-id / pool id.
-> - **0.7.0:** **`tt pi auto --rm`** — fresh ephemeral worker, never steals pool
->   work, reaped (daemonless) once idle with an empty queue.
-> - **0.8.0:** the **lazy zero-baseline pool** — `tt up` pre-spawns nothing;
->   the **immortal caste is gone** (all callsigns ordinary/removable); and
->   **`tt pi add` is removed** (spawn is implicit via `send`/`auto`).
-> - **0.8.1:** **`--notify`** on `send`/`auto` — fire-and-forget completion ping
->   via a session notify queue drained by a lazy single-instance drainer.
->
-> Pool model v2 is now feature-complete; what remains is the consumer/doc
-> reconciliation pass.
+> This section is the **why**. The sections above describe the live mechanics;
+> CHANGELOG (0.4.1–0.8.1) has the increment-by-increment history of how the
+> model was built. The model below is fully implemented.
 
 ### Motivation
 
@@ -375,9 +356,9 @@ The distinction is **pinned vs stealable**:
   worker has the context).
 - **Shared pool queue** (`queue/`) — fed by `auto` when all workers are busy at
   cap. Stealable, for throughput.
-- **Drain priority:** a worker going idle (`agent_end`) claims its own queue
-  first, then steals from the pool. Claim = atomic rename — the same primitive
-  that already consumes triggers, so still **no daemon**.
+- **Drain priority:** an idle worker claims its own queue first, then steals
+  from the pool. Claim = atomic rename — the one concurrency primitive used
+  throughout (queue claim, pool steal, lock acquire), so still **no daemon**.
 
 ### Three injection semantics
 
@@ -389,15 +370,15 @@ The distinction is **pinned vs stealable**:
 
 ### Join + notify
 
-- `tt pi wait-all [names…]` — block until all named (or all busy) workers reach a
-  terminal result; one consolidated report. Replaces per-worker `wait` fan-out
-  and is the main fix for v1's coordination context-cost. (`send-all` =
-  broadcast-same-prompt convenience, secondary; distinct-task fan-out is just
-  batched `send`s in one shell call.)
-- `--notify` (on `send`/`auto`) — on completion, push `<id> done` into the
-  `claude` pane via the `tt x send` paste path. Background dispatch + wake-up
-  built from parts tt already owns; queued tasks survive a reboot, which an
-  in-memory Workflow fan-out cannot.
+- `tt pi wait all` — block until every busy worker reaches a terminal result;
+  one consolidated report. The main fix for v1's coordination context-cost:
+  one round-trip joins a fan-out instead of one `wait` per worker. (Distinct-task
+  fan-out is just batched `send`s in one shell call.)
+- `--notify` (on `send`/`auto`) — fire-and-forget completion ping. The worker
+  appends to a notify queue and a lazy single drainer delivers a coalesced line
+  into the `claude` pane via the `tt x send` safe-input path. Built from parts
+  tt already owns; the on-disk queue survives a reboot, which an in-memory
+  Workflow fan-out cannot.
 
 ### Cap
 
@@ -405,16 +386,6 @@ The distinction is **pinned vs stealable**:
 for every path, manual and auto alike**. At cap, `auto` queues rather than
 spawning and any explicit spawn is refused (it may warn as it approaches). The
 ceiling is the runaway backstop that makes auto-spawn safe.
-
-### Control-channel changes this forces
-
-- The single-slot `<cs>.trigger` becomes a **queue dir**; bash always *appends*
-  and the worker pulls when it knows it is truly idle — closing the TOCTOU race
-  of bash deciding idle-vs-busy from outside. `trigger` becomes the
-  "currently running" marker.
-- `steer` is a separate immediate channel, bypassing the queue.
-- When implemented, revise "The tt-worker extension", "Task IDs & completion",
-  and "Worker state detection" above.
 
 ### Verbs removed / deferred
 
@@ -431,9 +402,10 @@ It is **provider heterogeneity**, not flat-rate Codex: any orchestrator driving
 a pool of any-provider workers (pi on Codex, Kimi, Deepseek, …), each on its own
 account, quota, and model. Workflow's agents are Claude subagents on the
 orchestrator's own budget and cannot follow there. The consumer
-`delegating-to-pi` skill and `tt pi status` output should state this so the
-orchestrator reaches for tt on heavy fan-out. (`tt x send` and the skill
-generalize to non-Claude orchestrators — already on the roadmap.)
+`delegating-to-pi` skill states this (delegating offloads off the orchestrator's
+own budget) so the orchestrator reaches for tt on heavy fan-out. (`tt x send`
+and the skill are intended to generalize to non-Claude orchestrators — the tmux
+substrate and file protocol are already provider-agnostic.)
 
 ## Out of scope (deliberately)
 

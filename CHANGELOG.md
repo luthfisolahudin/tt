@@ -5,6 +5,23 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.8.2] — 2026-05-29
+
+Docs/consumer reconciliation closing out pool model v2 — **no behavior change**
+(`tt` edits are comments only).
+
+- **Consumer skill** (`delegating-to-pi/SKILL.md`) rewritten to the final `tt pi`
+  surface: lazy pool (no immortals/`add`), `auto`/`--rm`/`steer`/`--notify`,
+  `wait <cs|task-id|pool-id|all>`, `-` stdin idiom; plus a separate-provider/
+  budget framing. Stale triggering-eval query refreshed.
+- **DESIGN/STATUS** de-changelogged: the per-increment "landed 0.x" ledgers
+  collapse into a steady-state description (history lives here in CHANGELOG);
+  the "Pool model v2 (proposed)" section is retitled design rationale and its
+  plan-voice ("becomes", "when implemented") reconciled to past tense.
+- Stale `trigger`-era comments in `tt` and the worker extension header updated
+  to the queue model; STATUS "How to test" refreshed to the v2 surface (and to
+  use a protocol-respecting task, not "reply WORKER_DONE").
+
 ## [0.8.1] — 2026-05-29
 
 Pool model v2 — `--notify`. Verified live (drainer coalesce/deliver/delete/

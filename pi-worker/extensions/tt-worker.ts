@@ -33,10 +33,17 @@
  *                  `running` is written when a task is claimed; done/blocked/
  *                  other on `agent_end`; error for caught extension
  *                  exceptions. id is `-` for a human-typed / steered turn.
+ *   <cs>.busy      marker present while a turn is in flight (tracked task,
+ *                  stolen pool task, or steer); tt's `worker_state` reads it.
  *   <cs>.ready     written once the queue pump + steer watch are live, so tt
  *                  knows it is safe to enqueue without a startup race.
  *   <cs>.log       append-only timestamped diagnostics for failures that have
  *                  no result to attach to.
+ *
+ * Also drained here: the shared pool queue `queue/` (id `pool-<seq>`, result to
+ * `queue-results/`), stolen by any idle worker after its own queue; and the
+ * `--notify` queue `notify/`, to which a finished task appends `<id> <status>`
+ * before spawning the `tt pi notify-drain` drainer.
  *
  * Env: TT_WORKER_CS (callsign), TT_WORKER_STATE (tt state dir).
  */

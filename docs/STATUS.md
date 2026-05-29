@@ -52,90 +52,52 @@ session — what a handoff can trust without retesting:
 
 ## How to test
 
+There is no harness — verify manually against a throwaway project. Use a real,
+protocol-respecting task (do NOT ask the worker to "reply WORKER_DONE": that
+makes it emit the marker WITHOUT the nonce footer, which is correctly rejected
+as `interrupted`).
+
 ```sh
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
-env -u TMUX tt up                       # attach fails harmlessly off-tty
+env -u TMUX tt up                       # builds dev/claude only; attach fails harmlessly off-tty
+# lazy spawn on first send; task-id optional on wait
 TID=$(tt pi send alfa - <<'P'
-TASK: reply WORKER_DONE
-SUCCESS: done
+TASK: No code change needed — acknowledge receipt.
+SUCCESS: acknowledged.
 P
 )
-tt pi wait alfa "$TID"
+tt pi wait "$TID"                       # or: tt pi wait alfa
+tt pi auto - <<<'TASK: ... ; SUCCESS: ...' ; tt pi wait all   # pick-for-me + fan-out join
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)"
 tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
 ```
 
-Editing `pi-worker/extensions/tt-worker.ts` only takes effect on a freshly
-launched REPL — respawn workers (`tt pi clear <cs>`) after changing it. After
-syntax changes run `bash -n tt`. Live `pi` steps spend OpenAI Codex quota — keep
-test tasks trivial.
+For the queue/pool/--rm/--notify paths see CHANGELOG 0.5.0–0.8.1 (each was
+verified live). Editing `pi-worker/extensions/tt-worker.ts` only takes effect on
+a freshly launched REPL — respawn workers (`tt pi clear <cs>`) after changing
+it. After syntax changes run `bash -n tt`. Live `pi` steps spend OpenAI Codex
+quota — keep test tasks trivial.
 
-## Pool model v2 — in progress
+## Worker pool
 
-The full successor to the v1 pool is specified in DESIGN "Pool model v2". It is
-landing in increments.
+Complete (landed across 0.4.1–0.8.1; CHANGELOG has the increment history,
+DESIGN the rationale and mechanics). Current behavior:
 
-**Landed (0.4.1):**
+- **Lazy, no caste.** `tt up` pre-spawns nothing; workers (`alfa`…`zulu`) spawn
+  on first `send`/`auto`, persist until removed, cap `min(cores-2, 26)`.
+- **Dispatch.** `send <cs>` (named; run-next; lazy-spawns) · `auto` (pick idle →
+  spawn → shared pool; echoes `using pi-<cs>`) · `auto --rm` (fresh ephemeral,
+  reaped when idle) · `steer <cs|all>` (run-now injection) · `--notify`
+  (fire-and-forget completion ping via the notify queue + lazy drainer).
+- **Queues.** Per-worker `<cs>.queue/` (pinned) + shared `queue/` (stealable); an
+  idle worker drains its own queue then steals from the pool (atomic-rename
+  claim). `worker_state` keys `busy` off the `<cs>.busy` marker.
+- **Wait.** `wait <cs|task-id|pool-id|all>`; task-id optional (defaults to the
+  worker's latest); `all` joins every busy worker in one report.
 
-- `tt pi wait-all` (now also reachable as `tt pi wait all`); worker cap
-  `min(cores-2, 26)`, NATO roster expanded to 26; `popidle` generalized.
+Each increment was verified live against a throwaway project (see CHANGELOG).
 
-**Landed (0.5.0) — control channel is now a per-worker queue:**
-
-- `<cs>.queue/` replaces the single `<cs>.trigger`; the extension claims the
-  next `<turn>.task` only when idle (200ms poll, never from `agent_end`).
-- `tt pi send` enqueues behind a busy worker (run-next) and lazy-spawns an
-  absent one; interrupted still needs `clear`.
-- `tt pi steer <cs|all>` — run-now injection (`<cs>.steer`), untracked, does
-  not clobber the last tracked result.
-- `tt pi wait` task-id optional (defaults to latest); `all` pseudo-callsign
-  joins all busy workers; untracked `id: -` result no longer pins `busy`.
-
-**Landed (0.6.0) — shared pool queue + `tt pi auto`:**
-
-- `tt pi auto` — reuse idle → spawn (under cap) → shared pool `queue/`; echoes
-  `using pi-<cs>`, prints the task id.
-- Cross-worker work-stealing: an idle worker drains its own queue then steals
-  the lowest pool task (atomic-rename claim). Pool tasks are `pool-<seq>` and
-  record to `queue-results/`; `tt pi wait pool-<seq>` polls that.
-- `worker_state` busy now keys off the `<cs>.busy` marker (set on any turn);
-  `tt pi wait` accepts a bare task-id; `tt pi status` shows a pool footer.
-- **Verified live**: lazy-spawn, queue claim, two-task FIFO drain, steer
-  (idle + into-turn), result not clobbered by steer, `wait` optional/bare id,
-  `wait all`, `auto` worker-assign, pool steal by an idle worker, `wait pool-N`.
-
-**Landed (0.7.0) — ephemeral workers:**
-
-- `tt pi auto --rm` spawns a fresh ephemeral worker (non-immortal callsign),
-  marked `<cs>.ephemeral` → `TT_WORKER_EPHEMERAL=1`, which makes its pump skip
-  pool steals so it reliably goes idle. Reaped daemonlessly by
-  `reap_ephemeral_workers` (swept by auto/status and the worker's own wait).
-- **Verified live**: auto --rm spawn → run → reap (window gone, state cleaned).
-
-**Landed (0.8.0) — lazy zero-baseline pool; immortals and `add` gone:**
-
-- `tt up` pre-spawns nothing (`ensure_pi_repls` removed) — session is just
-  `dev` + `claude`; workers lazy-spawn on first `send`/`auto`.
-- Immortal caste removed (`IMMORTALS`/`is_immortal` deleted): `rm` works on any
-  callsign, `popidle` pops the highest idle, `auto --rm` picks any free name.
-- `tt pi add` removed entirely.
-- **Verified live**: `tt up` → only dev/claude (0 pi-*); lazy-spawn on send;
-  `rm alfa` (former immortal) succeeds.
-
-**Landed (0.8.1) — `--notify`:**
-
-- `tt pi send/auto --notify` — worker appends `<id> <status>` to `notify/` and
-  spawns the lazy single-instance drainer (`tt pi notify-drain`), which
-  coalesces pending pings into one paste and delivers via the shared `x_deliver`
-  (refactored out of `tt x send`). Fire-and-forget: the worker never waits.
-- **Verified live**: drainer coalesce/deliver/delete/idle-exit + single-instance
-  against a fake orchestrator; `send --notify` end-to-end (extension writes msg,
-  spawns drainer, `[tt] alfa-1 done` delivered).
-
-**Pool model v2 is feature-complete.** Remaining: the consumer/doc
-reconciliation pass (#10) and final tidy-up (#12).
-
-## Known limitations / not yet tested (v2)
+## Known limitations / not yet tested
 
 - `<cs>.result` holds only the latest tracked task. Waiting on an older task id
   whose result has been overwritten by a newer task will not resolve — wait on

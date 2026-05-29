@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.8.1"
+VERSION="0.8.2"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -370,7 +370,7 @@ repl_starting() {
 }
 
 # Block until the worker's REPL process is alive and the extension's
-# trigger watch is live (`<cs>.ready`). Returns at once if already ready.
+# queue pump + steer watch are live (`<cs>.ready`). Returns at once if ready.
 wait_repl_ready() {
   local name=$1
   local deadline=$(( $(date +%s) + 40 ))
@@ -1240,7 +1240,7 @@ x_wait_claude_accepts_input() {
 
 # Send a message to another tt session's orchestrator (the Claude Code
 # TUI in its `claude` window) and submit it. Unlike pi workers, the
-# orchestrator has no file/trigger channel — delivery is a tmux
+# orchestrator has no file control channel — delivery is a tmux
 # bracketed paste (multiline-safe) followed by Enter, guarded by a
 # conservative safe-input prompt check so Enter is not pressed in a
 # user's draft, a confirmation UI, or an in-flight turn.

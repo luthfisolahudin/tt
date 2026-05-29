@@ -16,7 +16,7 @@
   {"query": "explain what the debounce function in src/lib/timing.ts does", "should_trigger": false},
   {"query": "run the test suite and tell me if anything fails", "should_trigger": false},
   {"query": "i pasted a diff below — does this look like a reasonable approach or am i overcomplicating it?", "should_trigger": false},
-  {"query": "how do i configure tt to spawn a fourth immortal worker?", "should_trigger": false},
+  {"query": "how do i configure tt to raise the worker cap above cores-2?", "should_trigger": false},
   {"query": "what model tier should i be using for safety-critical refactors with pi?", "should_trigger": false},
   {"query": "git status is showing a file i deleted as still modified, whats going on", "should_trigger": false}
 ]

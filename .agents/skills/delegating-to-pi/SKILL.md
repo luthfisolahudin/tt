@@ -6,13 +6,15 @@ description: >
 
 # Delegating to pi
 
-pi is a worker wired to OpenAI Codex (ChatGPT Plus, flat-rate). In this
-project pi runs inside a per-project tmux session managed by the `tt`
-tool (`~/.local/bin/tt`). Three immortal workers are pre-spawned —
-`pi-alfa`, `pi-bravo`, `pi-charlie` — plus up to two extras
-(`pi-delta`, `pi-echo`) you can `tt pi add` on demand. `pi-worker/APPEND_SYSTEM.md`
-is auto-appended through tt's worker runtime, so pi already knows the Worker Mode protocol.
-Recommendations below are empirical — revalidate per project.
+pi is a worker wired to OpenAI Codex (ChatGPT Plus, flat-rate) — a **separate
+provider and budget** from the orchestrator, so delegating offloads work off
+your own context and token budget. In this project pi runs inside a per-project
+tmux session managed by the `tt` tool (`~/.local/bin/tt`). The worker pool is
+**lazy**: nothing is pre-spawned. A worker (callsign `alfa`…`zulu`, NATO)
+materializes on first use and persists until removed; the cap is
+`min(cores-2, 26)`. `pi-worker/APPEND_SYSTEM.md` is auto-appended through tt's
+worker runtime, so pi already knows the Worker Mode protocol. Recommendations
+below are empirical — revalidate per project.
 
 ## Delegate by default — but calibrate
 
@@ -194,48 +196,60 @@ verbs, never by calling `pi` directly.
 
 ### Pick a worker
 
-1. Run `tt pi status`. Pick the lowest-NATO **idle** worker
-   (`alfa` → `bravo` → `charlie` → `delta` → `echo`).
-2. If none is idle and you're not at the cap of 5, run `tt pi add` to
-   spawn the next one. It prints the new callsign.
-3. If all 5 are busy, **wait** — don't queue. Pick when one frees up.
+- **Don't care which worker?** Use `tt pi auto` — it picks an idle worker,
+  spawns one if none is idle (under the cap), or queues on the shared pool if
+  all are busy, echoes `using pi-<cs>`, and prints the task-id to `wait` on.
+  The default for an independent task.
+- **Continuing a specific worker's context?** Send to it by name —
+  `tt pi send <cs>`. It lazy-spawns the worker if absent and queues behind its
+  current turn if busy (run-next). Use a name when the follow-up needs context
+  that worker already holds.
+- `tt pi status` shows the pool when you want to look.
 
 ### Choose flavor
 
-- **Ephemeral** (default): `tt pi clear <name>` → `tt pi send` →
-  `tt pi wait` → verify diff. The `clear` wipes prior context so a
-  reused worker can't leak scope from earlier turns. If the worker was
-  spawned via `tt pi add`, run `tt pi popidle` after to keep things
-  tidy.
-- **Persistent**: skip the `clear`. Reuse a worker for a series of
-  bounded follow-ups (e.g. "apply the refactor" → "now fix the type
-  errors it surfaced"). Each follow-up MUST restate the SUCCESS check;
-  persistent workers accumulate context, so scope drift is the failure
-  mode. Clear after large audits/reports or after 2–3 follow-ups unless
-  continuity is essential.
+- **One-shot (ephemeral)**: `tt pi auto --rm` spawns a fresh worker, runs the
+  task, and tears it down once done — no context leak, no cleanup. The clean
+  default for an independent task.
+- **Persistent**: `tt pi send <cs>` (or `tt pi auto` without `--rm`) leaves the
+  worker alive for a short chain of bounded follow-ups (e.g. "apply the refactor"
+  → "fix the type errors it surfaced"). Each follow-up MUST restate the SUCCESS
+  check; persistent workers accumulate context, so scope drift is the failure
+  mode. `tt pi clear <cs>` wipes context mid-chain; `tt pi rm <cs>` removes the
+  worker when the chain is done.
 
 ### Send + wait
 
 ```
-TID=$(tt pi send <name> [--medium] <(cat <<'PROMPT'
+# Named (continuation) — lazy-spawns, queues behind a busy turn:
+tt pi send <cs> [--medium] [--notify] - <<'PROMPT'
 TASK: ...
 FILES: ...
 CHANGE: ...
 SUCCESS: ...
 PROMPT
-))
-tt pi wait <name> "$TID"
+tt pi wait <cs>            # task-id optional → waits on the latest dispatch
+
+# Or let tt pick the worker; capture the id it returns:
+TID=$(tt pi auto [--medium] [--rm] - <<<'TASK: ...')
+tt pi wait "$TID"          # works for a callsign id (alfa-3) or pool id (pool-3)
 ```
 
-- `--medium` for safety-critical work (see triggers below); omit for
-  default `--low`.
-- The task ID returned by `send` (e.g. `bravo-3`) anchors `wait` to
-  the *current* turn — `wait` won't false-positive on a stale
-  `WORKER_DONE` from an earlier turn in the same window.
-- Process substitution beats temp files; stdin (`-`) works too.
+- `--medium` for safety-critical work (see triggers); omit for default `--low`.
+- `wait` accepts a callsign (latest task), a bare task-id (`alfa-3`), a pool id
+  (`pool-3`), or `all` (join every busy worker in one report). It anchors on the
+  task-id, so it won't false-positive on a stale `WORKER_DONE`.
+- `--notify` makes dispatch fire-and-forget: the worker pings this session when
+  it finishes, so you can move on instead of blocking on `wait`.
+- Inline prompts use `-` (stdin) with a heredoc/here-string, **not** process
+  substitution.
+- **Steer a running worker**: `tt pi steer <cs> - <<<'...'` injects a correction
+  into its *current* turn (run-now), vs `send` which queues it for next.
 
 ### Parallelism
 
-Workers may run **in parallel only if their FILES are disjoint**. The
-tool can't detect overlap; the orchestrator must. Up to 3 concurrent
-is comfortable; the 5-cap is a hard ceiling.
+Workers run **in parallel only if their FILES are disjoint** — the tool can't
+detect overlap; the orchestrator must. Fan out with several `tt pi send`s (or
+`tt pi auto`s), then **join them in one call with `tt pi wait all`** rather than
+one `wait` per worker. The cap is `min(cores-2, 26)`; past it, `auto` queues on
+the shared pool for the next free worker to claim.
