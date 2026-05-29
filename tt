@@ -1479,7 +1479,7 @@ PROMPT
 
   # Add a 4th worker, run a safety-critical task on medium, drop it
   CS=$(tt pi add)
-  tt pi send "$CS" --medium - <<<'TASK: ...'
+  tt pi send --medium "$CS" - <<<'TASK: ...'
   tt pi wait "$CS"
   tt pi popidle
 HELP
