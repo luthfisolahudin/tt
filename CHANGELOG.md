@@ -5,6 +5,18 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.3] — 2026-05-29
+
+Result lifecycle timestamps. The extension now stamps `started_at` into the
+`running` record (when a task is claimed) and `ended_at` into the terminal
+record (`agent_end`), so every durable `results/<id>.result` carries the turn's
+wall-clock. `tt pi wait`/`results`/`collect --json` envelopes gain `started_at`,
+`ended_at`, and a derived `duration_s` (all `null` for older records or a
+still-running task), and `tt pi results` shows a `DUR` column — so you can
+confirm how long a turn actually took (e.g. that a `sleep 45` task really slept),
+do stall analysis, and reason about cost. **Extension changed — respawn workers
+(`tt pi clear <cs>`) to load it; only turns on the new REPL get timestamps.**
+
 ## [0.10.2] — 2026-05-29
 
 In-flight observability + dispatch ergonomics (bash-only; no extension change).

@@ -132,14 +132,18 @@ format so the bash side needs no JSON parser:
   ```
   id: <task id>
   status: running|done|blocked|other|error
+  started_at: <epoch>        (ended_at: <epoch> once terminal)
   ---
   <text>
   ```
-  `running` is written when a task is claimed (empty text);
-  `done`/`blocked`/`other` on `agent_end`; `error` when the extension
-  catches an internal exception (text = the message). Because results are
-  id-keyed and never overwritten by a later task, `tt pi wait <id>` resolves
-  any task — even an older one — and `tt pi results <id>` re-reads it long after.
+  `running` is written when a task is claimed (empty text, `started_at` stamped);
+  `done`/`blocked`/`other` on `agent_end` (adds `ended_at`); `error` when the
+  extension catches an internal exception (text = the message). The two
+  timestamps are surfaced in the `--json` envelope as `started_at`/`ended_at`
+  plus a derived `duration_s` (all `null` for older records), and as the `DUR`
+  column of `tt pi results`. Because results are id-keyed and never overwritten
+  by a later task, `tt pi wait <id>` resolves any task — even an older one — and
+  `tt pi results <id>` re-reads it long after.
 - **`<cs>.result`** — a **latest-pointer**: the extension mirrors a worker's own
   assigned-task result here (a copy of its newest `results/<id>.result`). This is
   the only result file `worker_state` reads, for liveness/idle classification.

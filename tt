@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.10.2"
+VERSION="0.10.3"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -448,18 +448,42 @@ json_escape() {
 # BLOCKED block is terminal, so `tail -n1` prefers it over any earlier prose.
 result_field() { sed -n "s/^$2: //p" <<<"$1" | tail -n1; }
 
+# M:SS wall-clock of a recorded task, read from a result file's HEAD
+# (started_at/ended_at, stamped by the extension), or "-" when not both present
+# (an older record or a still-running task). Used by `tt pi results`.
+result_duration_file() {
+  local sa ea
+  sa=$(sed -n 's/^started_at: //p' "$1" 2>/dev/null | head -n1)
+  ea=$(sed -n 's/^ended_at: //p' "$1" 2>/dev/null | head -n1)
+  [[ $sa =~ ^[0-9]+$ && $ea =~ ^[0-9]+$ ]] && { fmt_elapsed $(( ea - sa )); return; }
+  printf '-'
+}
+
 # Emit one task's result as a JSON envelope. Parsed WORKER_DONE/BLOCKED fields
 # are always present (empty when absent) for a stable schema; `text` (the raw
 # body) is included only for other/error, where there is no structured block.
 emit_result_json() {
-  local id=$1 status=$2 text=$3 fc sm nt rs
+  local id=$1 status=$2 text=$3 fc sm nt rs f sa="null" ea="null" dur="null"
   fc=$(result_field "$text" files_changed)
   sm=$(result_field "$text" summary)
   nt=$(result_field "$text" notes)
   rs=$(result_field "$text" reason)
-  printf '{"id":"%s","status":"%s","summary":"%s","files_changed":"%s","notes":"%s","reason":"%s"' \
+  # started_at/ended_at live in the result HEAD (not the body) — read them from
+  # the durable per-id store and derive duration_s. All `null` when absent (an
+  # older record, or a still-running task with no end yet).
+  f=$(result_path_by_id "$id")
+  if [[ -f $f ]]; then
+    local sa_raw ea_raw
+    sa_raw=$(sed -n 's/^started_at: //p' "$f" | head -n1)
+    ea_raw=$(sed -n 's/^ended_at: //p' "$f" | head -n1)
+    [[ $sa_raw =~ ^[0-9]+$ ]] && sa=$sa_raw
+    [[ $ea_raw =~ ^[0-9]+$ ]] && ea=$ea_raw
+    [[ $sa != null && $ea != null ]] && dur=$((ea - sa))
+  fi
+  printf '{"id":"%s","status":"%s","summary":"%s","files_changed":"%s","notes":"%s","reason":"%s","started_at":%s,"ended_at":%s,"duration_s":%s' \
     "$(json_escape "$id")" "$(json_escape "$status")" "$(json_escape "$sm")" \
-    "$(json_escape "$fc")" "$(json_escape "$nt")" "$(json_escape "$rs")"
+    "$(json_escape "$fc")" "$(json_escape "$nt")" "$(json_escape "$rs")" \
+    "$sa" "$ea" "$dur"
   case $status in
     other|error) printf ',"text":"%s"' "$(json_escape "$text")" ;;
   esac
@@ -1225,7 +1249,7 @@ pi_results_cmd() {
     return 0
   fi
 
-  printf '%-12s  %-8s  %s\n' TASK STATUS SUMMARY
+  printf '%-12s  %-8s  %-6s  %s\n' TASK STATUS DUR SUMMARY
   for f in "${files[@]}"; do
     base=$(basename "$f" .result)
     [[ -n $target && $base != "$target"-* ]] && continue
@@ -1233,7 +1257,7 @@ pi_results_cmd() {
     rst=${head#* }; [[ $rst == "$head" ]] && rst=""
     text=$(result_text_file "$f")
     sm=$(result_field "$text" summary); [[ -z $sm ]] && sm=$(result_reason_hint "$text")
-    printf '%-12s  %-8s  %s\n' "$base" "$rst" "${sm:0:80}"
+    printf '%-12s  %-8s  %-6s  %s\n' "$base" "$rst" "$(result_duration_file "$f")" "${sm:0:80}"
     shown=1
   done
   (( shown )) || note "no results recorded${target:+ for $target}"
@@ -1999,7 +2023,8 @@ PI WORKER VERBS
       waits forever); a worker task left queued on an idle worker fails fast at
       20s (a pool task has no such guard — it waits for capacity). Prints the
       WORKER_DONE / BLOCKED block, or with --json a result envelope
-      ({id,status,summary,files_changed,notes,reason}; an array for `all`).
+      ({id,status,summary,files_changed,notes,reason,started_at,ended_at,
+      duration_s}; an array for `all`).
       Exit 0 on done/blocked, non-zero on timeout / unexpected completion.
       `all` prints a one-line tally on stderr (e.g. `2 done · 1 other`) and
       exits non-zero if any joined worker ended error/other/down/timeout. If a

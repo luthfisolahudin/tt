@@ -33,10 +33,12 @@
  *                  written atomically:
  *                      id: <task id>
  *                      status: running|done|blocked|other|error
+ *                      started_at: <epoch>   (ended_at: <epoch> once terminal)
  *                      ---
  *                      <text>
- *                  `running` is written when a task is claimed; done/blocked/
- *                  other on `agent_end`; error for caught extension exceptions.
+ *                  `running` is written when a task is claimed (with started_at);
+ *                  done/blocked/other on `agent_end` (adds ended_at); error for
+ *                  caught extension exceptions.
  *   <cs>.result    a worker's own assigned tasks are mirrored here as a
  *                  latest-pointer — the file `worker_state`/liveness reads.
  *                  Pool tasks are not mirrored (not this worker's). Untracked
@@ -81,6 +83,7 @@ export default function (pi: ExtensionAPI) {
 	let pendingId = "-";
 	let pendingNonce = "";
 	let pendingNotify = false; // task carried --notify
+	let pendingStartedAt = 0; // epoch seconds the current task was claimed (turn start)
 	let busy = false; // a turn is in flight (tt-claimed task or steer-started)
 	let agentCtx: any = null; // captured at session_start; exposes isIdle()
 
@@ -234,8 +237,9 @@ export default function (pi: ExtensionAPI) {
 		pendingId = id;
 		pendingNonce = nonce;
 		pendingNotify = notify;
+		pendingStartedAt = Math.floor(Date.now() / 1000);
 		setBusy(true);
-		writeResult(id, "id: " + id + "\nstatus: running\n---\n");
+		writeResult(id, "id: " + id + "\nstatus: running\nstarted_at: " + pendingStartedAt + "\n---\n");
 		// Reasoning effort is a runtime knob — no REPL respawn.
 		if (tier === "low" || tier === "medium") {
 			try {
@@ -302,8 +306,9 @@ export default function (pi: ExtensionAPI) {
 		pendingId = latest.id;
 		pendingNonce = nonce;
 		pendingNotify = notify;
+		pendingStartedAt = Math.floor(Date.now() / 1000);
 		setBusy(true);
-		writeResult(latest.id, `id: ${latest.id}\nstatus: running\n---\n`);
+		writeResult(latest.id, `id: ${latest.id}\nstatus: running\nstarted_at: ${pendingStartedAt}\n---\n`);
 		const tail = nonce
 			? ` End your response with the WORKER_DONE block (or BLOCKED), using exactly \`nonce: ${nonce}\`.`
 			: "";
@@ -468,16 +473,19 @@ export default function (pi: ExtensionAPI) {
 					status = "blocked";
 				}
 			}
-			writeResult(pendingId, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
+			const tsBlock = `started_at: ${pendingStartedAt}\nended_at: ${Math.floor(Date.now() / 1000)}\n`;
+			writeResult(pendingId, `id: ${pendingId}\nstatus: ${status}\n${tsBlock}---\n${text}\n`);
 			if (pendingNotify) fireNotify(pendingId, status);
 		} catch (e) {
 			logLine("agent_end: " + String(e));
-			writeResult(pendingId, "id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n");
+			const tsBlock = `started_at: ${pendingStartedAt}\nended_at: ${Math.floor(Date.now() / 1000)}\n`;
+			writeResult(pendingId, "id: " + pendingId + "\nstatus: error\n" + tsBlock + "---\n" + String(e) + "\n");
 			if (pendingNotify) fireNotify(pendingId, "error");
 		} finally {
 			pendingId = "-";
 			pendingNonce = "";
 			pendingNotify = false;
+			pendingStartedAt = 0;
 			setBusy(false);
 			// Do NOT claim the next task here: agent_end fires while the agent
 			// is still "processing", so sendUserMessage would be rejected. The
