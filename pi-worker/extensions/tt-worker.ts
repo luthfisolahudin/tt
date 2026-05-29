@@ -46,6 +46,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export default function (pi: ExtensionAPI) {
 	const cs = process.env.TT_WORKER_CS;
 	if (!cs) return; // inert outside tt-spawned workers
+	// Ephemeral workers (`tt pi auto --rm`) run only their own queue — never
+	// steal shared-pool work — so they reliably go idle and get reaped.
+	const ephemeral = process.env.TT_WORKER_EPHEMERAL === "1";
 
 	const stateDir = process.env.TT_WORKER_STATE ?? "/tmp/tt";
 	const queueDir = path.join(stateDir, `${cs}.queue`); // this worker's own queue
@@ -159,7 +162,7 @@ export default function (pi: ExtensionAPI) {
 		// the shared pool. Own-queue tasks need this worker's context; pool
 		// tasks are stealable for throughput.
 		let raw = claimFrom(queueDir);
-		if (raw === null) raw = claimFrom(poolDir);
+		if (raw === null && !ephemeral) raw = claimFrom(poolDir);
 		if (raw === null || !raw.trim()) return;
 		const nl = raw.indexOf("\n");
 		if (nl < 0) return; // need an id line + body

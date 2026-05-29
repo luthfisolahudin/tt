@@ -76,6 +76,7 @@ P
                                # (queues behind a busy worker; lazy-spawns absent)
 tt pi wait alfa                # block on alfa's latest task (task-id optional)
 TID=$(tt pi auto - <<<'...')   # let tt pick a worker (idle→spawn→pool); echoes "using pi-X"
+TID=$(tt pi auto --rm - <<<'...')  # fresh ephemeral worker, reaped after
 tt pi wait "$TID"              # waits on alfa-3 or pool-3 alike
 tt pi steer alfa - <<<'...'    # inject NOW into the current turn (run-now)
 tt pi wait all                 # fan-out join across all busy workers

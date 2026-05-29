@@ -241,6 +241,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `queue/<seq>.task` | Shared pool task from `tt pi auto` (id `pool-<seq>`); any idle worker steals it after draining its own queue. |
 | `queue-results/<pool-id>.result` | Result of a stolen pool task, written by whichever worker ran it. |
 | `pool.seq` | Monotonic counter for pool task ids. |
+| `<cs>.ephemeral` | Marker: this worker was spawned by `tt pi auto --rm`; it never steals pool work and is reaped once idle with an empty queue. |
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
 | `<cs>.result` | Latest tracked (worker-assigned) turn result (id / status / text). |
 | `<cs>.busy` | Marker: the REPL is processing a turn (drives `worker_state` busy). |
@@ -309,9 +310,10 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 >   and the **`tt pi auto`** front door; pool tasks (`pool-<seq>`) record to
 >   `queue-results/`; `worker_state` keys busy off the `<cs>.busy` marker;
 >   `wait` accepts a bare task-id / pool id.
-> - **Still pending:** `--rm` (ephemeral lifecycle), `--notify`, the lazy
->   zero-baseline pool, and removing the immortal caste + `tt pi add`.
->   Immortals and `add` still exist.
+> - **0.7.0:** **`tt pi auto --rm`** — fresh ephemeral worker, never steals pool
+>   work, reaped (daemonless) once idle with an empty queue.
+> - **Still pending:** `--notify`, the lazy zero-baseline pool, and removing the
+>   immortal caste + `tt pi add`. Immortals and `add` still exist.
 
 ### Motivation
 

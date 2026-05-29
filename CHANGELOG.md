@@ -5,6 +5,19 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.7.0] — 2026-05-29
+
+Pool model v2, increment 4 — ephemeral workers. Verified live (auto --rm spawns
+a fresh worker, runs, and is reaped after wait).
+
+- **`tt pi auto --rm (FILE|-)`** — spawn a fresh **ephemeral** worker for a
+  clean one-shot, torn down once its task (and any pinned follow-ups) finish.
+- Ephemeral workers (`<cs>.ephemeral` marker → `TT_WORKER_EPHEMERAL` in the
+  REPL env) **never steal shared-pool work**, so they reliably reach idle.
+- **Daemonless reaping**: `reap_ephemeral_workers` tears down an idle ephemeral
+  worker with an empty queue; swept by `auto`/`status` and on the worker's own
+  `wait`. Always picks a non-immortal callsign.
+
 ## [0.6.0] — 2026-05-29
 
 Pool model v2, increment 3 — the shared pool queue + `tt pi auto` front door.

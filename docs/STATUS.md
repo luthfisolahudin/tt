@@ -104,9 +104,17 @@ landing in increments.
   (idle + into-turn), result not clobbered by steer, `wait` optional/bare id,
   `wait all`, `auto` worker-assign, pool steal by an idle worker, `wait pool-N`.
 
-**Not yet built:** lifecycle-by-`--rm`, `--notify`, the lazy zero-baseline pool
-(`tt up` still pre-spawns the three immortals), and removing the immortal caste
-+ `tt pi add`. Immortals and `tt pi add` still exist.
+**Landed (0.7.0) — ephemeral workers:**
+
+- `tt pi auto --rm` spawns a fresh ephemeral worker (non-immortal callsign),
+  marked `<cs>.ephemeral` → `TT_WORKER_EPHEMERAL=1`, which makes its pump skip
+  pool steals so it reliably goes idle. Reaped daemonlessly by
+  `reap_ephemeral_workers` (swept by auto/status and the worker's own wait).
+- **Verified live**: auto --rm spawn → run → reap (window gone, state cleaned).
+
+**Not yet built:** `--notify`, the lazy zero-baseline pool (`tt up` still
+pre-spawns the three immortals), and removing the immortal caste + `tt pi add`.
+Immortals and `tt pi add` still exist.
 
 ## Known limitations / not yet tested (v2)
 
@@ -123,6 +131,10 @@ landing in increments.
 - `tt pi auto`'s pool branch (all workers busy at the cap) was exercised by
   hand-dropping a pool task; saturating the real cap to trigger it organically
   was not (would spend a lot of quota).
+- Ephemeral no-pool-steal: `TT_WORKER_EPHEMERAL` is set in `start_repl`'s launch
+  env (code-verified) but the `/proc` read during the live test was permission-
+  blocked, so the env reaching the REPL — and thus the pump skipping pool
+  steals — was not directly confirmed. The reap itself was confirmed.
 
 ## Possible next steps
 

@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -371,8 +371,13 @@ start_repl() {
   # the `; exec bash` fallback shell stays at normal priority.
   nice_prefix="nice -n 19"
   command -v ionice >/dev/null 2>&1 && nice_prefix="ionice -c3 $nice_prefix"
+  # Ephemeral workers (`tt pi auto --rm`) must not steal shared-pool work, or
+  # they would never go idle to be reaped. The marker travels into the REPL
+  # env so the extension's pump drains only this worker's own queue.
+  local ephemeral_env=""
+  [[ -f "$(state_dir)/$name.ephemeral" ]] && ephemeral_env="TT_WORKER_EPHEMERAL=1 "
   launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_WORKER_DIR' \
-TT_VERSION='$VERSION' TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' \
+TT_VERSION='$VERSION' TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' ${ephemeral_env}\
 pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier --no-skills${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   date +%s > "$(state_dir)/$name.starting"
@@ -633,17 +638,40 @@ enqueue_to_worker() {
   printf '%s\n' "$id"
 }
 
+# Tear down any ephemeral (`tt pi auto --rm`) worker that has gone idle with an
+# empty queue — its one-shot job (and any pinned follow-ups) is done. Daemonless:
+# swept opportunistically by auto/status, and on the worker's own `wait`.
+# Ephemeral workers never steal pool work (see start_repl), so they reliably
+# reach idle.
+reap_ephemeral_workers() {
+  local n
+  for n in "${NATO[@]}"; do
+    [[ -f "$(state_dir)/$n.ephemeral" ]] || continue
+    if ! window_exists "pi-$n"; then
+      rm -rf "$(state_dir)/$n."* "$(state_dir)/pi-sessions/$n"
+      continue
+    fi
+    [[ $(worker_state "$n") == idle ]] || continue
+    # leave pinned follow-ups (named `send`s) to drain first
+    compgen -G "$(state_dir)/$n.queue/*.task" >/dev/null 2>&1 && continue
+    tmux kill-window -t "=$(session_name):pi-$n" 2>/dev/null || true
+    rm -rf "$(state_dir)/$n."* "$(state_dir)/pi-sessions/$n"
+  done
+}
+
 # Pick a worker for a task with no explicit callsign and dispatch it:
 #   reuse an idle worker → else spawn one (under the cap) → else queue it on the
-# shared pool, where the first worker to go idle steals it. The chosen worker is
-# echoed to stderr ("using pi-<cs>"); the task-id goes to stdout so
-# `TID=$(tt pi auto …)` captures just the id.
+# shared pool, where the first worker to go idle steals it. With --rm, instead
+# spawn a fresh EPHEMERAL worker that is torn down once its task (and any pinned
+# follow-ups) finishes. The chosen worker is echoed to stderr ("using pi-<cs>");
+# the task-id goes to stdout so `TID=$(tt pi auto …)` captures just the id.
 pi_auto_cmd() {
-  local req_tier="" src=""
+  local req_tier="" src="" rm_flag=0
   while (( $# )); do
     case $1 in
       --low)    req_tier=low;    shift ;;
       --medium) req_tier=medium; shift ;;
+      --rm)     rm_flag=1;       shift ;;
       -)        src=-;           shift ;;
       -*)       die "unknown flag for auto: $1" ;;
       *)        [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
@@ -654,6 +682,29 @@ pi_auto_cmd() {
     die "auto: '$src' is not a readable file. Source must be a FILE path or '-' for stdin."
   fi
   require_session
+  reap_ephemeral_workers
+
+  # --rm: a fresh ephemeral worker, never a reuse (the whole point is a clean
+  # one-shot that is destroyed after).
+  if (( rm_flag )); then
+    local cap; cap=$(pi_cap)
+    (( $(count_workers) < cap )) || \
+      die "auto --rm: worker cap of $cap reached; free one (tt pi rm) or wait"
+    local chosen="" n
+    for n in "${NATO[@]}"; do
+      is_immortal "$n" && continue   # ephemeral workers are never immortals
+      window_exists "pi-$n" || { chosen=$n; break; }
+    done
+    [[ -n $chosen ]] || die "auto --rm: no free callsign available"
+    : > "$(state_dir)/$chosen.ephemeral"   # marker → start_repl sets TT_WORKER_EPHEMERAL
+    spawn_pi_window "$chosen"
+    local tier="${req_tier:-$PI_DEFAULT_TIER}"
+    ensure_repl_ready "$chosen"
+    printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
+    note "using pi-$chosen (ephemeral)"
+    enqueue_to_worker "$chosen" "$tier" "$src"
+    return 0
+  fi
 
   # Reuse the first idle worker (NATO order).
   local chosen="" n
@@ -784,6 +835,8 @@ pi_wait_cmd() {
         case "$rst" in
           done|blocked)
             result_text "$name"
+            # Reap promptly if this was an ephemeral (`--rm`) worker's last task.
+            [[ -f "$(state_dir)/$name.ephemeral" ]] && reap_ephemeral_workers
             return 0
             ;;
           error)
@@ -976,6 +1029,7 @@ pi_steer_all_cmd() {
 
 pi_status_cmd() {
   require_session
+  reap_ephemeral_workers
   printf '%-9s  %-11s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
@@ -1470,12 +1524,16 @@ PI WORKER VERBS
       to a BUSY worker queues behind the current turn (run-next; use
       `tt pi steer` for run-now). Prints task-id (e.g. "alfa-3").
 
-  tt pi auto [--low|--medium] (FILE | -)
+  tt pi auto [--low|--medium] [--rm] (FILE | -)
       Dispatch without naming a worker: reuse an idle worker, else spawn one
       (under the cap), else queue on the shared pool where the first worker
       to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
       task-id to stdout (`<cs>-<n>` when assigned, `pool-<n>` when pooled), so
       `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id.
+      With --rm, instead spawn a fresh EPHEMERAL worker that is torn down once
+      its task (and any pinned follow-ups) finish — a clean one-shot. An
+      ephemeral worker never steals pool work, and is reaped on the next
+      auto/status or on its own `wait`.
 
   tt pi steer <callsign|all> (FILE | -)
       Inject a message NOW — steered into the worker's current turn (or a
