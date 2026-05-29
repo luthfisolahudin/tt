@@ -448,13 +448,29 @@ json_escape() {
 # BLOCKED block is terminal, so `tail -n1` prefers it over any earlier prose.
 result_field() { sed -n "s/^$2: //p" <<<"$1" | tail -n1; }
 
-# M:SS wall-clock of a recorded task, read from a result file's HEAD
-# (started_at/ended_at, stamped by the extension), or "-" when not both present
+# --- observability helpers (status ELAPSED/QUEUE, result duration) -----------
+# Whole seconds since a file's mtime (fails if absent). Times an in-flight turn
+# from the `<cs>.busy` marker, which is stamped at turn start for EVERY turn kind
+# (tracked task, stolen pool task, steer) — the one universal "working since"
+# signal, since a pool steal never mirrors to `<cs>.result`.
+secs_since_file() { local m; m=$(stat -c %Y "$1" 2>/dev/null) || return 1; printf '%s' $(( $(date +%s) - m )); }
+# Format a second count as M:SS.
+fmt_elapsed() { local s=${1:-0}; printf '%d:%02d' $(( s / 60 )) $(( s % 60 )); }
+# Count queued (`<turn>.task`) files in a worker's own pinned queue dir — the
+# same primitive the pool-pending line uses, applied per worker.
+queue_depth() { find "$(state_dir)/$1.queue" -maxdepth 1 -name '*.task' 2>/dev/null | wc -l | tr -d ' '; }
+# Echo "<started_at> <ended_at>" (epoch ints, empty when absent) from a result
+# file's HEAD — the timestamps the extension stamps. One reader for both the
+# --json envelope (duration_s) and the `tt pi results` DUR column.
+result_times_file() {
+  printf '%s %s' \
+    "$(sed -n 's/^started_at: //p' "$1" 2>/dev/null | head -n1)" \
+    "$(sed -n 's/^ended_at: //p' "$1" 2>/dev/null | head -n1)"
+}
+# M:SS wall-clock of a recorded task, or "-" when not both timestamps present
 # (an older record or a still-running task). Used by `tt pi results`.
 result_duration_file() {
-  local sa ea
-  sa=$(sed -n 's/^started_at: //p' "$1" 2>/dev/null | head -n1)
-  ea=$(sed -n 's/^ended_at: //p' "$1" 2>/dev/null | head -n1)
+  local sa ea; read -r sa ea <<<"$(result_times_file "$1")"
   [[ $sa =~ ^[0-9]+$ && $ea =~ ^[0-9]+$ ]] && { fmt_elapsed $(( ea - sa )); return; }
   printf '-'
 }
@@ -473,9 +489,7 @@ emit_result_json() {
   # older record, or a still-running task with no end yet).
   f=$(result_path_by_id "$id")
   if [[ -f $f ]]; then
-    local sa_raw ea_raw
-    sa_raw=$(sed -n 's/^started_at: //p' "$f" | head -n1)
-    ea_raw=$(sed -n 's/^ended_at: //p' "$f" | head -n1)
+    local sa_raw ea_raw; read -r sa_raw ea_raw <<<"$(result_times_file "$f")"
     [[ $sa_raw =~ ^[0-9]+$ ]] && sa=$sa_raw
     [[ $ea_raw =~ ^[0-9]+$ ]] && ea=$ea_raw
     [[ $sa != null && $ea != null ]] && dur=$((ea - sa))
@@ -1336,17 +1350,6 @@ pi_collect_cmd() {
     note "collect: nothing new"
   fi
 }
-
-# Whole seconds since a file's mtime (fails if the file is absent). Used to time
-# an in-flight turn from the `<cs>.busy` marker, which is stamped at turn start
-# for EVERY turn kind (tracked task, stolen pool task, steer) — so it is the one
-# universal "working since" signal, unlike a result file a pool steal skips.
-secs_since_file() { local m; m=$(stat -c %Y "$1" 2>/dev/null) || return 1; printf '%s' $(( $(date +%s) - m )); }
-# Format a second count as M:SS for the status table.
-fmt_elapsed() { local s=${1:-0}; printf '%d:%02d' $(( s / 60 )) $(( s % 60 )); }
-# Count queued (`<turn>.task`) files in a worker's own pinned queue dir — the
-# same primitive the pool-pending line uses, applied per worker.
-queue_depth() { find "$(state_dir)/$1.queue" -maxdepth 1 -name '*.task' 2>/dev/null | wc -l | tr -d ' '; }
 
 pi_status_cmd() {
   local json=0

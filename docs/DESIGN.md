@@ -270,7 +270,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
 | `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming.<cs>` is the transient mid-claim rename. |
 | `queue/<seq>.task` | Shared pool task from `tt pi auto` (id `pool-<seq>`); any idle worker steals it after draining its own queue. |
-| `results/<id>.result` | Unified id-keyed result store for **every** task (named + pool). Durable, never overwritten by a later task; read by `wait`/`collect`/`results`. |
+| `results/<id>.result` | Unified id-keyed result store for **every** task (named + pool). Durable, never overwritten by a later task; read by `wait`/`collect`/`results`. Head carries `started_at` (on claim) and `ended_at` (on terminal) → `--json` `duration_s` + the `tt pi results` `DUR` column. |
 | `<cs>.collected` | `tt pi collect` cursor: the highest turn whose result has been collected for this worker. |
 | `pool.seq` | Monotonic counter for pool task ids. |
 | `notify/<ts>-<pid>-<n>.msg` | `--notify` completion ping (`<id> <status>`), drained to the orchestrator. |
@@ -279,7 +279,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
 | `<cs>.resume` | Recovery trigger for `tt pi resume` (presence = signal); consumed by the extension, which re-drives the interrupted task to completion. |
 | `<cs>.result` | Latest-pointer: a copy of this worker's newest `results/<id>.result`, read by `worker_state` for liveness/idle classification. |
-| `<cs>.busy` | Marker: the REPL is processing a turn (drives `worker_state` busy). |
+| `<cs>.busy` | Marker: the REPL is processing a turn (drives `worker_state` busy). Its mtime = turn start, read by `tt pi status` for the ELAPSED column. |
 | `<cs>.starting` | Boot stamp (`date +%s`) written by `start_repl`; marks the REPL's async boot window for `repl_starting`. |
 | `<cs>.ready` | Marker: the REPL's queue pump + steer watch are live. |
 | `<cs>.log` | Append-only extension diagnostics for failures with no result. |
