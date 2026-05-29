@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.10.1"
+VERSION="0.10.2"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -710,17 +710,29 @@ reap_ephemeral_workers() {
 # spawn a fresh EPHEMERAL worker that is torn down once its task (and any pinned
 # follow-ups) finishes. The chosen worker is echoed to stderr ("using pi-<cs>");
 # the task-id goes to stdout so `TID=$(tt pi auto …)` captures just the id.
+# One structured line for `tt pi auto --json`: which worker took the task and how
+# it was placed (`idle` reuse / fresh `spawn` / `pool` queue / `ephemeral` --rm).
+# `routed` reports the ACTUAL placement, so a --prefer-fresh that fell back at the
+# cap honestly reads `idle`/`pool`.
+emit_auto_json() {
+  local worker=$1 tid=$2 routed=$3
+  printf '{"worker":"%s","task_id":"%s","routed":"%s"}\n' \
+    "$(json_escape "$worker")" "$(json_escape "$tid")" "$routed"
+}
+
 pi_auto_cmd() {
-  local req_tier="" src="" rm_flag=0 notify=0
+  local req_tier="" src="" rm_flag=0 notify=0 json=0 prefer_fresh=0
   while (( $# )); do
     case $1 in
-      --low)    req_tier=low;    shift ;;
-      --medium) req_tier=medium; shift ;;
-      --rm)     rm_flag=1;       shift ;;
-      --notify) notify=1;        shift ;;
-      -)        src=-;           shift ;;
-      -*)       die "unknown flag for auto: $1" ;;
-      *)        [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
+      --low)          req_tier=low;    shift ;;
+      --medium)       req_tier=medium; shift ;;
+      --rm)           rm_flag=1;       shift ;;
+      --notify)       notify=1;        shift ;;
+      --json)         json=1;          shift ;;
+      --prefer-fresh) prefer_fresh=1;  shift ;;
+      -)              src=-;           shift ;;
+      -*)             die "unknown flag for auto: $1" ;;
+      *)              [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
     esac
   done
   [[ -n $src ]] || die "auto: prompt source required (file path or -)"
@@ -746,21 +758,33 @@ pi_auto_cmd() {
     local tier="${req_tier:-$PI_DEFAULT_TIER}"
     ensure_repl_ready "$chosen"
     printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
-    note "using pi-$chosen (ephemeral)"
-    enqueue_to_worker "$chosen" "$tier" "$src" "$notify"
+    local tid; tid=$(enqueue_to_worker "$chosen" "$tier" "$src" "$notify")
+    if (( json )); then emit_auto_json "$chosen" "$tid" ephemeral
+    else note "using pi-$chosen (ephemeral)"; printf '%s\n' "$tid"; fi
     return 0
   fi
 
+  local chosen="" routed="" n
+  # --prefer-fresh: spawn a NEW worker before reusing an idle one — eager
+  # parallelism and a clean pi context (a reused idle worker still carries its
+  # previous task's context). Only under the cap; at cap it falls through to
+  # reuse/pool below, so the ceiling is never exceeded.
+  if (( prefer_fresh )) && (( $(count_workers) < $(pi_cap) )); then
+    for n in "${NATO[@]}"; do
+      window_exists "pi-$n" || { chosen=$n; spawn_pi_window "$n"; routed=spawn; break; }
+    done
+  fi
   # Reuse the first idle worker (NATO order).
-  local chosen="" n
-  for n in "${NATO[@]}"; do
-    window_exists "pi-$n" || continue
-    [[ $(worker_state "$n") == idle ]] && { chosen=$n; break; }
-  done
+  if [[ -z $chosen ]]; then
+    for n in "${NATO[@]}"; do
+      window_exists "pi-$n" || continue
+      [[ $(worker_state "$n") == idle ]] && { chosen=$n; routed=idle; break; }
+    done
+  fi
   # None idle but room under the cap → spawn the next free callsign.
   if [[ -z $chosen ]] && (( $(count_workers) < $(pi_cap) )); then
     for n in "${NATO[@]}"; do
-      window_exists "pi-$n" || { chosen=$n; spawn_pi_window "$n"; break; }
+      window_exists "pi-$n" || { chosen=$n; spawn_pi_window "$n"; routed=spawn; break; }
     done
   fi
 
@@ -770,8 +794,9 @@ pi_auto_cmd() {
     ensure_repl_ready "$chosen"
     [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
       printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
-    note "using pi-$chosen"
-    enqueue_to_worker "$chosen" "$tier" "$src" "$notify"
+    local tid; tid=$(enqueue_to_worker "$chosen" "$tier" "$src" "$notify")
+    if (( json )); then emit_auto_json "$chosen" "$tid" "$routed"
+    else note "using pi-$chosen"; printf '%s\n' "$tid"; fi
     return 0
   fi
 
@@ -790,8 +815,12 @@ pi_auto_cmd() {
   local qf="$pooldir/$seq.task"
   { printf '%s %s %s%s\n' "$id" "$tier" "$nonce" "$nfield"; cat "$promptfile"; } > "$qf.tmp"
   mv "$qf.tmp" "$qf"
-  note "all workers busy at cap ($(pi_cap)); queued $id — the next idle worker claims it"
-  printf '%s\n' "$id"
+  if (( json )); then
+    emit_auto_json "" "$id" pool
+  else
+    note "all workers busy at cap ($(pi_cap)); queued $id — the next idle worker claims it"
+    printf '%s\n' "$id"
+  fi
 }
 
 # Wait on a shared-pool task by its `pool-<seq>` id. Its result lives in the
@@ -941,6 +970,31 @@ pi_wait_cmd() {
 # doing right now". Exit 0 only if every target finished done/blocked.
 # This is the fan-out join that keeps a multi-worker dispatch O(1) in the
 # orchestrator's context instead of one `wait` round-trip per worker.
+# After a busy-now `wait all`, point at `collect` if any NON-busy worker holds a
+# terminal result past its collect cursor — i.e. it finished BEFORE the join and
+# was therefore skipped. A pure signal on stderr; never changes wait-all's
+# result or stdout. Args: callsigns already joined (excluded from the scan).
+note_uncollected_skip() {
+  local -A joined=(); local a; for a in "$@"; do joined[$a]=1; done
+  local skipped=0 n
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    [[ -n ${joined[$n]:-} ]] && continue
+    [[ $(worker_state "$n") == busy ]] && continue
+    local cursor; cursor=$(cat "$(state_dir)/$n.collected" 2>/dev/null || printf 0)
+    [[ $cursor =~ ^[0-9]+$ ]] || cursor=0
+    local lt turn head rst
+    lt=$(last_task_id "$n" 2>/dev/null) || continue
+    turn=${lt##*-}; [[ $turn =~ ^[0-9]+$ ]] || continue
+    (( turn > cursor )) || continue
+    head=$(result_head_by_id "$lt" 2>/dev/null || true)
+    rst=${head#* }; [[ $rst == "$head" ]] && rst=""
+    case "$rst" in done|blocked|other|error) skipped=$((skipped+1)) ;; esac
+  done
+  (( skipped > 0 )) && note "wait-all: $skipped finished worker(s) not shown — 'tt pi collect' to include them"
+  return 0
+}
+
 pi_wait_all_cmd() {
   local timeout=0 json=0; local -a names=()
   while (( $# )); do
@@ -964,6 +1018,7 @@ pi_wait_all_cmd() {
     done
   fi
   if (( ${#names[@]} == 0 )); then
+    note_uncollected_skip
     (( json )) && { printf '[]\n'; return 0; }
     note "wait-all: no busy workers"
     return 0
@@ -1015,6 +1070,7 @@ pi_wait_all_cmd() {
     sleep 1
   done
 
+  note_uncollected_skip "${names[@]}"
   if (( json )); then
     printf '['
     for i in "${!names[@]}"; do
@@ -1257,6 +1313,17 @@ pi_collect_cmd() {
   fi
 }
 
+# Whole seconds since a file's mtime (fails if the file is absent). Used to time
+# an in-flight turn from the `<cs>.busy` marker, which is stamped at turn start
+# for EVERY turn kind (tracked task, stolen pool task, steer) — so it is the one
+# universal "working since" signal, unlike a result file a pool steal skips.
+secs_since_file() { local m; m=$(stat -c %Y "$1" 2>/dev/null) || return 1; printf '%s' $(( $(date +%s) - m )); }
+# Format a second count as M:SS for the status table.
+fmt_elapsed() { local s=${1:-0}; printf '%d:%02d' $(( s / 60 )) $(( s % 60 )); }
+# Count queued (`<turn>.task`) files in a worker's own pinned queue dir — the
+# same primitive the pool-pending line uses, applied per worker.
+queue_depth() { find "$(state_dir)/$1.queue" -maxdepth 1 -name '*.task' 2>/dev/null | wc -l | tr -d ' '; }
+
 pi_status_cmd() {
   local json=0
   while (( $# )); do
@@ -1274,25 +1341,28 @@ pi_status_cmd() {
     local first=1 n
     for n in "${NATO[@]}"; do
       window_exists "pi-$n" || continue
-      local s tier gen last_id reason=""
+      local s tier gen last_id reason="" q el="null"
       s=$(worker_state "$n"); tier=$(current_tier "$n"); gen=$(current_gen "$n")
       last_id=$(last_task_id "$n" 2>/dev/null || true)
+      q=$(queue_depth "$n")
+      [[ $s == busy ]] && el=$(secs_since_file "$(state_dir)/$n.busy") || el="null"
+      [[ $el =~ ^[0-9]+$ ]] || el="null"
       case $s in
         interrupted|blocked) [[ -n $last_id ]] && \
           reason=$(result_reason_hint "$(result_text_by_id "$last_id")") ;;
       esac
       (( first )) || printf ','; first=0
-      printf '{"callsign":"%s","state":"%s","last_task":"%s","tier":"%s","gen":%s,"reason":"%s"}' \
-        "$n" "$s" "$(json_escape "$last_id")" "$tier" "$gen" "$(json_escape "$reason")"
+      printf '{"callsign":"%s","state":"%s","elapsed_s":%s,"queued":%s,"last_task":"%s","tier":"%s","gen":%s,"reason":"%s"}' \
+        "$n" "$s" "$el" "$q" "$(json_escape "$last_id")" "$tier" "$gen" "$(json_escape "$reason")"
     done
     printf ']\n'
     return 0
   fi
 
-  printf '%-9s  %-11s  %-12s  %-6s  %s\n' CALLSIGN STATE LAST-TASK TIER GEN
+  printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-6s  %s\n' CALLSIGN STATE ELAPSED QUEUE LAST-TASK TIER GEN
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
-    local s tier gen last_id="-" reason=""
+    local s tier gen last_id="-" reason="" q el_disp="-" q_disp="-"
     s=$(worker_state "$n")
     tier=$(current_tier "$n")
     gen=$(current_gen "$n")
@@ -1300,6 +1370,12 @@ pi_status_cmd() {
     if lt=$(last_task_id "$n"); then
       last_id="$lt"
     fi
+    # Elapsed: time the in-flight turn from the busy marker. Queue: pinned tasks
+    # stacked behind a busy worker (a `send` to a busy worker is run-next).
+    if [[ $s == busy ]]; then
+      local secs; secs=$(secs_since_file "$(state_dir)/$n.busy") && el_disp=$(fmt_elapsed "$secs")
+    fi
+    q=$(queue_depth "$n"); [[ $q =~ ^[0-9]+$ ]] && (( q > 0 )) && q_disp="+$q"
     # interrupted/blocked carry a one-line reason from the recorded result, so
     # the recovery path is obvious without a separate `wait`/`results` call.
     case $s in
@@ -1307,9 +1383,9 @@ pi_status_cmd() {
         reason=$(result_reason_hint "$(result_text_by_id "$last_id")") ;;
     esac
     if [[ -n $reason ]]; then
-      printf '%-9s  %-11s  %-12s  %-6s  g%-4s — %s\n' "$n" "$s" "$last_id" "$tier" "$gen" "$reason"
+      printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-6s  g%-4s — %s\n' "$n" "$s" "$el_disp" "$q_disp" "$last_id" "$tier" "$gen" "$reason"
     else
-      printf '%-9s  %-11s  %-12s  %-6s  g%s\n' "$n" "$s" "$last_id" "$tier" "$gen"
+      printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-6s  g%s\n' "$n" "$s" "$el_disp" "$q_disp" "$last_id" "$tier" "$gen"
     fi
   done
   # Shared pool: tasks dispatched via `tt pi auto` while every worker was busy,
@@ -1882,16 +1958,22 @@ PI WORKER VERBS
       `tt pi steer` for run-now). --notify: on completion, ping this
       session's orchestrator (see below). Prints task-id (e.g. "alfa-3").
 
-  tt pi auto [--low|--medium] [--rm] [--notify] (FILE | -)
+  tt pi auto [--low|--medium] [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
       Dispatch without naming a worker: reuse an idle worker, else spawn one
       (under the cap), else queue on the shared pool where the first worker
       to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
       task-id to stdout (`<cs>-<n>` when assigned, `pool-<n>` when pooled), so
       `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id.
+      With --prefer-fresh, spawn a NEW worker before reusing an idle one (as
+      long as the cap allows) — for eager parallelism and a clean pi context,
+      since a reused idle worker still carries its previous task's context.
       With --rm, instead spawn a fresh EPHEMERAL worker that is torn down once
       its task (and any pinned follow-ups) finish — a clean one-shot. An
       ephemeral worker never steals pool work, and is reaped on the next
-      auto/status or on its own `wait`. --notify: see below.
+      auto/status or on its own `wait`. (--rm implies fresh, so it wins over
+      --prefer-fresh.) --json prints one line instead of the stderr/stdout
+      split: {"worker","task_id","routed"} where routed is the actual
+      placement (idle|spawn|pool|ephemeral). --notify: see below.
 
   --notify (on send / auto)
       Fire-and-forget completion ping: when the task finishes, the worker
@@ -1920,7 +2002,9 @@ PI WORKER VERBS
       ({id,status,summary,files_changed,notes,reason}; an array for `all`).
       Exit 0 on done/blocked, non-zero on timeout / unexpected completion.
       `all` prints a one-line tally on stderr (e.g. `2 done · 1 other`) and
-      exits non-zero if any joined worker ended error/other/down/timeout.
+      exits non-zero if any joined worker ended error/other/down/timeout. If a
+      non-busy worker holds a result that finished before the join (so `all`
+      skipped it), a stderr hint points at `tt pi collect`.
 
   tt pi collect [--timeout SECONDS] [--json] [all|<callsign>]
       Fan-out join that never drops a finished task. Returns every result with
@@ -1940,9 +2024,12 @@ PI WORKER VERBS
 
   tt pi status [--json]
       One row per existing worker: CALLSIGN, STATE
-      (idle/busy/blocked/interrupted/down/missing), LAST-TASK, TIER, GEN.
-      interrupted/blocked rows carry a one-line reason from the recorded result.
-      --json emits an array of {callsign,state,last_task,tier,gen,reason}.
+      (idle/busy/blocked/interrupted/down/missing), ELAPSED (in-flight turn time
+      for a busy worker, M:SS), QUEUE (pinned tasks stacked behind it, "+N"),
+      LAST-TASK, TIER, GEN. interrupted/blocked rows carry a one-line reason from
+      the recorded result. --json emits an array of
+      {callsign,state,elapsed_s,queued,last_task,tier,gen,reason} (elapsed_s is
+      null unless busy).
 
   tt pi rm [--force] <callsign>
   tt pi remove [--force] <callsign>

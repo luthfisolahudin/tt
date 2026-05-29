@@ -5,6 +5,23 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.2] — 2026-05-29
+
+In-flight observability + dispatch ergonomics (bash-only; no extension change).
+`tt pi status` now shows, for each worker, **ELAPSED** (how long the current turn
+has been running, from the `<cs>.busy` marker's mtime) and **QUEUE** (`+N` pinned
+tasks stacked behind a busy worker) — so a busy worker is no longer an opaque
+`busy` and you can tell progress/backlog at a glance; `--json` gains `elapsed_s`
+(null unless busy) and `queued`. `tt pi auto` gains two flags: **`--prefer-fresh`**
+spawns a NEW worker before reusing an idle one (under the cap) — for eager
+parallel fan-out and a clean pi context, since a reused idle worker still carries
+its previous task's context (`--rm` still implies fresh and wins if both given);
+and **`--json`** emits a single `{"worker","task_id","routed"}` line (routed =
+`idle|spawn|pool|ephemeral`, the actual placement) instead of the stderr/stdout
+split. `tt pi wait all` now prints a stderr hint pointing at `tt pi collect` when
+a non-busy worker holds a result that finished *before* the join (so `all`
+skipped it) — its semantics and exit-code contract are unchanged.
+
 ## [0.10.1] — 2026-05-29
 
 Completion-footer robustness. The `agent_end` validator no longer demands that

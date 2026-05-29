@@ -211,6 +211,11 @@ verbs, never by calling `pi` directly.
 - **One-shot (ephemeral)**: `tt pi auto --rm` spawns a fresh worker, runs the
   task, and tears it down once done — no context leak, no cleanup. The clean
   default for an independent task.
+- **Fresh but persistent**: `tt pi auto --prefer-fresh` spawns a NEW worker
+  (under the cap) instead of reusing an idle one — a clean pi context *without*
+  `--rm`'s teardown. Reach for it on **parallel fan-out** (claim distinct workers
+  eagerly rather than piling several tasks onto one worker that just freed up) and
+  whenever a reused worker's leftover context could bias the new task.
 - **Persistent**: `tt pi send <cs>` (or `tt pi auto` without `--rm`) leaves the
   worker alive for a short chain of bounded follow-ups (e.g. "apply the refactor"
   → "fix the type errors it surfaced"). Each follow-up MUST restate the SUCCESS
