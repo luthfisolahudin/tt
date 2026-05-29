@@ -32,6 +32,15 @@ history in `CHANGELOG.md`.
   context wipe (`interrupted → busy → done`), via a `<cs>.resume` trigger the
   extension consumes; `tasks.jsonl` carries `notify` so resume re-honors
   `--notify`. `clear` still wipes; reset-to-idle was scoped out.
+- **In-flight is observable (0.10.2–0.10.4).** `tt pi status` shows per-worker
+  ELAPSED (busy-turn time from the `<cs>.busy` mtime) and QUEUE depth (`--json`
+  adds `elapsed_s`/`queued`). The extension stamps `started_at`/`ended_at` into
+  `results/<id>.result`, surfaced as `duration_s` in `--json` and a `DUR` column
+  in `tt pi results` (older records read `null`/`-`). `tt pi auto` gains
+  `--prefer-fresh` (spawn-before-reuse under cap: parallelism + clean context)
+  and `--json` (`{worker,task_id,routed}`). `tt pi wait all` hints at `collect`
+  when a non-busy worker holds a skipped result. `tt pi logs [--lines N] <cs>`
+  dumps a worker's REPL scrollback read-only.
 
 ## Verified (manual)
 
@@ -71,6 +80,18 @@ session — what a handoff can trust without retesting:
   interrupt / wrong nonce → still `other`) is unchanged by construction — `status`
   defaults to `other` and only flips on a matching nonce at the terminal marker —
   but was not re-exercised live this round (needs a manual Esc).
+- **Observability layer (0.10.2–0.10.4), verified live 2026-05-29** against the
+  repo's own session: `tt pi status` showed `busy 0:05 +1` and `--json`
+  `elapsed_s:5,queued:1` for a worker mid-`sleep` with a stacked task; `auto
+  --json` returned `routed:"idle"` when reusing an idle worker and `auto
+  --prefer-fresh` returned `routed:"spawn"` (a new callsign) with an idle worker
+  present; `wait all` printed the `tt pi collect` hint while uncollected results
+  existed, then went silent after `collect`. After respawning a worker onto the
+  new extension, a task's `results/<id>.result` carried `started_at`+`ended_at`,
+  the `--json` envelope showed `duration_s`, and `tt pi results` showed a `DUR`
+  column (an older pre-timestamp record read `-`/`null`). `tt pi logs --lines N`
+  dumped the worker's scrollback (TASK/nonce/WORKER_DONE present); its error
+  paths (no callsign / unknown worker / bad `--lines`) all rejected correctly.
 
 ## Known limitations / not yet tested
 
