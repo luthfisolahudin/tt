@@ -5,6 +5,23 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.8.0] — 2026-05-29
+
+Pool model v2, increment 5 — lazy zero-baseline pool; the immortal caste and
+`tt pi add` are gone. Verified live (tt up creates only dev/claude; first send
+lazy-spawns; rm of a former-immortal succeeds). This is the worker-model
+simplification: one kind of worker, all lazy, all removable.
+
+- **`tt up` pre-spawns no workers** — `ensure_pi_repls` removed; the session is
+  just `dev` + `claude`. A worker's REPL is created on the first
+  `tt pi send <cs>` / `tt pi auto` (lazy spawn was already in place).
+- **Immortal caste removed** — `IMMORTALS`/`is_immortal` deleted; `tt pi rm`
+  works on any callsign, `popidle` pops the highest idle worker, `auto --rm`
+  picks any free callsign. `alfa`/`bravo`/`charlie` are now ordinary names.
+- **`tt pi add` removed** — spawning is implicit via `send`/`auto`; there is no
+  no-task spawn verb (a human pre-warms by sending a trivial task or running
+  `pi` in a window).
+
 ## [0.7.0] — 2026-05-29
 
 Pool model v2, increment 4 — ephemeral workers. Verified live (auto --rm spawns

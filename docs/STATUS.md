@@ -10,10 +10,10 @@ version history in `CHANGELOG.md`.
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` (override `TT_STATE_DIR`);
   worker runtime under `${XDG_DATA_HOME:-$HOME/.local/share}/tt/pi-worker`
   (override `TT_PI_WORKER_DIR`). See DESIGN "Files and external state".
-- `tt up` is non-blocking: heals windows, launches claude, fires the immortal
-  REPLs asynchronously, attaches at once. REPL readiness is waited on lazily by
-  the first `tt pi send`. `up` also stamps `TT_VERSION` into the session env and
-  `$(state_dir)/version`.
+- `tt up` builds only `dev`/`claude`, launches claude, attaches. The worker
+  pool is lazy — no REPLs are pre-spawned; the first `tt pi send`/`auto`
+  spawns the worker and waits for its readiness. `up` also stamps `TT_VERSION`
+  into the session env and `$(state_dir)/version`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
@@ -27,12 +27,12 @@ version history in `CHANGELOG.md`.
 Exercised live against throwaway `/tmp/tt-test-*` projects and the repo's own
 session — what a handoff can trust without retesting:
 
-- Cold `tt up` builds `dev`/`claude`/`pi-{alfa,bravo,charlie}`; re-running heals
-  missing/dead windows and never duplicates.
+- Cold `tt up` builds `dev`/`claude` only (no pi-* pre-spawned); re-running
+  heals missing/dead standard windows and never duplicates.
 - send → wait happy path (`<cs>.result` transits `running`→`done`); BLOCKED path;
   stale-WORKER_DONE rejection (terminal-position + nonce); interrupted
   quarantine; runtime tier switch; multi-turn context retention.
-- `tt pi add`/`rm`/`popidle` and the 5-worker cap.
+- lazy-spawn on first `send`/`auto`; `rm`/`popidle`; the `min(cores-2,26)` cap.
 - `tt down` tears down session + state with no orphaned pi grandchildren.
 - 20 s unconsumed-trigger fast-fail; `status: error` channel (the extension-side
   error writes themselves remain code-reviewed only).
@@ -112,9 +112,18 @@ landing in increments.
   `reap_ephemeral_workers` (swept by auto/status and the worker's own wait).
 - **Verified live**: auto --rm spawn → run → reap (window gone, state cleaned).
 
-**Not yet built:** `--notify`, the lazy zero-baseline pool (`tt up` still
-pre-spawns the three immortals), and removing the immortal caste + `tt pi add`.
-Immortals and `tt pi add` still exist.
+**Landed (0.8.0) — lazy zero-baseline pool; immortals and `add` gone:**
+
+- `tt up` pre-spawns nothing (`ensure_pi_repls` removed) — session is just
+  `dev` + `claude`; workers lazy-spawn on first `send`/`auto`.
+- Immortal caste removed (`IMMORTALS`/`is_immortal` deleted): `rm` works on any
+  callsign, `popidle` pops the highest idle, `auto --rm` picks any free name.
+- `tt pi add` removed entirely.
+- **Verified live**: `tt up` → only dev/claude (0 pi-*); lazy-spawn on send;
+  `rm alfa` (former immortal) succeeds.
+
+**Not yet built:** `--notify` (#8). Then the final consumer/doc pass (#10) and
+tidy-up (#12).
 
 ## Known limitations / not yet tested (v2)
 

@@ -25,12 +25,13 @@ attach; one place to see everything.
   |-----|------|----------|
   | 0 | `dev` | Empty shell in `$PWD`. Run the dev server here. |
   | 1 | `claude` | Empty shell. Launch the orchestrator here. |
-  | 2 | `pi-alfa` | Live pi REPL. **Immortal.** |
-  | 3 | `pi-bravo` | Live pi REPL. **Immortal.** |
-  | 4 | `pi-charlie` | Live pi REPL. **Immortal.** |
-  | 5+ | `pi-delta` / `pi-echo` | Optional, on-demand. Hard cap of 5 pi. |
+  | tail | `pi-<cs>` | Live pi REPL, **created on demand** (see below). |
   | tail | user windows | Ad-hoc, created with `Ctrl-b c`. Not managed by tt. |
 
+- **The pool is lazy: `tt up` pre-spawns no workers.** A `pi-<cs>` window and
+  its REPL are created on the first `tt pi send <cs>` / `tt pi auto`, up to the
+  cap (`min(cores-2, 26)`). Callsigns are NATO (`alfa`…`zulu`); none is
+  special, immortal, or un-removable.
 - Attach lands on `claude`.
 
 ## Pi windows host a LIVE pi REPL
@@ -53,24 +54,16 @@ pi ever exits. Rationale:
   window away from its `pi-<callsign>` name. All subsequent tmux calls
   target windows by name; a rename would cause "can't find window" errors.
 
-### `tt up` starts the REPLs asynchronously
+### Lazy spawn + readiness
 
-`tt up` does not block on REPL readiness: it creates/heals windows, launches
-the orchestrator, fires `start_repl` for every immortal (each just
-`respawn-pane`s the pane and stamps `<cs>.starting`), and attaches at once. The
-REPLs finish booting in the background.
-
-**Order matters: claude first, then the pi REPLs.** `up_cmd` runs
-`auto_launch_claude` before `ensure_pi_repls` so claude's alternate-screen TUI
-gets a clean first paint instead of sitting black behind three concurrent pi
-`node` startups; `start_repl` further launches pi under `nice -n 19` (and
-`ionice -c3` where available) so the interactive TUI keeps priority. pi workers
-are API-I/O bound, so the low priority costs them little.
-
-The 40 s readiness wait is **lazy** — `tt pi send` calls `ensure_repl_ready`,
-which blocks on *that* worker's `<cs>.ready` only when a task is dispatched.
-The trigger is still written only after `<cs>.ready`, so the startup trigger
-race stays closed; a send to a genuinely-dead worker restarts it first.
+`tt up` builds only `dev`/`claude` and launches the orchestrator — it spawns no
+REPLs. A worker boots on first use: `tt pi send`/`auto` calls `ensure_repl_ready`,
+which spawns the window+REPL if absent (or restarts a dead one), stamps
+`<cs>.starting`, then blocks on *that* worker's `<cs>.ready` (40 s deadline)
+before enqueuing — so the startup race stays closed. `start_repl` launches pi
+under `nice -n 19` (and `ionice -c3` where available) so the interactive claude
+TUI keeps scheduler priority; pi workers are API-I/O bound, so the low priority
+costs them little.
 
 ## The tt-worker extension — control channel
 
@@ -312,8 +305,10 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 >   `wait` accepts a bare task-id / pool id.
 > - **0.7.0:** **`tt pi auto --rm`** — fresh ephemeral worker, never steals pool
 >   work, reaped (daemonless) once idle with an empty queue.
-> - **Still pending:** `--notify`, the lazy zero-baseline pool, and removing the
->   immortal caste + `tt pi add`. Immortals and `add` still exist.
+> - **0.8.0:** the **lazy zero-baseline pool** — `tt up` pre-spawns nothing;
+>   the **immortal caste is gone** (all callsigns ordinary/removable); and
+>   **`tt pi add` is removed** (spawn is implicit via `send`/`auto`).
+> - **Still pending:** `--notify`.
 
 ### Motivation
 
@@ -333,8 +328,9 @@ Workflow subagent structurally cannot match.
   steered, and attached to. `--rm` destroys it on completion (ephemeral
   one-shot — tt's answer to a Workflow agent, on any provider).
 - `tt up` spawns **zero** pi workers (`dev` + `claude` only). Workers
-  materialize on first dispatch. Baseline N=0; the always-there interactive
-  REPL becomes opt-in via a spawn-only verb.
+  materialize on first dispatch (`send`/`auto`). Baseline N=0; there is no
+  no-task spawn verb — a human wanting a bare REPL sends a trivial task or runs
+  `pi` in a window by hand.
 
 ### Front door: `tt pi auto`
 

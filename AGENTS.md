@@ -42,8 +42,10 @@ a pool of `pi` code workers. This file orients an AI agent working **on**
   `pi-worker/settings.json` excludes it, and `tt` launches worker REPLs
   with `--no-skills` so project/user-discovered skills cannot make a
   delegate become the orchestrator.
-- `alfa`/`bravo`/`charlie` are immortal; hard worker cap is
-  `min(cores-2, 26)` (`pi_cap`), enforced on every spawn path.
+- The pool is **lazy**: `tt up` pre-spawns no workers; a REPL is created on the
+  first `tt pi send`/`auto`. No immortal caste — every NATO callsign
+  (`alfa`…`zulu`) is ordinary and removable. Hard worker cap `min(cores-2, 26)`
+  (`pi_cap`), enforced on every spawn path.
 - **Command synopsis style** (help block + README table): flags before
   positionals, source last — `tt <verb> [FLAGS] <positionals> (FILE|-)`; and
   list the short/primary alias first (`ls`/`list`, `rm`/`remove`). Parsers

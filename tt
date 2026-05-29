@@ -3,11 +3,10 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.7.0"
+VERSION="0.8.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
-IMMORTALS=(alfa bravo charlie)
 PI_HISTORY_LIMIT=50000
 PI_DEFAULT_TIER=low
 PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
@@ -47,10 +46,6 @@ enter_session() {
   else
     tmux attach -t "$target"
   fi
-}
-
-is_immortal() {
-  local n=$1; for i in "${IMMORTALS[@]}"; do [[ $i == "$n" ]] && return 0; done; return 1
 }
 
 valid_callsign() {
@@ -147,23 +142,6 @@ ensure_standard_windows() {
   window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
 }
 
-# Fire the immortal pi REPLs without waiting — they boot in the
-# background while up_cmd has already attached the user. start_repl
-# returns at once; readiness is awaited lazily by `tt pi send`. Called
-# *after* auto_launch_claude so claude's process wins the CPU race for
-# its first paint (the niced pi `node` startups would otherwise starve
-# it, leaving the claude window black until the workers settle).
-ensure_pi_repls() {
-  for n in "${IMMORTALS[@]}"; do
-    if ! window_exists "pi-$n"; then
-      spawn_pi_window "$n"
-    elif ! repl_running "$n" && ! repl_starting "$n"; then
-      start_repl "$n"         # window exists but the REPL is dead
-                              # (crash, or a tmux-resurrect restore)
-    fi
-  done
-}
-
 spawn_pi_window() {
   local name=$1
   local s; s=$(session_name)
@@ -182,11 +160,9 @@ up_cmd() {
   else
     create_session
   fi
-  # Launch claude first, then the pi REPLs — claude's process gets a
-  # clean head start so its TUI paints immediately instead of starving
-  # behind the three concurrent (niced) pi `node` startups.
+  # Launch the orchestrator. No pi workers are pre-spawned — the pool is
+  # lazy: workers materialize on the first `tt pi send`/`auto`.
   auto_launch_claude
-  ensure_pi_repls
   printf '%s\n' "$PWD" > "$(state_dir)/project"
   # Already attached to this session — healing is done, nothing to switch to.
   if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
@@ -510,21 +486,6 @@ ensure_idle_or_blocked() {
 
 # ---------- pi verbs ----------
 
-pi_add_cmd() {
-  require_session
-  local cap; cap=$(pi_cap)
-  (( $(count_workers) >= cap )) && \
-    die "pi worker cap of $cap reached (cores-2, max 26)"
-  for n in "${NATO[@]}"; do
-    if ! window_exists "pi-$n"; then
-      spawn_pi_window "$n"
-      printf '%s\n' "$n"
-      return 0
-    fi
-  done
-  die "no free callsign available"
-}
-
 pi_clear_cmd() {
   local name="" force=0
   while (( $# )); do
@@ -692,7 +653,6 @@ pi_auto_cmd() {
       die "auto --rm: worker cap of $cap reached; free one (tt pi rm) or wait"
     local chosen="" n
     for n in "${NATO[@]}"; do
-      is_immortal "$n" && continue   # ephemeral workers are never immortals
       window_exists "pi-$n" || { chosen=$n; break; }
     done
     [[ -n $chosen ]] || die "auto --rm: no free callsign available"
@@ -1065,7 +1025,6 @@ pi_rm_cmd() {
   done
   [[ -n $name ]] || die "rm: callsign required"
   valid_callsign "$name" || die "invalid callsign: $name"
-  is_immortal "$name" && die "pi-$name is immortal; cannot remove"
   require_session
   window_exists "pi-$name" || die "pi-$name does not exist"
 
@@ -1079,11 +1038,10 @@ pi_rm_cmd() {
 
 pi_popidle_cmd() {
   require_session
-  # Highest NATO first, only non-immortals.
+  # Highest NATO callsign first.
   local i n
   for (( i=${#NATO[@]}-1; i>=0; i-- )); do
     n=${NATO[i]}
-    is_immortal "$n" && continue
     window_exists "pi-$n" || continue
     if ensure_idle_or_blocked "$n"; then
       tmux kill-window -t "=$(session_name):pi-$n" 2>/dev/null || true
@@ -1504,15 +1462,15 @@ SESSION VERBS
   tt --version, -v         Print version.
 
 PI WORKER VERBS
-  tt pi add
-      Spawn the next pi worker in NATO order (alfa→bravo→…→zulu).
-      Auto-assigned, no callsign arg. Errors at the worker cap
-      (cores-2, max 26). Prints the new callsign.
+  The pool is lazy: `tt up` pre-spawns nothing. A worker's pi REPL is
+  created on first use — `tt pi send <cs>` / `tt pi auto` spawn it on
+  demand (up to the cap, cores-2, max 26). Callsigns are NATO
+  (alfa→bravo→…→zulu); none is special.
 
   tt pi clear [--force] <callsign>
       Wipe the worker's context: bumps a generation counter and respawns
       the pi REPL on a fresh session-dir. Refuses unless idle/blocked;
-      --force interrupts a busy turn first. Works on immortals too.
+      --force interrupts a busy turn first.
 
   tt pi send [--low|--medium] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
@@ -1558,12 +1516,12 @@ PI WORKER VERBS
 
   tt pi rm [--force] <callsign>
   tt pi remove [--force] <callsign>
-      Remove a non-immortal worker. Refuses unless idle without --force.
-      Refuses on alfa/bravo/charlie unconditionally.
+      Remove a worker (kill its REPL + window, wipe its state). Refuses
+      unless idle/blocked without --force.
 
   tt pi popidle
-      Remove the highest-NATO idle non-immortal worker. No-op if none
-      idle. Prints the removed callsign.
+      Remove the highest-NATO idle worker. No-op if none idle. Prints the
+      removed callsign.
 
 CROSS-SESSION VERBS
   tt x send [--timeout SECONDS] <session-id> (FILE | -)
@@ -1598,13 +1556,11 @@ CROSS-SESSION VERBS
       Ctrl-C. Duplicate non-ts payloads are ignored. --all logs
       down/no-orchestrator sessions as metadata rows.
 
-WINDOW LAYOUT (created by `tt up`)
+WINDOW LAYOUT
   0  dev          Empty shell in $PWD. Run the dev server here.
   1  claude       Shell; `claude --continue` auto-launched on `tt up`.
-  2  pi-alfa      Live pi REPL (immortal).
-  3  pi-bravo     Live pi REPL (immortal).
-  4  pi-charlie   Live pi REPL (immortal).
-  5+ pi-delta…zulu  Optional, on-demand via `tt pi add`. Cap cores-2 (max 26).
+  pi-<cs>         Live pi REPL, created on demand by `tt pi send`/`auto`
+                  (NATO alfa…zulu, cap cores-2 max 26). None pre-spawned.
   +  user windows Ad-hoc, created with Ctrl-b c. Not managed by tt.
 
   Pi windows host a live, interactive pi REPL. `tt pi send` appends to a
@@ -1669,11 +1625,9 @@ PROMPT
   tt pi send bravo - <<<'TASK: ...'
   tt pi wait all                     # one round-trip; joins all busy workers
 
-  # Add a 4th worker, run a safety-critical task on medium, drop it
-  CS=$(tt pi add)
-  tt pi send --medium "$CS" - <<<'TASK: ...'
-  tt pi wait "$CS"
-  tt pi popidle
+  # One-shot on a fresh ephemeral worker at medium effort (reaped after)
+  TID=$(tt pi auto --medium --rm - <<<'TASK: ...')
+  tt pi wait "$TID"
 HELP
 }
 
@@ -1690,7 +1644,6 @@ case "$cmd" in
   pi)
     sub=${1:-}; (( $# > 0 )) && shift || true
     case "$sub" in
-      add)      pi_add_cmd "$@" ;;
       clear)    pi_clear_cmd "$@" ;;
       send)     pi_send_cmd "$@" ;;
       auto)     pi_auto_cmd "$@" ;;
