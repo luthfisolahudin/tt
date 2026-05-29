@@ -30,8 +30,8 @@ recovers, `clear` wipes.)
 
 ## [0.9.0] — 2026-05-29
 
-Task records & observability (Release 1 of the records/recovery plan, see
-`docs/PLAN-records-recovery.md`). Closes the read side of the control channel:
+Task records & observability (Release 1 of the records/recovery plan). Closes
+the read side of the control channel:
 durable, id-addressable, machine-readable results. Verified live. **Extension
 result-write path changed — workers must be respawned (`tt pi clear <cs>`) to
 pick it up.**

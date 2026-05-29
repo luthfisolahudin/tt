@@ -328,8 +328,8 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 ## Pool model — design rationale
 
 > This section is the **why**. The sections above describe the live mechanics;
-> CHANGELOG (0.4.1–0.8.1) has the increment-by-increment history of how the
-> model was built. The model below is fully implemented.
+> the CHANGELOG has the increment-by-increment history of how the model was
+> built. The model below is fully implemented.
 
 ### Motivation
 
@@ -424,11 +424,10 @@ ceiling is the runaway backstop that makes auto-spawn safe.
   and lazy spawn covers every case, so there is no spawn-only verb (a human
   wanting a bare REPL opens a window and runs pi, or sends a trivial task).
   `rm` (destroy) and `clear` (reset context) stay.
-- Landed in 0.9.0: the JSON result envelope (`--json` on `wait`/`status`/
-  `results`/`collect`), the durable per-id result store, and `tt pi results` /
-  `tt pi collect`. Landed in 0.10.0: in-place interrupt recovery without a
-  context wipe (`tt pi resume` / `/tt-resume`). See CHANGELOG and
-  `docs/PLAN-records-recovery.md`.
+- Landed since: the JSON result envelope (`--json` on `wait`/`status`/
+  `results`/`collect`), the durable per-id result store, `tt pi results` /
+  `tt pi collect`, and in-place interrupt recovery without a context wipe
+  (`tt pi resume` / `/tt-resume`). See CHANGELOG for when.
 - Deferred until needed: `tt pi logs <cs>` (build when the orchestrator finds
   itself steering blind); reset-to-idle of an interrupted task (scoped out —
   `resume` recovers it, `clear` wipes it).

@@ -1,8 +1,7 @@
 # tt — status & handoff
 
-_v0.10.0._ Read before touching `tt`. Design rationale lives in `docs/DESIGN.md`;
-version history in `CHANGELOG.md`. The records/recovery effort is tracked in
-`docs/PLAN-records-recovery.md` (R1 landed 0.9.0, R2 landed 0.10.0).
+Read before touching `tt`. Design rationale lives in `docs/DESIGN.md`; version
+history in `CHANGELOG.md`.
 
 ## Current state
 
@@ -22,13 +21,13 @@ version history in `CHANGELOG.md`. The records/recovery effort is tracked in
   preserving pi context (no respawn).
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
-- **Results are durable and id-addressable (0.9.0).** Every task — named and pool
+- **Results are durable and id-addressable.** Every task — named and pool
   alike — records to `results/<id>.result`; `<cs>.result` is just the worker's
   latest-pointer for liveness. `tt pi wait <id>` resolves any id (older ones too);
   `tt pi results` re-reads outcomes after the fact; `tt pi collect` joins a
   fan-out via a per-worker cursor without dropping already-finished tasks;
   `--json` on `wait`/`status`/`results`/`collect` emits a stable envelope.
-- **Interrupted workers recover in place (0.10.0).** `tt pi resume <cs>` (or the
+- **Interrupted workers recover in place.** `tt pi resume <cs>` (or the
   in-pane `/tt-resume`) re-drives an interrupted task to completion without a
   context wipe (`interrupted → busy → done`), via a `<cs>.resume` trigger the
   extension consumes; `tasks.jsonl` carries `notify` so resume re-honors
@@ -50,7 +49,7 @@ session — what a handoff can trust without retesting:
   error writes themselves remain code-reviewed only).
 - `tt x send` delivery (multiline, shell metachars, 4 KB bodies, FILE/stdin)
   against `cat` and a live orchestrator; `tt x list` / `ls --all`.
-- **Records/recovery (0.9.0 + 0.10.0), verified live 2026-05-29** against the
+- **Records/recovery, verified live 2026-05-29** against the
   repo's own session: a real pi turn populating `results/<id>.result`;
   `wait --json` envelope; `tt pi results` listing; `notify` in `tasks.jsonl`;
   `tt pi collect` returning both tasks then advancing the cursor (re-collect =
@@ -96,16 +95,16 @@ STATE="${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)"
 tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
 ```
 
-For the queue/pool/--rm/--notify paths see CHANGELOG 0.5.0–0.8.1 (each was
-verified live). Editing `pi-worker/extensions/tt-worker.ts` only takes effect on
+For the queue/pool/--rm/--notify paths see the CHANGELOG (each was verified
+live). Editing `pi-worker/extensions/tt-worker.ts` only takes effect on
 a freshly launched REPL — respawn workers (`tt pi clear <cs>`) after changing
 it. After syntax changes run `bash -n tt`. Live `pi` steps spend OpenAI Codex
 quota — keep test tasks trivial.
 
 ## Worker pool
 
-Complete (landed across 0.4.1–0.8.1; CHANGELOG has the increment history,
-DESIGN the rationale and mechanics). Current behavior:
+Complete (CHANGELOG has the increment history, DESIGN the rationale and
+mechanics). Current behavior:
 
 - **Lazy, no caste.** `tt up` pre-spawns nothing; workers (`alfa`…`zulu`) spawn
   on first `send`/`auto`, persist until removed, cap `min(cores-2, 26)`.
@@ -121,10 +120,10 @@ DESIGN the rationale and mechanics). Current behavior:
 
 Each increment was verified live against a throwaway project (see CHANGELOG).
 
-## Known limitations / not yet tested
+## Pool & records caveats — not yet tested
 
-- 0.9.0/0.10.0 extension changes take effect only on a respawned REPL, and only
-  interruptions on the new REPL are resumable — keep that in mind after an
+- Extension (`tt-worker.ts`) changes take effect only on a respawned REPL, and
+  only interruptions on the new REPL are resumable — keep that in mind after an
   upgrade (`tt pi clear <cs>` to respawn an existing worker).
 - `tt pi collect` has **no stuck guard** (like a pool wait) — bound a possibly-
   wedged worker with `--timeout`.
