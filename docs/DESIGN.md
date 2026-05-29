@@ -261,6 +261,121 @@ or sends keys — but it does log pane text, so it prints a startup warning.
 `--duration 0` runs until Ctrl-C; `--all` also samples down/no-orchestrator
 sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 
+## Pool model v2 (proposed — not yet implemented)
+
+> **Status: design only.** The live system is the immortal/cap/single-trigger
+> model described above (v1). This section records the agreed successor so it
+> survives design discussion; nothing here is built or tested yet.
+
+### Motivation
+
+Benchmarked against Claude Code's `Workflow` tool, v1's agent-side cost is
+**per-task coordination** (a `send` + `wait` round-trip per worker clogs the
+orchestrator's own context) plus the rigidity of the immortal caste and fixed
+cap. v2 removes that toil while keeping tt's structural moats — durable,
+steerable, **provider-heterogeneous** workers — which an ephemeral same-budget
+Workflow subagent structurally cannot match.
+
+### One worker kind, lifecycle set by `--rm`
+
+- No immortal caste. `alfa`/`bravo`/`charlie` are just the conventional names of
+  the first lazily-spawned workers; none is un-rm-able.
+- Persistence is a property of the **task**, not the worker. A worker run
+  without `--rm` persists — stays named, holds context, can be continued,
+  steered, and attached to. `--rm` destroys it on completion (ephemeral
+  one-shot — tt's answer to a Workflow agent, on any provider).
+- `tt up` spawns **zero** pi workers (`dev` + `claude` only). Workers
+  materialize on first dispatch. Baseline N=0; the always-there interactive
+  REPL becomes opt-in via a spawn-only verb.
+
+### Front door: `tt pi auto`
+
+`tt pi auto [--rm] [--notify] <prompt>` picks the worker and **echoes which one**
+("using pi-alfa …") — that string is the return contract, so a later
+`wait`/`steer`/follow-up can target it. Policy: reuse an idle persistent worker
+→ else spawn (under cap) → else queue. `--rm` forces a fresh ephemeral worker.
+It is removed when its current job is done **and its own per-worker queue is
+empty** — it drains pinned follow-ups (`send <cs>` continuations that need its
+context) first, but does **not** linger to steal shared-pool work: pending pool
+tasks trigger the rm and a fresh re-spawn rather than keeping the ephemeral
+worker alive.
+
+### Named dispatch stays explicit — for continuation
+
+`tt pi send <cs>` is for continuation: the task is pinned to a worker that holds
+context. Now **lazy** (spawns the worker if absent) and **enqueues** when the
+worker is busy — it no longer steers. `send` (next) and `steer` (now) thus get
+clean, separate semantics.
+
+### Two queues, one work-stealing drain
+
+The distinction is **pinned vs stealable**:
+
+- **Per-worker queue** (`<cs>.queue/`) — fed by named `send` to a busy worker.
+  Pinned for context-continuity; never stolen by another worker (only the named
+  worker has the context).
+- **Shared pool queue** (`queue/`) — fed by `auto` when all workers are busy at
+  cap. Stealable, for throughput.
+- **Drain priority:** a worker going idle (`agent_end`) claims its own queue
+  first, then steals from the pool. Claim = atomic rename — the same primitive
+  that already consumes triggers, so still **no daemon**.
+
+### Three injection semantics
+
+| Verb | Timing | Pinned |
+|------|--------|--------|
+| `steer <cs>` / `steer-all` | now, interrupts the current turn | yes |
+| `send <cs>` (worker busy) | next, after the current turn | yes |
+| `auto` (all busy at cap) | whenever any worker frees | no |
+
+### Join + notify
+
+- `tt pi wait-all [names…]` — block until all named (or all busy) workers reach a
+  terminal result; one consolidated report. Replaces per-worker `wait` fan-out
+  and is the main fix for v1's coordination context-cost. (`send-all` =
+  broadcast-same-prompt convenience, secondary; distinct-task fan-out is just
+  batched `send`s in one shell call.)
+- `--notify` (on `send`/`auto`) — on completion, push `<id> done` into the
+  `claude` pane via the `tt x send` paste path. Background dispatch + wake-up
+  built from parts tt already owns; queued tasks survive a reboot, which an
+  in-memory Workflow fan-out cannot.
+
+### Cap
+
+`min(cores-2, 26)` — 26 = NATO-letter exhaustion (`zulu`), and a **hard ceiling
+for every path, manual and auto alike**. At cap, `auto` queues rather than
+spawning and any explicit spawn is refused (it may warn as it approaches). The
+ceiling is the runaway backstop that makes auto-spawn safe.
+
+### Control-channel changes this forces
+
+- The single-slot `<cs>.trigger` becomes a **queue dir**; bash always *appends*
+  and the worker pulls when it knows it is truly idle — closing the TOCTOU race
+  of bash deciding idle-vs-busy from outside. `trigger` becomes the
+  "currently running" marker.
+- `steer` is a separate immediate channel, bypassing the queue.
+- When implemented, revise "The tt-worker extension", "Task IDs & completion",
+  and "Worker state detection" above.
+
+### Verbs removed / deferred
+
+- `tt pi add` is **removed entirely** — spawning is implicit via `send`/`auto`
+  and lazy spawn covers every case, so there is no spawn-only verb (a human
+  wanting a bare REPL opens a window and runs pi, or sends a trivial task).
+  `rm` (destroy) and `clear` (reset context) stay.
+- Deferred until needed: `tt pi logs <cs>` (build when the orchestrator finds
+  itself steering blind), a JSON result envelope (`wait --json`).
+
+### Framing — the moat
+
+It is **provider heterogeneity**, not flat-rate Codex: any orchestrator driving
+a pool of any-provider workers (pi on Codex, Kimi, Deepseek, …), each on its own
+account, quota, and model. Workflow's agents are Claude subagents on the
+orchestrator's own budget and cannot follow there. The consumer
+`delegating-to-pi` skill and `tt pi status` output should state this so the
+orchestrator reaches for tt on heavy fan-out. (`tt x send` and the skill
+generalize to non-Claude orchestrators — already on the roadmap.)
+
 ## Out of scope (deliberately)
 
 - Auto-starting the dev server (`dev` window stays an empty shell).

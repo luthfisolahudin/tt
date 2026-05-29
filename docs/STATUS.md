@@ -66,7 +66,15 @@ launched REPL — respawn workers (`tt pi clear <cs>`) after changing it. After
 syntax changes run `bash -n tt`. Live `pi` steps spend OpenAI Codex quota — keep
 test tasks trivial.
 
+## Planned: pool model v2
+
+The current immortal-caste / fixed-cap / single-`trigger` pool is **v1**. An
+agreed successor (lazy zero-baseline pool, lifecycle-by-`--rm`, `tt pi auto`
+front door, two-queue work-stealing, `send`-enqueues/`steer`-interrupts split,
+cap `min(cores-2,26)`, `wait-all`/`--notify`) is specified in DESIGN
+"Pool model v2 (proposed — not yet implemented)". Not built or tested yet.
+
 ## Possible next steps
 
-- `tt pi logs <cs>` to dump a worker's REPL scrollback.
+- `tt pi logs <cs>` to dump a worker's REPL scrollback (also a v2 deferred item).
 - Optional per-project config to auto-run the dev command.
