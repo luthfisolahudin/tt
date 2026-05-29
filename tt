@@ -1336,12 +1336,12 @@ PI WORKER VERBS
       Auto-assigned, no callsign arg. Errors at the worker cap
       (cores-2, max 26). Prints the new callsign.
 
-  tt pi clear <callsign> [--force]
+  tt pi clear [--force] <callsign>
       Wipe the worker's context: bumps a generation counter and respawns
       the pi REPL on a fresh session-dir. Refuses unless idle/blocked;
       --force interrupts a busy turn first. Works on immortals too.
 
-  tt pi send <callsign> [--low|--medium] (FILE | -)
+  tt pi send [--low|--medium] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin — feed inline text with a here-string or heredoc:
       `tt pi send alfa - <<<'TASK: ...'`.
@@ -1357,7 +1357,7 @@ PI WORKER VERBS
       tracked task (no task-id, no result of its own). `all` fans the
       message out to every live worker.
 
-  tt pi wait <callsign|all> [task-id] [--timeout SECONDS]
+  tt pi wait [--timeout SECONDS] <callsign|all> [task-id]
       Block until the tt-worker extension records the task's result. The
       task-id is optional and defaults to the worker's latest dispatch.
       `tt pi wait all` joins every busy worker and prints one consolidated
@@ -1371,8 +1371,8 @@ PI WORKER VERBS
       One row per existing worker: CALLSIGN, STATE
       (idle/busy/blocked/down/missing), LAST-TASK, TIER, GEN.
 
-  tt pi rm <callsign> [--force]
-  tt pi remove <callsign> [--force]
+  tt pi rm [--force] <callsign>
+  tt pi remove [--force] <callsign>
       Remove a non-immortal worker. Refuses unless idle without --force.
       Refuses on alfa/bravo/charlie unconditionally.
 
@@ -1398,8 +1398,8 @@ CROSS-SESSION VERBS
       target are serialized; the other session replies by running its own
       `tt x send` back to you, which arrives as a new turn in your session.
 
-  tt x list [--all]
   tt x ls [--all]
+  tt x list [--all]
       List tt sessions available to message. By default shows only sessions
       where the orchestrator (Claude Code TUI) is actively running. With
       --all, shows every session whose state dir exists, with a STATUS
@@ -1515,7 +1515,7 @@ case "$cmd" in
     sub=${1:-}; (( $# > 0 )) && shift || true
     case "$sub" in
       send)     x_send_cmd "$@" ;;
-      list|ls)  x_list_cmd "$@" ;;
+      ls|list)  x_list_cmd "$@" ;;
       observe)  x_observe_cmd "$@" ;;
       "")       die "x: subcommand required (try \`tt --help\`)" ;;
       *)        die "unknown x subcommand '$sub' (try \`tt --help\`)" ;;

@@ -63,15 +63,15 @@ Run `tt --help` for the full block. Summary:
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
 | `tt down` | Kill the project session (with confirmation). |
 | `tt pi add` | Spawn the next worker (`delta`, `echo`, …, `zulu`). Cap `min(cores-2, 26)`. |
-| `tt pi clear <cs> [--force]` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
-| `tt pi send <cs> [--low\|--medium] (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). |
+| `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
+| `tt pi send [--low\|--medium] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |
-| `tt pi wait <cs\|all> [task-id] [--timeout N]` | Block until `WORKER_DONE`/`BLOCKED:`. Task-id optional (defaults to latest). `wait all` joins all busy workers. |
+| `tt pi wait [--timeout N] <cs\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Task-id optional (defaults to latest). `wait all` joins all busy workers. |
 | `tt pi status` | One row per worker: state, last task, tier, generation. |
-| `tt pi rm <cs> [--force]`, `tt pi remove <cs> [--force]` | Remove a non-immortal worker. |
+| `tt pi rm [--force] <cs>`, `tt pi remove [--force] <cs>` | Remove a non-immortal worker. |
 | `tt pi popidle` | Remove the highest-NATO idle non-immortal worker. |
 | `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to safely accept input, then send + submit a message. Waits forever by default. |
-| `tt x list [--all]`, `tt x ls [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
+| `tt x ls [--all]`, `tt x list [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
 | `tt x observe [run] [--interval N] [--duration N] [--all]` | Passively sample Claude panes to SQLite for improving `tt x send` safe-input detection; duplicate non-`ts` payloads are ignored. |
 
 Workers: `alfa`, `bravo`, `charlie` are immortal (always present); `delta`
