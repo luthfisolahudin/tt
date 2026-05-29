@@ -11,8 +11,9 @@
  * so the bash side needs no JSON parser:
  *
  *   <cs>.queue/    a per-worker task queue (directory). Each `<turn>.task`
- *                  file is line 1 = `<task id> <tier> <nonce>` (tier+nonce
- *                  optional), rest = prompt text. tt always appends; the
+ *                  file is line 1 = `<task id> <tier> <nonce> [notify]`
+ *                  (all after the id optional; `notify` → ping the orchestrator
+ *                  via `tt x send` on completion), rest = prompt text. The
  *                  extension claims the lowest-numbered task when the REPL is
  *                  idle by renaming it to `<file>.claiming`, then reads and
  *                  deletes that private path, applies the tier via
@@ -41,6 +42,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {
@@ -61,8 +63,43 @@ export default function (pi: ExtensionAPI) {
 	const logFile = path.join(stateDir, `${cs}.log`);
 	let pendingId = "-";
 	let pendingNonce = "";
+	let pendingNotify = false; // task carried --notify
 	let busy = false; // a turn is in flight (tt-claimed task or steer-started)
 	let agentCtx: any = null; // captured at session_start; exposes isIdle()
+
+	// Notify the orchestrator a task finished — append a message to the session
+	// notify queue and (re)launch the single lazy drainer. Both steps are
+	// instant + fire-and-forget: the worker never waits on delivery (which can
+	// park for minutes on safe orchestrator input). The drainer is the only
+	// thing that touches the claude pane; it coalesces and self-serializes.
+	let notifySeq = 0;
+	function fireNotify(id: string, status: string) {
+		const session = path.basename(stateDir);
+		try {
+			const dir = path.join(stateDir, "notify");
+			fs.mkdirSync(dir, { recursive: true });
+			fs.writeFileSync(
+				path.join(dir, `${Date.now()}-${process.pid}-${notifySeq++}.msg`),
+				`${id} ${status}\n`,
+			);
+		} catch (e) {
+			logLine("notify write: " + String(e));
+			return;
+		}
+		// Spawn the drainer unconditionally — it is single-instance (a lock makes
+		// a redundant one exit at once). Detached + own group so it outlives this
+		// worker's reap.
+		try {
+			const child = spawn("tt", ["pi", "notify-drain", session], {
+				detached: true,
+				stdio: "ignore",
+			});
+			child.on("error", (e) => logLine("notify-drain spawn: " + String(e)));
+			child.unref();
+		} catch (e) {
+			logLine("notify-drain: " + String(e));
+		}
+	}
 
 	// `busy` mirrored to a marker file so the bash side can detect "this REPL
 	// is processing something" (tracked task, stolen pool task, or steer)
@@ -171,10 +208,12 @@ export default function (pi: ExtensionAPI) {
 		const id = head[0] || "-";
 		const tier = head[1];
 		const nonce = head[2] || "";
+		const notify = head[3] === "notify";
 		const text = raw.slice(nl + 1).trim();
 		if (!text) return;
 		pendingId = id;
 		pendingNonce = nonce;
+		pendingNotify = notify;
 		setBusy(true);
 		atomicWrite(resultFileFor(id), "id: " + id + "\nstatus: running\n---\n");
 		// Reasoning effort is a runtime knob — no REPL respawn.
@@ -310,12 +349,15 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 			atomicWrite(resultDst, `id: ${pendingId}\nstatus: ${status}\n---\n${text}\n`);
+			if (pendingNotify) fireNotify(pendingId, status);
 		} catch (e) {
 			logLine("agent_end: " + String(e));
 			atomicWrite(resultDst, "id: " + pendingId + "\nstatus: error\n---\n" + String(e) + "\n");
+			if (pendingNotify) fireNotify(pendingId, "error");
 		} finally {
 			pendingId = "-";
 			pendingNonce = "";
+			pendingNotify = false;
 			setBusy(false);
 			// Do NOT claim the next task here: agent_end fires while the agent
 			// is still "processing", so sendUserMessage would be rejected. The

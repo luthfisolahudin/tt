@@ -64,8 +64,8 @@ Run `tt --help` for the full block. Summary:
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
 | `tt down` | Kill the project session (with confirmation). |
 | `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
-| `tt pi send [--low\|--medium] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). |
-| `tt pi auto [--low\|--medium] [--rm] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--rm`: fresh ephemeral worker, reaped after. |
+| `tt pi send [--low\|--medium] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--notify`: ping the orchestrator on completion. |
+| `tt pi auto [--low\|--medium] [--rm] [--notify] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |
 | `tt pi wait [--timeout N] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id, a pool id, or `all` (join all busy). |
 | `tt pi status` | One row per worker: state, last task, tier, generation. |

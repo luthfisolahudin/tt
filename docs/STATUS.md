@@ -122,8 +122,18 @@ landing in increments.
 - **Verified live**: `tt up` → only dev/claude (0 pi-*); lazy-spawn on send;
   `rm alfa` (former immortal) succeeds.
 
-**Not yet built:** `--notify` (#8). Then the final consumer/doc pass (#10) and
-tidy-up (#12).
+**Landed (0.8.1) — `--notify`:**
+
+- `tt pi send/auto --notify` — worker appends `<id> <status>` to `notify/` and
+  spawns the lazy single-instance drainer (`tt pi notify-drain`), which
+  coalesces pending pings into one paste and delivers via the shared `x_deliver`
+  (refactored out of `tt x send`). Fire-and-forget: the worker never waits.
+- **Verified live**: drainer coalesce/deliver/delete/idle-exit + single-instance
+  against a fake orchestrator; `send --notify` end-to-end (extension writes msg,
+  spawns drainer, `[tt] alfa-1 done` delivered).
+
+**Pool model v2 is feature-complete.** Remaining: the consumer/doc
+reconciliation pass (#10) and final tidy-up (#12).
 
 ## Known limitations / not yet tested (v2)
 

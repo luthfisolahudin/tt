@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.8.0"
+VERSION="0.8.1"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -516,11 +516,12 @@ pi_clear_cmd() {
 }
 
 pi_send_cmd() {
-  local name="" req_tier="" src=""
+  local name="" req_tier="" src="" notify=0
   while (( $# )); do
     case $1 in
       --low)    req_tier=low;    shift ;;
       --medium) req_tier=medium; shift ;;
+      --notify) notify=1;        shift ;;
       -)        src=-;           shift ;;
       -*)       die "unknown flag for send: $1" ;;
       *)
@@ -567,7 +568,7 @@ pi_send_cmd() {
   [[ $(worker_state "$name") == interrupted ]] && \
     die "pi-$name has an interrupted task; run \`tt pi clear $name\` first"
 
-  enqueue_to_worker "$name" "$tier" "$src"
+  enqueue_to_worker "$name" "$tier" "$src" "$notify"
 }
 
 # Assign id `<name>-<turn>`, persist the prompt (+nonce), log the task, and
@@ -576,7 +577,7 @@ pi_send_cmd() {
 # file is line 1 = `<task id> <tier> <nonce>`, remainder = prompt body; the
 # extension validates nonce + terminal-position on agent_end.
 enqueue_to_worker() {
-  local name=$1 tier=$2 src=$3
+  local name=$1 tier=$2 src=$3 notify=${4:-0}
   local f="$(state_dir)/$name.tasks.jsonl"
   local turn=1
   [[ -s $f ]] && turn=$(($(wc -l <"$f") + 1))
@@ -590,10 +591,11 @@ enqueue_to_worker() {
   printf '{"turn":%d,"id":"%s","sent_at":%d,"tier":"%s","nonce":"%s"}\n' \
     "$turn" "$id" "$(date +%s)" "$tier" "$nonce" >> "$f"
 
+  local nfield=""; [[ $notify == 1 ]] && nfield=" notify"
   local qdir="$(state_dir)/$name.queue"
   mkdir -p "$qdir"
   local qf="$qdir/$turn.task"
-  { printf '%s %s %s\n' "$id" "$tier" "$nonce"; cat "$promptfile"; } > "$qf.tmp"
+  { printf '%s %s %s%s\n' "$id" "$tier" "$nonce" "$nfield"; cat "$promptfile"; } > "$qf.tmp"
   mv "$qf.tmp" "$qf"
 
   printf '%s\n' "$id"
@@ -627,12 +629,13 @@ reap_ephemeral_workers() {
 # follow-ups) finishes. The chosen worker is echoed to stderr ("using pi-<cs>");
 # the task-id goes to stdout so `TID=$(tt pi auto …)` captures just the id.
 pi_auto_cmd() {
-  local req_tier="" src="" rm_flag=0
+  local req_tier="" src="" rm_flag=0 notify=0
   while (( $# )); do
     case $1 in
       --low)    req_tier=low;    shift ;;
       --medium) req_tier=medium; shift ;;
       --rm)     rm_flag=1;       shift ;;
+      --notify) notify=1;        shift ;;
       -)        src=-;           shift ;;
       -*)       die "unknown flag for auto: $1" ;;
       *)        [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
@@ -662,7 +665,7 @@ pi_auto_cmd() {
     ensure_repl_ready "$chosen"
     printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
     note "using pi-$chosen (ephemeral)"
-    enqueue_to_worker "$chosen" "$tier" "$src"
+    enqueue_to_worker "$chosen" "$tier" "$src" "$notify"
     return 0
   fi
 
@@ -686,7 +689,7 @@ pi_auto_cmd() {
     [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
       printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
     note "using pi-$chosen"
-    enqueue_to_worker "$chosen" "$tier" "$src"
+    enqueue_to_worker "$chosen" "$tier" "$src" "$notify"
     return 0
   fi
 
@@ -701,8 +704,9 @@ pi_auto_cmd() {
   local promptfile="$(state_dir)/pool.$seq.txt"
   if [[ $src == - ]]; then cat > "$promptfile"; else cp "$src" "$promptfile"; fi
   printf '\nnonce: %s\n' "$nonce" >> "$promptfile"
+  local nfield=""; [[ $notify == 1 ]] && nfield=" notify"
   local qf="$pooldir/$seq.task"
-  { printf '%s %s %s\n' "$id" "$tier" "$nonce"; cat "$promptfile"; } > "$qf.tmp"
+  { printf '%s %s %s%s\n' "$id" "$tier" "$nonce" "$nfield"; cat "$promptfile"; } > "$qf.tmp"
   mv "$qf.tmp" "$qf"
   note "all workers busy at cap ($(pi_cap)); queued $id — the next idle worker claims it"
   printf '%s\n' "$id"
@@ -1054,6 +1058,78 @@ pi_popidle_cmd() {
   return 0
 }
 
+# Lazy single-instance drainer for the notify queue (`send`/`auto --notify`).
+# Workers append `<id> <status>` files; this drains them to the orchestrator,
+# coalescing everything currently pending into one paste per cycle, and exits
+# once the queue stays empty briefly. Spawned detached by the worker extension;
+# a redundant instance exits at once via the lock. Internal verb (not in help).
+pi_notify_drain_cmd() {
+  local session=${1:-}
+  [[ -n $session ]] || die "notify-drain: session required"
+  local sdir="$TT_STATE_DIR_BASE/$session"
+  [[ -d $sdir ]] || exit 0
+  local ndir="$sdir/notify" lockdir="$sdir/notify-drain.lock"
+
+  # Single instance, stale-pid aware: a redundant drainer exits immediately.
+  if ! mkdir "$lockdir" 2>/dev/null; then
+    local owner; owner=$(cat "$lockdir/pid" 2>/dev/null || true)
+    if [[ $owner =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then exit 0; fi
+    rm -rf "$lockdir" 2>/dev/null || true
+    mkdir "$lockdir" 2>/dev/null || exit 0
+  fi
+  printf '%s\n' "$$" > "$lockdir/pid"
+  local lockq; printf -v lockq '%q' "$lockdir"   # bake path in: $lockdir is
+  trap "rm -rf $lockq 2>/dev/null || true" EXIT   # out of scope when EXIT fires
+
+  local idle=0
+  while (( idle < 5 )); do
+    # Target session gone → notifications are moot; discard and stop.
+    tmux has-session -t "=$session" 2>/dev/null \
+      || { rm -f "$ndir"/*.msg 2>/dev/null || true; return 0; }
+
+    local -a msgs=()
+    if [[ -d $ndir ]]; then
+      while IFS= read -r m; do [[ -n $m ]] && msgs+=("$m"); done \
+        < <(ls "$ndir"/*.msg 2>/dev/null | sort)
+    fi
+    if (( ${#msgs[@]} == 0 )); then
+      idle=$((idle + 1)); sleep 1; continue
+    fi
+    idle=0
+
+    # No orchestrator running yet (bare shell / no claude window) → leave the
+    # messages for a later drainer and stop, rather than parking for the full
+    # safe-input timeout against a window that will never accept input.
+    local cmd=""
+    if tmux list-windows -t "=$session" -F '#W' 2>/dev/null | grep -Fxq claude; then
+      cmd=$(tmux display-message -t "=$session:claude" -p '#{pane_current_command}' 2>/dev/null || true)
+    fi
+    case "${cmd:-}" in bash|zsh|sh|fish|"") return 0 ;; esac
+
+    # Coalesce all currently-pending messages into one paste.
+    local lines="" count=0 m line
+    for m in "${msgs[@]}"; do
+      line=$(cat "$m" 2>/dev/null) || continue
+      lines+="$line"$'\n'; count=$((count + 1))
+    done
+    local msg
+    if (( count == 1 )); then
+      msg="[tt] ${lines%$'\n'}"
+    else
+      msg="[tt] $count tasks finished:"$'\n'"${lines%$'\n'}"
+    fi
+
+    # Deliver in a subshell so x_deliver's die (lock/input timeout) does not
+    # kill the drainer. Success → drop the delivered messages. Failure → leave
+    # them for a later drainer and stop (avoid spinning).
+    if ( x_deliver "$session" "$msg" 300 ); then
+      for m in "${msgs[@]}"; do rm -f "$m"; done
+    else
+      return 0
+    fi
+  done
+}
+
 # ---------- cross-session messaging ----------
 
 x_target_state_dir() {
@@ -1214,7 +1290,16 @@ x_send_cmd() {
   # cross-session traffic and who it came from.
   local msg
   msg=$(printf '[tt x from %s]\n%s' "$(session_name)" "$body")
+  x_deliver "$target" "$msg" "$timeout"
+}
 
+# Deliver a message into <target>'s claude pane: take the per-target send lock,
+# wait for a safe-input state, bracketed-paste (newline-safe), then submit with
+# one Enter. Shared by `tt x send` and the notify drainer. Dies on lock/input
+# timeout (a caller that must not die — the drainer — runs it in a subshell).
+# timeout 0 = wait forever.
+x_deliver() {
+  local target=$1 msg=$2 timeout=$3
   local deadline=0
   (( timeout > 0 )) && deadline=$(($(date +%s) + timeout))
 
@@ -1226,8 +1311,6 @@ x_send_cmd() {
 
   x_wait_claude_accepts_input "$target" "$deadline"
 
-  # Deliver via a uniquely-named tmux buffer + bracketed paste so
-  # embedded newlines do not submit early; then Enter submits once.
   local buf="tt-x-$$"
   printf '%s' "$msg" | tmux load-buffer -b "$buf" -
   tmux paste-buffer -d -p -b "$buf" -t "=$target:claude"
@@ -1472,7 +1555,7 @@ PI WORKER VERBS
       the pi REPL on a fresh session-dir. Refuses unless idle/blocked;
       --force interrupts a busy turn first.
 
-  tt pi send [--low|--medium] <callsign> (FILE | -)
+  tt pi send [--low|--medium] [--notify] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin — feed inline text with a here-string or heredoc:
       `tt pi send alfa - <<<'TASK: ...'`.
@@ -1480,9 +1563,10 @@ PI WORKER VERBS
       runtime (no respawn, context preserved) and the tier sticks.
       A send to an absent worker lazily spawns it (under the cap). A send
       to a BUSY worker queues behind the current turn (run-next; use
-      `tt pi steer` for run-now). Prints task-id (e.g. "alfa-3").
+      `tt pi steer` for run-now). --notify: on completion, ping this
+      session's orchestrator (see below). Prints task-id (e.g. "alfa-3").
 
-  tt pi auto [--low|--medium] [--rm] (FILE | -)
+  tt pi auto [--low|--medium] [--rm] [--notify] (FILE | -)
       Dispatch without naming a worker: reuse an idle worker, else spawn one
       (under the cap), else queue on the shared pool where the first worker
       to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
@@ -1491,7 +1575,14 @@ PI WORKER VERBS
       With --rm, instead spawn a fresh EPHEMERAL worker that is torn down once
       its task (and any pinned follow-ups) finish — a clean one-shot. An
       ephemeral worker never steals pool work, and is reaped on the next
-      auto/status or on its own `wait`.
+      auto/status or on its own `wait`. --notify: see below.
+
+  --notify (on send / auto)
+      Fire-and-forget completion ping: when the task finishes, the worker
+      appends to a notify queue and a single lazily-started drainer pastes a
+      "[tt] <id> <status>" line into this session's `claude` pane (coalescing
+      multiple completions into one message). The worker never waits on
+      delivery; use it to dispatch without blocking on `wait`.
 
   tt pi steer <callsign|all> (FILE | -)
       Inject a message NOW — steered into the worker's current turn (or a
@@ -1586,6 +1677,7 @@ STATE
   $XDG_STATE_HOME/tt/<session>/<callsign>.ready         REPL queue-pump + steer-watch are live
   $XDG_STATE_HOME/tt/<session>/queue/                   shared pool queue (<seq>.task, tt pi auto)
   $XDG_STATE_HOME/tt/<session>/queue-results/           pool task results (pool-<seq>.result)
+  $XDG_STATE_HOME/tt/<session>/notify/                  --notify completion queue (drained to orchestrator)
   $XDG_STATE_HOME/tt/<session>/pi-sessions/<callsign>/g<N>/   pi session-dir
 
 EXIT CODES
@@ -1647,6 +1739,7 @@ case "$cmd" in
       clear)    pi_clear_cmd "$@" ;;
       send)     pi_send_cmd "$@" ;;
       auto)     pi_auto_cmd "$@" ;;
+      notify-drain) pi_notify_drain_cmd "$@" ;;
       steer)    pi_steer_cmd "$@" ;;
       steer-all) pi_steer_all_cmd "$@" ;;
       wait)     pi_wait_cmd "$@" ;;

@@ -5,6 +5,23 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.8.1] — 2026-05-29
+
+Pool model v2 — `--notify`. Verified live (drainer coalesce/deliver/delete/
+idle-exit against a fake orchestrator; `send --notify` end-to-end).
+
+- **`tt pi send --notify` / `tt pi auto --notify`** — fire-and-forget completion
+  ping. On completion the worker appends `<id> <status>` to a session notify
+  queue (`notify/`) and the task carries a `notify` flag (4th field of the queue
+  task line).
+- **Lazy single drainer** (`tt pi notify-drain <session>`, internal): the worker
+  spawns it detached; it is single-instance (stale-pid-aware lock), coalesces all
+  pending notifications into ONE paste, delivers via the shared `x_deliver`
+  (the `tt x send` safe-input path, extracted for reuse), deletes delivered
+  messages, and idle-exits. The worker never waits on delivery, so it goes idle /
+  claims the next task immediately; the drainer (own process group) survives an
+  ephemeral worker's reap.
+
 ## [0.8.0] — 2026-05-29
 
 Pool model v2, increment 5 — lazy zero-baseline pool; the immortal caste and

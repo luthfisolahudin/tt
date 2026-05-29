@@ -103,6 +103,15 @@ format so the bash side needs no JSON parser:
   `worker_state` reads it to decide `busy`, because a pool task records its
   result elsewhere and a steer records none — the marker is the only reliable
   "is this REPL working" signal.
+- **`notify/`** — the completion-ping queue for `--notify` tasks. On `agent_end`
+  the extension appends `<id> <status>` here and spawns the **drainer** (`tt pi
+  notify-drain`, detached, own process group so it outlives an ephemeral reap).
+  The drainer is single-instance (`notify-drain.lock`, stale-pid-aware),
+  coalesces all pending messages into ONE paste, delivers via `x_deliver` (the
+  shared `tt x send` safe-input path), deletes delivered messages, and
+  idle-exits. The worker never waits on delivery — it goes idle and claims the
+  next task at once. This is the daemonless-work-queue pattern again, applied to
+  delivery.
 - **`<cs>.steer`** — run-now injection, separate from the queue. tt writes it
   (atomic `mv`); the extension consumes it by rename and sends the text
   **steered into the current turn**, or as a fresh turn if idle. It does not
@@ -234,6 +243,8 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `queue/<seq>.task` | Shared pool task from `tt pi auto` (id `pool-<seq>`); any idle worker steals it after draining its own queue. |
 | `queue-results/<pool-id>.result` | Result of a stolen pool task, written by whichever worker ran it. |
 | `pool.seq` | Monotonic counter for pool task ids. |
+| `notify/<ts>-<pid>-<n>.msg` | `--notify` completion ping (`<id> <status>`), drained to the orchestrator. |
+| `notify-drain.lock` | Single-instance lock for the notify drainer (holds its pid). |
 | `<cs>.ephemeral` | Marker: this worker was spawned by `tt pi auto --rm`; it never steals pool work and is reaped once idle with an empty queue. |
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
 | `<cs>.result` | Latest tracked (worker-assigned) turn result (id / status / text). |
@@ -308,7 +319,11 @@ sessions. `scripts/import-x-observe-jsonl.sh` imports the legacy JSONL log.
 > - **0.8.0:** the **lazy zero-baseline pool** — `tt up` pre-spawns nothing;
 >   the **immortal caste is gone** (all callsigns ordinary/removable); and
 >   **`tt pi add` is removed** (spawn is implicit via `send`/`auto`).
-> - **Still pending:** `--notify`.
+> - **0.8.1:** **`--notify`** on `send`/`auto` — fire-and-forget completion ping
+>   via a session notify queue drained by a lazy single-instance drainer.
+>
+> Pool model v2 is now feature-complete; what remains is the consumer/doc
+> reconciliation pass.
 
 ### Motivation
 
