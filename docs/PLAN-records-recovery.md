@@ -3,10 +3,10 @@
 Working tracker for the two-release effort that closes the **read/recover side**
 of tt's file control channel. Confirmed 2026-05-29.
 
-**Status: both releases landed** — R1 in `0.9.0`, R2 in `0.10.0`. Reset-to-idle
-was scoped out at the user's call (resume recovers; clear wipes). Worker-driven
-paths await a live run (see STATUS). This file can be deleted once that live
-verification is done and nothing else references it.
+**Status: complete & verified live (2026-05-29).** R1 shipped in `0.9.0`, R2 in
+`0.10.0`; both verified live against the repo's own session (see STATUS
+"Verified"). Reset-to-idle was scoped out at the user's call (resume recovers;
+clear wipes). Kept as the consolidated design record for the effort.
 
 ## North star
 

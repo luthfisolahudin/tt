@@ -50,6 +50,18 @@ session — what a handoff can trust without retesting:
   error writes themselves remain code-reviewed only).
 - `tt x send` delivery (multiline, shell metachars, 4 KB bodies, FILE/stdin)
   against `cat` and a live orchestrator; `tt x list` / `ls --all`.
+- **Records/recovery (0.9.0 + 0.10.0), verified live 2026-05-29** against the
+  repo's own session: a real pi turn populating `results/<id>.result`;
+  `wait --json` envelope; `tt pi results` listing; `notify` in `tasks.jsonl`;
+  `tt pi collect` returning both tasks then advancing the cursor (re-collect =
+  "nothing new"); and the headline `tt pi resume` recovery — a turn interrupted
+  via Esc in the pane (→ `interrupted`/`status: other`) re-driven to `done` on
+  the same REPL with context intact (`interrupted → busy → done`, same task id,
+  nonce re-validated). `rm` wipes the worker's `results/<cs>-*` too. (The
+  `--json`/parse/escape paths and cursor edges were additionally exercised
+  against fabricated result files; the `status` reason hint is covered by those
+  + logic — the live interrupt landed before any assistant text, so its body was
+  empty and no hint was shown, which is correct.)
 
 ## Known limitations / not yet tested
 
@@ -111,15 +123,9 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Known limitations / not yet tested
 
-- **0.9.0/0.10.0 worker-driven paths are not yet live-verified.** The extension
-  changes (unified `results/<id>.result` store; `<cs>.resume` recovery routine +
-  `/tt-resume` command) take effect only on a respawned REPL — and only
-  interruptions on the new REPL are resumable. The pure-bash readers and
-  `results`/`collect`/`--json` parsing + cursor logic were exercised against
-  fabricated result files, but the full loops need a live run: a real pi turn
-  populating `results/`; `status` reason on a genuinely interrupted worker;
-  `collect` blocking on an in-flight task; and the headline `tt pi resume` /
-  `/tt-resume` recovery (`interrupted → busy → done`) on a real interrupted turn.
+- 0.9.0/0.10.0 extension changes take effect only on a respawned REPL, and only
+  interruptions on the new REPL are resumable — keep that in mind after an
+  upgrade (`tt pi clear <cs>` to respawn an existing worker).
 - `tt pi collect` has **no stuck guard** (like a pool wait) — bound a possibly-
   wedged worker with `--timeout`.
 - A `pool-<seq>` wait has **no stuck guard** — a pooled task legitimately waits

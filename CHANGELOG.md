@@ -9,9 +9,9 @@ constant in `tt` and the commit-message milestones (the constant jumped
 
 In-place interrupt recovery (Release 2 of the records/recovery plan). Recover an
 **interrupted** worker without a context wipe: re-drive its task to completion,
-`interrupted → busy → done`. **Extension changed — respawn workers (`tt pi
-clear <cs>`) to load it; only interruptions that happen on the new REPL are
-resumable.** Worker-driven paths pending a live run.
+`interrupted → busy → done`. Verified live. **Extension changed — respawn
+workers (`tt pi clear <cs>`) to load it; only interruptions that happen on the
+new REPL are resumable.**
 
 - **`tt pi resume <callsign>`** — re-drive an interrupted worker's task to
   completion, keeping its live REPL context (vs `clear`, which respawns on a
@@ -32,11 +32,9 @@ recovers, `clear` wipes.)
 
 Task records & observability (Release 1 of the records/recovery plan, see
 `docs/PLAN-records-recovery.md`). Closes the read side of the control channel:
-durable, id-addressable, machine-readable results. **Extension result-write path
-changed — workers must be respawned (`tt pi clear <cs>`) to pick it up.** Live
-verification of the worker-driven paths is pending (the pure-bash readers,
-`results`/`collect`/`--json` parsing, and cursor logic were exercised against
-fabricated result files).
+durable, id-addressable, machine-readable results. Verified live. **Extension
+result-write path changed — workers must be respawned (`tt pi clear <cs>`) to
+pick it up.**
 
 - **Unified result store.** Every task — named `<cs>-<turn>` and pool
   `pool-<seq>` alike — records to `results/<id>.result`. `<cs>.result` is demoted
