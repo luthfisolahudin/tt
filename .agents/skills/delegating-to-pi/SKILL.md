@@ -255,6 +255,10 @@ tt pi wait "$TID"          # works for a callsign id (alfa-3) or pool id (pool-3
   substitution.
 - **Steer a running worker**: `tt pi steer <cs> - <<<'...'` injects a correction
   into its *current* turn (run-now), vs `send` which queues it for next.
+- **Check on a worker without attaching**: `tt pi status` shows per-worker
+  ELAPSED (how long the current turn has run) and QUEUE depth; `tt pi logs <cs>`
+  dumps its REPL scrollback (read-only) so you can tell a slow-but-working turn
+  from a wedged one before deciding to `steer` or `resume`.
 - **Recover an interrupted worker**: if a worker shows `interrupted` (a turn
   ended without a clean `WORKER_DONE`/`BLOCKED` — e.g. someone hit Esc in its
   pane), use `tt pi resume <cs>` to re-drive that task to completion **with its

@@ -153,5 +153,6 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Possible next steps
 
-- `tt pi logs <cs>` to dump a worker's REPL scrollback (also a v2 deferred item).
 - Optional per-project config to auto-run the dev command.
+- `tt pi logs --follow` (interval re-capture or a streamed transcript file) —
+  the one-shot dump landed in 0.10.4; follow was deferred pending a streaming hook.

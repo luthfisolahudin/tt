@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.10.3"
+VERSION="0.10.4"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -1423,6 +1423,31 @@ pi_status_cmd() {
   fi
 }
 
+# Dump a worker's pi REPL pane scrollback — read-only observability for telling a
+# turn in flight apart from a wedged one, without attaching. This does NOT drive
+# the worker: the "never capture-pane" invariant is about CONTROL (claiming tasks,
+# detecting completion), not a human/orchestrator reading the pane. Default 200
+# lines of history; `--lines N` overrides.
+pi_logs_cmd() {
+  local name="" lines=200
+  while (( $# )); do
+    case $1 in
+      --lines) shift; [[ $# -gt 0 ]] || die "logs: --lines requires a count"
+               [[ $1 =~ ^[1-9][0-9]*$ ]] || die "logs: --lines must be a positive integer"
+               lines=$1; shift ;;
+      -*) die "unknown flag for logs: $1" ;;
+      *)  [[ -z $name ]] && name=$1 || die "extra arg: $1"; shift ;;
+    esac
+  done
+  [[ -n $name ]] || die "logs: callsign required"
+  valid_callsign "$name" || die "invalid callsign: $name"
+  require_session
+  window_exists "pi-$name" || die "pi-$name does not exist"
+  # -p print to stdout; -J join wrapped lines; -S -<n> start n lines back in
+  # scrollback. Read-only — never sends keys.
+  tmux capture-pane -p -J -S -"$lines" -t "=$(session_name):pi-$name"
+}
+
 pi_rm_cmd() {
   local name="" force=0
   while (( $# )); do
@@ -2056,6 +2081,11 @@ PI WORKER VERBS
       {callsign,state,elapsed_s,queued,last_task,tier,gen,reason} (elapsed_s is
       null unless busy).
 
+  tt pi logs [--lines N] <callsign>
+      Dump the worker's pi REPL pane scrollback to stdout (default 200 lines;
+      --lines N for more) — read-only, to tell an in-flight turn from a wedged
+      one without attaching. It does not drive the worker.
+
   tt pi rm [--force] <callsign>
   tt pi remove [--force] <callsign>
       Remove a worker (kill its REPL + window, wipe its state incl. its durable
@@ -2209,6 +2239,7 @@ case "$cmd" in
       wait)     pi_wait_cmd "$@" ;;
       wait-all) pi_wait_all_cmd "$@" ;;
       status)   pi_status_cmd "$@" ;;
+      logs)     pi_logs_cmd "$@" ;;
       results)  pi_results_cmd "$@" ;;
       collect)  pi_collect_cmd "$@" ;;
       rm|remove) pi_rm_cmd "$@" ;;

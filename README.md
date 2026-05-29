@@ -71,6 +71,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi wait [--timeout N] [--json] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id (any id resolves, even an old one), a pool id, or `all` (join all busy). `--json`: result envelope(s). `all` prints a one-line tally on stderr and exits non-zero if any worker ended error/other/down/timeout. |
 | `tt pi collect [--timeout N] [--json] [all\|<cs>]` | Cursor-based fan-out join: every result with turn past the per-worker cursor, blocking on in-flight ones, then advances the cursor. Never drops a task that finished before you asked (vs `wait all`, busy-now only). |
 | `tt pi results [--json] [<cs>\|<task-id>]` | Read durable outcomes from the per-id store: list all (newest first), filter to a worker, or re-read one by id. Recovers an id you no longer have. |
+| `tt pi logs [--lines N] <cs>` | Dump a worker's pi REPL pane scrollback (read-only; default 200 lines) — tell an in-flight turn from a wedged one without attaching. |
 | `tt pi status [--json]` | One row per worker: state, **elapsed** (in-flight turn time when busy), **queue depth** (`+N` pinned tasks waiting), last task, tier, generation; interrupted/blocked rows carry a reason hint. `--json` adds `elapsed_s`/`queued`. |
 | `tt pi rm [--force] <cs>`, `tt pi remove [--force] <cs>` | Remove a worker (kill REPL + window, wipe state incl. its durable results). |
 | `tt pi popidle` | Remove the highest-NATO idle worker. |

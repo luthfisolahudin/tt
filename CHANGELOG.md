@@ -5,6 +5,15 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.4] — 2026-05-29
+
+`tt pi logs [--lines N] <cs>` — dump a worker's pi REPL pane scrollback to
+stdout (read-only; default 200 lines of history), so the orchestrator can tell
+a slow-but-working turn from a wedged one without attaching. It does **not**
+drive the worker: the long-standing "never `capture-pane`" rule is about the
+control path (claiming tasks, detecting completion), not a human/orchestrator
+read of the pane. Closes the last deferred observability item. Bash-only.
+
 ## [0.10.3] — 2026-05-29
 
 Result lifecycle timestamps. The extension now stamps `started_at` into the

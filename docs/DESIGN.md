@@ -432,10 +432,11 @@ ceiling is the runaway backstop that makes auto-spawn safe.
   `rm` (destroy) and `clear` (reset context) stay.
 - Landed since: the JSON result envelope (`--json` on `wait`/`status`/
   `results`/`collect`), the durable per-id result store, `tt pi results` /
-  `tt pi collect`, and in-place interrupt recovery without a context wipe
-  (`tt pi resume` / `/tt-resume`). See CHANGELOG for when.
-- Deferred until needed: `tt pi logs <cs>` (build when the orchestrator finds
-  itself steering blind); reset-to-idle of an interrupted task (scoped out —
+  `tt pi collect`, in-place interrupt recovery without a context wipe
+  (`tt pi resume` / `/tt-resume`), and the observability layer — `tt pi status`
+  ELAPSED/QUEUE, result `duration_s`, and `tt pi logs` (read-only scrollback).
+  See CHANGELOG for when.
+- Deferred until needed: reset-to-idle of an interrupted task (scoped out —
   `resume` recovers it, `clear` wipes it).
 
 ### Framing — the moat
