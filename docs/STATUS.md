@@ -17,8 +17,9 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- `tt pi send --low/--medium` switches tier at runtime via `pi.setThinkingLevel`,
-  preserving pi context (no respawn).
+- `tt pi send` / `tt pi auto` accept `--low/--medium/--high/--xhigh`, switching
+  tier at runtime via `pi.setThinkingLevel` while preserving pi context (no
+  respawn).
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
 - **Results are durable and id-addressable.** Every task — named and pool
@@ -51,7 +52,8 @@ session — what a handoff can trust without retesting:
   heals missing/dead standard windows and never duplicates.
 - send → wait happy path (`<cs>.result` transits `running`→`done`); BLOCKED path;
   stale-WORKER_DONE rejection (terminal-position + nonce); interrupted
-  quarantine; runtime tier switch; multi-turn context retention.
+  quarantine; runtime tier switch (low/medium live-tested); multi-turn context
+  retention.
 - lazy-spawn on first `send`/`auto`; `rm`/`popidle`; the `min(cores-2,26)` cap.
 - `tt down` tears down session + state with no orphaned pi grandchildren.
 - 20 s unconsumed-trigger fast-fail; `status: error` channel (the extension-side
@@ -103,6 +105,10 @@ session — what a handoff can trust without retesting:
   windows, revives dead REPLs), but keep `pi`/`claude` out of
   `@resurrect-processes` in `~/.tmux.conf` so stale REPL command lines are never
   resurrected.
+- The new `--high`/`--xhigh` tier flags are parser/syntax-checked only in this
+  change; live tier-switching was not re-exercised because it spends pi quota.
+  Existing worker REPLs must be respawned (`tt pi clear <cs>`) to load the
+  updated extension before high/xhigh runtime switching takes effect.
 
 ## How to test
 

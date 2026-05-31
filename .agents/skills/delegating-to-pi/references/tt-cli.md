@@ -48,7 +48,7 @@ verbs, never by calling `pi` directly.
 
 ```
 # Named (continuation) — lazy-spawns, queues behind a busy turn:
-tt pi send <cs> [--medium] [--notify] - <<'PROMPT'
+tt pi send <cs> [--medium|--high|--xhigh] [--notify] - <<'PROMPT'
 TASK: ...
 FILES: ...
 CHANGE: ...
@@ -57,11 +57,16 @@ PROMPT
 tt pi wait <cs>            # task-id optional → waits on the latest dispatch
 
 # Or let tt pick the worker; capture the id it returns:
-TID=$(tt pi auto [--medium] [--rm] - <<<'TASK: ...')
+TID=$(tt pi auto [--medium|--high|--xhigh] [--rm] - <<<'TASK: ...')
 tt pi wait "$TID"          # works for a callsign id (alfa-3) or pool id (pool-3)
 ```
 
-- `--medium` for safety-critical work (see triggers); omit for default `--low`.
+- Tier flags are `--low`/`--medium`/`--high`/`--xhigh` (`tt` does not expose
+  no-thinking/none for workers; `low` is the minimum). Quick guide: `low` for
+  one-step routine tasks, `medium` for safety-critical or 2–4 step workflows,
+  `high` for 5–8 step multi-file/multi-source work where wrong answers are
+  costly, and `xhigh` only for deep debugging, architecture, complex logic/math,
+  or other branching problems.
 - `wait` accepts a callsign (latest task), a bare task-id (`alfa-3`, **any** id —
   even an older one resolves), a pool id (`pool-3`), or `all` (join every busy
   worker in one report). It anchors on the task-id, so it won't false-positive on

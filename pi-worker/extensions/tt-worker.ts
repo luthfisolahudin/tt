@@ -170,6 +170,10 @@ export default function (pi: ExtensionAPI) {
 		} catch {}
 	}
 
+	function isManagedTier(tier: string | undefined): tier is "low" | "medium" | "high" | "xhigh" {
+		return tier === "low" || tier === "medium" || tier === "high" || tier === "xhigh";
+	}
+
 	// Claim and run the next queued task — only when idle. Synchronous up to
 	// sendUserMessage, so the interval poll and agent_end can never interleave
 	// mid-claim. Claiming is an atomic rename, so it is safe even when several
@@ -240,8 +244,10 @@ export default function (pi: ExtensionAPI) {
 		pendingStartedAt = Math.floor(Date.now() / 1000);
 		setBusy(true);
 		writeResult(id, "id: " + id + "\nstatus: running\nstarted_at: " + pendingStartedAt + "\n---\n");
-		// Reasoning effort is a runtime knob — no REPL respawn.
-		if (tier === "low" || tier === "medium") {
+		// Reasoning effort is a runtime knob — no REPL respawn. Persist here too,
+		// because pool tasks are claimed by an unknown worker after bash dispatch.
+		if (isManagedTier(tier)) {
+			atomicWrite(path.join(stateDir, `${cs}.tier`), tier);
 			try {
 				pi.setThinkingLevel(tier);
 			} catch {}

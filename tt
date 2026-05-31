@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.10.4"
+VERSION="0.10.5"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -641,6 +641,8 @@ pi_send_cmd() {
     case $1 in
       --low)    req_tier=low;    shift ;;
       --medium) req_tier=medium; shift ;;
+      --high)   req_tier=high;   shift ;;
+      --xhigh)  req_tier=xhigh;  shift ;;
       --notify) notify=1;        shift ;;
       -)        src=-;           shift ;;
       -*)       die "unknown flag for send: $1" ;;
@@ -764,6 +766,8 @@ pi_auto_cmd() {
     case $1 in
       --low)          req_tier=low;    shift ;;
       --medium)       req_tier=medium; shift ;;
+      --high)         req_tier=high;   shift ;;
+      --xhigh)        req_tier=xhigh;  shift ;;
       --rm)           rm_flag=1;       shift ;;
       --notify)       notify=1;        shift ;;
       --json)         json=1;          shift ;;
@@ -1999,23 +2003,25 @@ PI WORKER VERBS
       runs asynchronously; join it with `tt pi wait <callsign>`. (In the worker's
       own pane you can instead type `/tt-resume`.)
 
-  tt pi send [--low|--medium] [--notify] <callsign> (FILE | -)
+  tt pi send [--low|--medium|--high|--xhigh] [--notify] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin — feed inline text with a here-string or heredoc:
       `tt pi send alfa - <<<'TASK: ...'`.
-      --low/--medium selects pi thinking effort; it takes effect at
-      runtime (no respawn, context preserved) and the tier sticks.
+      --low/--medium/--high/--xhigh selects pi thinking effort; it takes
+      effect at runtime (no respawn, context preserved) and the tier sticks.
       A send to an absent worker lazily spawns it (under the cap). A send
       to a BUSY worker queues behind the current turn (run-next; use
       `tt pi steer` for run-now). --notify: on completion, ping this
       session's orchestrator (see below). Prints task-id (e.g. "alfa-3").
 
-  tt pi auto [--low|--medium] [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
+  tt pi auto [--low|--medium|--high|--xhigh] [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
       Dispatch without naming a worker: reuse an idle worker, else spawn one
       (under the cap), else queue on the shared pool where the first worker
       to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
       task-id to stdout (`<cs>-<n>` when assigned, `pool-<n>` when pooled), so
-      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id.
+      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id. Tier flags
+      select pi thinking effort for the chosen/pooled worker; for persistent
+      workers the tier sticks.
       With --prefer-fresh, spawn a NEW worker before reusing an idle one (as
       long as the cap allows) — for eager parallelism and a clean pi context,
       since a reused idle worker still carries its previous task's context.
@@ -2026,6 +2032,13 @@ PI WORKER VERBS
       --prefer-fresh.) --json prints one line instead of the stderr/stdout
       split: {"worker","task_id","routed"} where routed is the actual
       placement (idle|spawn|pool|ephemeral). --notify: see below.
+
+  Thinking tiers (on send / auto)
+      Use --low for one-step routine tasks (default); --medium for
+      safety-critical or 2–4 step work; --high for 5–8 step multi-file /
+      multi-source work where wrong answers are costly; --xhigh only for deep
+      debugging, architecture, complex logic/math, or other branching problems.
+      tt does not expose a no-thinking/none tier for workers; low is the minimum.
 
   --notify (on send / auto)
       Fire-and-forget completion ping: when the task finishes, the worker

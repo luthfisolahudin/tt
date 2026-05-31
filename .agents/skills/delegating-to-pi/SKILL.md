@@ -44,24 +44,36 @@ orchestrator context lean** — not raw single-task speed. A lone
 sequential send/wait can be net-slower than doing it yourself; delegate
 so you can run things in parallel and stay unburdened, not as a reflex.
 
-Once you've decided to delegate, pick the tier:
+Once you've decided to delegate, pick the tier by **counting the reasoning
+steps** and the cost of a wrong answer:
 
-1. Task is **safety-critical** (see triggers below)? → `tt pi send <name> --medium <prompt>`.
-2. Otherwise → `tt pi send <name> <prompt>` (default `--low`).
-3. Output looks wrong? → retry once at `--medium`; if still wrong, take
-   the task back rather than escalating further.
+1. **Low** (default) — routine bounded work with one obvious path; most tt
+   tasks start here.
+2. **Medium** — safety-critical work (see triggers), 2–4 step workflows, or
+   output that will be used with little human safety net.
+3. **High** — 5–8 step analytical/code work: multi-file implementation that
+   must execute correctly, dependency/edge-case mapping, or multi-source
+   research. Also bump to high when the embarrassment/cost of being wrong
+   outweighs the wait.
+4. **XHigh** — rare deep-branching work: architecture decisions, grueling
+   debugging loops, complex logic/math, or novel reasoning where
+   pattern-matching is not enough.
+5. If output looks wrong, retry once one tier up; if it still looks wrong,
+   take the task back rather than blindly escalating.
+
+`tt` intentionally does not expose a no-thinking/none tier for workers; use
+`low` as the minimum so the worker still plans enough to follow the protocol.
 
 ## Model tiers
 
-| Tier                     | Use when                            | Why                                                |
-| ------------------------ | ----------------------------------- | -------------------------------------------------- |
-| `gpt-5.5:low` (default)  | Anything not safety-critical        | ~20–25s avg; BLOCKs on impossible (mini fakes it)  |
-| `gpt-5.5:medium`         | Safety-critical only                | Catches blast-radius traps low misses              |
-| `gpt-5.5:high`           | Don't                               | 2–3× latency, no quality gain over medium          |
-| Any mini tier            | Don't                               | Hallucinates success on impossible/ambiguous tasks |
-| `gpt-5.3-codex:high`     | Don't                               | Refused a multi-file task in evals                 |
-
-In our eval, low handled ~80% of work at or above the orchestrator's quality bar.
+| Tier                     | Use when                                      | Why                                                |
+| ------------------------ | --------------------------------------------- | -------------------------------------------------- |
+| `gpt-5.5:low` (default)  | 1-step routine tasks, predictable code edits  | Fast; in our eval low handled ~80% at quality bar  |
+| `gpt-5.5:medium`         | Safety-critical or 2–4 step workflows         | Balanced; catches blast-radius traps low misses    |
+| `gpt-5.5:high`           | 5–8 step analytical / multi-file work         | More dependency and edge-case checking             |
+| `gpt-5.5:xhigh`          | Deep debugging, architecture, novel reasoning | Maximum self-checking; slow, use sparingly         |
+| Any mini tier            | Don't                                         | Hallucinates success on impossible/ambiguous tasks |
+| `gpt-5.3-codex:high`     | Don't                                         | Refused a multi-file task in evals                 |
 
 ## Safety-critical triggers
 
@@ -197,7 +209,8 @@ send/wait/collect, steering and recovery, parallel fan-out — live in
 you need to *decide* with:
 
 - Drive workers only through `tt pi` verbs — never call `pi` directly.
-- `tt pi auto --rm` is the clean default for an independent task; `--medium`
-  for safety-critical, else default `--low`.
+- `tt pi auto --rm` is the clean default for an independent task; omit the tier
+  for default `--low`, and use `--medium`/`--high`/`--xhigh` only when the
+  reasoning-budget guide above justifies the wait.
 - Fan out across workers only when their FILES are disjoint; join the fan-out
   with `tt pi wait all` (still-busy) or `tt pi collect` (some already finished).

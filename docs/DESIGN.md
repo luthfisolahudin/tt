@@ -241,13 +241,19 @@ State is derived from the window plus the control files:
 
 ## Model tiers
 
-Default tier is `low`; `--medium` on `send` is for safety-critical work.
-Reasoning effort is a **runtime knob**: `send` writes the tier into the
-queued task and the `tt-worker` extension applies it with
-`pi.setThinkingLevel` before the turn. A tier change therefore does
-**not** respawn the REPL — pi context is preserved across it. The tier
-sticks (remembered in `<callsign>.tier`) until the next explicit
-`--low`/`--medium`.
+Default tier is `low`. `tt pi send` and `tt pi auto` accept
+`--low`/`--medium`/`--high`/`--xhigh`; `tt` does not expose a no-thinking/none
+worker tier, because worker turns need enough planning to follow the task and
+completion protocol. Selection is a reasoning-budget dial: low for one-step
+routine tasks, medium for safety-critical or 2–4 step work, high for 5–8 step
+multi-file/multi-source work where wrong answers are costly, and xhigh only for
+deep debugging, architecture, complex logic/math, or other branching problems.
+Reasoning effort is a **runtime knob**: dispatch writes the tier into the queued
+task and the `tt-worker` extension records it in `<callsign>.tier` and applies
+it with `pi.setThinkingLevel` before the turn (recording in the extension keeps
+shared-pool tasks honest, because the stealing worker is unknown at dispatch
+time). A tier change therefore does **not** respawn the REPL — pi context is
+preserved across it. The tier sticks until the next explicit tier flag.
 
 ## Context reset
 
@@ -290,7 +296,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 - `pi-worker/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
-- The model ladder (`gpt-5.5:low` default, `:medium` for safety-critical).
+- The model ladder (`gpt-5.5:low` default, explicit `:medium`/`:high`/`:xhigh` tiers).
 - The `tt pi send` / `wait` interface — same verbs, same task-ids.
 
 ## Cross-session messaging — `tt x send`
@@ -361,7 +367,7 @@ Workflow subagent structurally cannot match.
 
 ### Front door: `tt pi auto`
 
-`tt pi auto [--rm] [--notify] <prompt>` picks the worker and **echoes which one**
+`tt pi auto [--low|--medium|--high|--xhigh] [--rm] [--notify] <prompt>` picks the worker and **echoes which one**
 ("using pi-alfa …") — that string is the return contract, so a later
 `wait`/`steer`/follow-up can target it. Policy: reuse an idle persistent worker
 → else spawn (under cap) → else queue. `--rm` forces a fresh ephemeral worker.

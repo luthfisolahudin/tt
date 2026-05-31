@@ -5,6 +5,18 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.5] — 2026-05-31
+
+`tt pi send` / `tt pi auto` now accept **`--high`** and **`--xhigh`** in
+addition to `--low`/`--medium`, and the worker extension records/applies those
+tiers via `pi.setThinkingLevel` at task claim time. The tier still sticks per
+worker until the next explicit tier flag. **Extension changed — respawn workers
+with `tt pi clear <cs>` to load high/xhigh runtime switching.** Parser/syntax
+paths were checked; live high/xhigh switching was not re-exercised to avoid spending
+pi quota. Docs and the delegation skill now include the GPT-5.5 reasoning-budget
+rule of thumb: low = one-step routine, medium = safety-critical / 2–4 step, high
+= 5–8 step costly-wrong work, xhigh = rare deep branching.
+
 ## [0.10.4] — 2026-05-29
 
 `tt pi logs [--lines N] <cs>` — dump a worker's pi REPL pane scrollback to
