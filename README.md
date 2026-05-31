@@ -52,6 +52,22 @@ tt pi wait alfa "$TID"     # blocks, prints the WORKER_DONE / BLOCKED block
 `send` prints a **task ID** (`alfa-3`); `wait` uses it to anchor on the
 *current* turn's output and ignore stale markers from earlier turns.
 
+### Hiding instructions from pi workers
+
+Workers load the same discovered `AGENTS.md` / `CLAUDE.md` context as pi, but
+the `tt-worker` extension strips sections wrapped in these markers before a
+worker turn reaches the model:
+
+```md
+<!-- pi-worker:exclude-start -->
+Orchestrator-only guidance goes here.
+<!-- pi-worker:exclude-end -->
+```
+
+Use this in ancestor/global context files for instructions that should guide the
+orchestrator but not delegated pi workers. Respawn existing workers with
+`tt pi clear <cs>` after upgrading the extension.
+
 ## Command reference
 
 Run `tt --help` for the full block. Summary:

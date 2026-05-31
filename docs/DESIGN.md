@@ -74,6 +74,16 @@ passed as `PI_CODING_AGENT_DIR`). Normal user pi sessions continue using
 inert unless `TT_WORKER_CS` is set; tt sets that env var (and
 `TT_WORKER_STATE`) only for the workers it spawns.
 
+Before each worker turn, the extension also filters loaded context files
+(`AGENTS.md` / `CLAUDE.md`) out of the system prompt: content between
+`<!-- pi-worker:exclude-start -->` and `<!-- pi-worker:exclude-end -->` is
+removed for tt-spawned pi workers only. This lets ancestor/global context files
+keep orchestrator-only guidance without teaching delegated workers the same
+rules. The filter is applied in `before_agent_start` against Pi's
+`systemPromptOptions.contextFiles`; if a start marker has no matching end marker,
+the extension strips to the end of that context file and logs the problem in
+`<cs>.log` rather than leaking the marked section.
+
 The extension and tt exchange plain files under
 `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, all in a trivial line
 format so the bash side needs no JSON parser:

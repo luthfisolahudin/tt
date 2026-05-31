@@ -42,6 +42,11 @@ history in `CHANGELOG.md`.
   and `--json` (`{worker,task_id,routed}`). `tt pi wait all` hints at `collect`
   when a non-busy worker holds a skipped result. `tt pi logs [--lines N] <cs>`
   dumps a worker's REPL scrollback read-only.
+- **Worker-only context exclusions (0.10.6).** The `tt-worker` extension strips
+  `<!-- pi-worker:exclude-start -->` … `<!-- pi-worker:exclude-end -->` blocks
+  from loaded `AGENTS.md`/`CLAUDE.md` context before each tt-spawned worker turn,
+  so ancestor/global docs can hold orchestrator-only guidance. Existing workers
+  must be respawned (`tt pi clear <cs>`) to load the updated extension.
 
 ## Verified (manual)
 
@@ -109,6 +114,10 @@ session — what a handoff can trust without retesting:
   change; live tier-switching was not re-exercised because it spends pi quota.
   Existing worker REPLs must be respawned (`tt pi clear <cs>`) to load the
   updated extension before high/xhigh runtime switching takes effect.
+- The `pi-worker:exclude-*` context filter is syntax/transpile-checked and
+  exercised through a fake `before_agent_start` hook only; no live pi turn was
+  run to confirm the provider payload because that spends pi quota. Existing
+  worker REPLs must be respawned to load it.
 
 ## How to test
 

@@ -5,6 +5,18 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.10.6] — 2026-06-01
+
+Pi workers now strip worker-only exclusion blocks from loaded context files before
+each turn. Wrap orchestrator-only guidance in `AGENTS.md` / `CLAUDE.md` with
+`<!-- pi-worker:exclude-start -->` and `<!-- pi-worker:exclude-end -->` to keep
+that section out of the worker's system prompt while leaving normal pi/Claude
+context loading untouched. The filter is implemented in the `tt-worker`
+extension's `before_agent_start` hook and fails closed for an unterminated start
+marker by stripping to the end of that context file. **Extension changed —
+respawn workers with `tt pi clear <cs>` to load it.** Syntax/transpile and
+fake-hook checks passed; no live pi turn was run.
+
 ## [0.10.5] — 2026-05-31
 
 `tt pi send` / `tt pi auto` now accept **`--high`** and **`--xhigh`** in

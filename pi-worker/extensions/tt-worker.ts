@@ -55,12 +55,111 @@
  * `--notify` queue `notify/`, to which a finished task appends `<id> <status>`
  * before spawning the `tt pi notify-drain` drainer.
  *
+ * Before each worker turn it also strips loaded context-file sections between
+ * `<!-- pi-worker:exclude-start -->` and `<!-- pi-worker:exclude-end -->`, so
+ * ancestor/global AGENTS.md rules can stay orchestrator-only.
+ *
  * Env: TT_WORKER_CS (callsign), TT_WORKER_STATE (tt state dir).
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+type ContextFile = { path?: string; content?: string };
+
+type StripResult = {
+	text: string;
+	stripped: number;
+	unterminated: boolean;
+};
+
+type ContextStripResult = {
+	systemPrompt: string;
+	stripped: number;
+	unterminatedPaths: string[];
+	fallbackUsed: boolean;
+};
+
+const PI_WORKER_EXCLUDE_START = "<!-- pi-worker:exclude-start -->";
+const PI_WORKER_EXCLUDE_END = "<!-- pi-worker:exclude-end -->";
+
+function stripPiWorkerExcludedBlocks(input: string): StripResult {
+	const startRe = /<!--\s*pi-worker:exclude-start\s*-->/g;
+	const endRe = /<!--\s*pi-worker:exclude-end\s*-->/g;
+	let text = "";
+	let cursor = 0;
+	let stripped = 0;
+	let unterminated = false;
+
+	while (cursor < input.length) {
+		startRe.lastIndex = cursor;
+		const start = startRe.exec(input);
+		if (!start) {
+			text += input.slice(cursor);
+			break;
+		}
+
+		let removeStart = start.index;
+		let lineStart = start.index;
+		while (lineStart > cursor && input[lineStart - 1] !== "\n" && input[lineStart - 1] !== "\r") lineStart--;
+		if (/^[ \t]*$/.test(input.slice(lineStart, start.index))) removeStart = lineStart;
+		text += input.slice(cursor, removeStart);
+		endRe.lastIndex = start.index + start[0].length;
+		const end = endRe.exec(input);
+		stripped++;
+		if (!end) {
+			unterminated = true;
+			break;
+		}
+
+		cursor = end.index + end[0].length;
+		while (cursor < input.length && (input[cursor] === " " || input[cursor] === "\t")) cursor++;
+		if (input[cursor] === "\r" && input[cursor + 1] === "\n") cursor += 2;
+		else if (input[cursor] === "\n") cursor++;
+	}
+
+	return { text, stripped, unterminated };
+}
+
+function stripPiWorkerExcludedContext(systemPrompt: string, contextFiles: ContextFile[]): ContextStripResult {
+	if (contextFiles.length === 0) {
+		const result = stripPiWorkerExcludedBlocks(systemPrompt);
+		return {
+			systemPrompt: result.text,
+			stripped: result.stripped,
+			unterminatedPaths: result.unterminated ? ["<system prompt>"] : [],
+			fallbackUsed: result.stripped > 0,
+		};
+	}
+
+	let nextPrompt = systemPrompt;
+	let stripped = 0;
+	const unterminatedPaths: string[] = [];
+	let fallbackUsed = false;
+
+	for (const contextFile of contextFiles) {
+		if (typeof contextFile?.path !== "string" || typeof contextFile?.content !== "string") continue;
+		const result = stripPiWorkerExcludedBlocks(contextFile.content);
+		if (result.stripped === 0) continue;
+
+		stripped += result.stripped;
+		if (result.unterminated) unterminatedPaths.push(contextFile.path);
+
+		const originalBlock = `<project_instructions path="${contextFile.path}">\n${contextFile.content}\n</project_instructions>`;
+		const replacementBlock = `<project_instructions path="${contextFile.path}">\n${result.text}\n</project_instructions>`;
+		if (nextPrompt.includes(originalBlock)) {
+			nextPrompt = nextPrompt.replace(originalBlock, replacementBlock);
+		} else {
+			const fallback = stripPiWorkerExcludedBlocks(nextPrompt);
+			nextPrompt = fallback.text;
+			fallbackUsed = true;
+			if (fallback.unterminated) unterminatedPaths.push("<system prompt>");
+		}
+	}
+
+	return { systemPrompt: nextPrompt, stripped, unterminatedPaths, fallbackUsed };
+}
 
 export default function (pi: ExtensionAPI) {
 	const cs = process.env.TT_WORKER_CS;
@@ -86,6 +185,7 @@ export default function (pi: ExtensionAPI) {
 	let pendingStartedAt = 0; // epoch seconds the current task was claimed (turn start)
 	let busy = false; // a turn is in flight (tt-claimed task or steer-started)
 	let agentCtx: any = null; // captured at session_start; exposes isIdle()
+	const warnedContextExclude = new Set<string>(); // avoid repeating marker warnings every turn
 
 	// Notify the orchestrator a task finished — append a message to the session
 	// notify queue and (re)launch the single lazy drainer. Both steps are
@@ -334,6 +434,31 @@ export default function (pi: ExtensionAPI) {
 	} catch (e) {
 		logLine("registerCommand: " + String(e));
 	}
+
+	pi.on("before_agent_start", async (event: any) => {
+		try {
+			if (typeof event?.systemPrompt !== "string") return;
+			const contextFiles = Array.isArray(event?.systemPromptOptions?.contextFiles)
+				? event.systemPromptOptions.contextFiles
+				: [];
+			const result = stripPiWorkerExcludedContext(event.systemPrompt, contextFiles);
+			for (const filePath of result.unterminatedPaths) {
+				const key = `unterminated:${filePath}`;
+				if (warnedContextExclude.has(key)) continue;
+				warnedContextExclude.add(key);
+				logLine(
+					`context exclude: ${PI_WORKER_EXCLUDE_START} in ${filePath} has no matching ${PI_WORKER_EXCLUDE_END}; stripped to end`,
+				);
+			}
+			if (result.fallbackUsed && !warnedContextExclude.has("fallback")) {
+				warnedContextExclude.add("fallback");
+				logLine("context exclude: used full-system-prompt fallback for marker stripping");
+			}
+			if (result.systemPrompt !== event.systemPrompt) return { systemPrompt: result.systemPrompt };
+		} catch (e) {
+			logLine("context exclude: " + String(e));
+		}
+	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		agentCtx = ctx;
