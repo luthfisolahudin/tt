@@ -1,104 +1,46 @@
 ---
 name: delegating-to-pi
 description: >
-  Load when deciding whether to delegate to pi workers: substantial bounded code work, parallel fan-out, or explicit mentions of pi, tt workers, subagents, offloading, or the project tmux session. Skip for one-file reads, one grep, and known tiny edits. Default: delegate bounded execution; keep goal/product/architecture judgment and final review.
+  Load when deciding whether to delegate to pi workers: substantial bounded code work, parallel fan-out, dead-code/refactor/audit sweeps, focused debugging, or explicit mentions of pi, tt workers, subagents, offloading, worker pool, or the project tmux session. NOT for one-file reads, one precise grep, known tiny edits, open-ended product/architecture judgment, or final safety review. Default: delegate bounded execution; keep goal/product/architecture judgment and verification.
 ---
 
 # Delegating to pi
 
-pi workers are live Codex REPLs in the project tmux session, managed by `tt`.
-They use a separate provider/budget, are lazy-spawned on first use, and already
-know the Worker Mode protocol. Drive them only through `tt pi` verbs. Operational
-mechanics live in `references/tt-cli.md`; this file is for deciding what to send,
-which tier to use, and how to prompt.
+Choose whether and how to offload bounded execution to visible `tt pi` workers while the orchestrator keeps judgment and review.
 
-## Decide: inline, delegate, or keep
+## When to use
 
-- **Inline:** one file read, one grep/search, or a known tiny edit. Delegation
-  overhead costs more than the work.
-- **Delegate:** substantial, bounded execution with a statable `SUCCESS` check:
-  multi-file edits, scaffolding, refactors, audits, dead-code analysis, focused
-  debugging, or parallel sweeps.
-- **Keep with orchestrator:** goal definition, product/UX taste, architecture
-  choice, final safety review, or open-ended exploration where each next query
-  depends on the last result.
+Use when work can be bounded with files, a concrete change, and a success check: multi-file edits, scaffolding, refactors, audits, dead-code analysis, focused debugging, or parallel sweeps. Work inline for one file read, one precise grep, or a known tiny edit. Keep product/UX taste, architecture trade-offs, open-ended step-dependent exploration, and final safety review with the orchestrator.
 
-Delegate for **parallelism and lean orchestrator context**, not because a single
-sequential worker turn is faster.
+## Rules
 
-## Pick the tier
+- Delegate for **parallelism and lean orchestrator context**, not because one sequential worker turn is faster.
+- A delegated task MUST have bounded `FILES`, a specific `CHANGE`, and concrete `SUCCESS`; use the prompt contract in [prompting-and-tiers.md](references/prompting-and-tiers.md).
+- Tier choice MUST be deliberate and follow [prompting-and-tiers.md](references/prompting-and-tiers.md); do not default risky work without checking the guide.
+- Fan-out MUST follow the disjoint-scope rules in [tt-cli.md](references/tt-cli.md); if overlap is possible, serialize, narrow the scopes, or keep the work.
+- Worker output MUST be summarized and verified before being accepted; never paste raw `WORKER_DONE` blocks unless asked.
+- On `BLOCKED:` or drift, clarify/rephrase the task; do not blindly escalate the tier.
+- Persistent workers SHOULD be reserved for short context-bearing follow-up chains; stop and clear when judgment is needed or scope drifts.
 
-| Tier | Use when |
-| --- | --- |
-| `--low` (default) | Routine bounded work with one obvious path. |
-| `--medium` | Safety-critical edits, 2–4 step workflows, or output with little human safety net. |
-| `--high` | 5–8 step analytical / multi-file work, dependency mapping, costly wrong answers. |
-| `--xhigh` | Rare: architecture, deep debugging, complex logic/math, novel reasoning. |
+## Workflow
 
-If output looks wrong, retry once one tier up; if still wrong, take the task back.
+1. Decide: inline, delegate, or keep. If delegating, choose a tier using [prompting-and-tiers.md](references/prompting-and-tiers.md).
+2. Write a bounded prompt with `TASK / FILES / CHANGE / SUCCESS` and any output cap.
+3. Dispatch through `tt pi` only; choose the exact `auto`/`send`/`wait`/`collect` command from [tt-cli.md](references/tt-cli.md).
+4. Wait for or collect results, then verify with `git diff`, targeted reads, or checks appropriate to risk.
+5. Report the extracted result, files touched, verification, and any risks or blocked follow-ups.
 
-Treat these as at least **medium**:
+## Out of scope
 
-- Dead-code/deletion where build scripts, config, tests, or entrypoints may still
-  import the symbol.
-- Type fixes near generated/codegen output; prefer fixing importers over edited
-  generated files.
-- Domain hard-gates: auth/permission, regulatory/compliance, workflow state,
-  finance/pricing, or other business-critical logic.
-- Anything touching generated/build artifacts, or requiring knowing what *not* to
-  delete.
+- Letting a worker decide goals, product direction, architecture trade-offs, or final acceptance.
+- Delegating unbounded exploration before it has a success check.
+- Changing `tt` worker mechanics; this skill only decides and operates delegation.
 
-## Prompt contract
+## Reference index
 
-Use this shape; vague prompts drift.
+- [prompting-and-tiers.md](references/prompting-and-tiers.md) — tier guide, prompt contract, output caps, result protocol, and good-fit tasks.
+- [tt-cli.md](references/tt-cli.md) — exact `tt pi` commands for dispatch, waiting, collection, status, logs, and recovery.
 
-```text
-TASK: <one imperative sentence>
-FILES: <exact/path.ts>          # or "dir/* read+write" for multi-file scope
-CHANGE: <specific change; avoid "improve/fix/clean up/better">
-CONTEXT: <optional surgical snippet or constraint>
-SUCCESS: <one-line check>
-OUTPUT: <optional cap, e.g. "Terminal block only; notes only for risks/checks">
-```
+## Done means
 
-Good output caps:
-
-- Implementation: `OUTPUT: Terminal block only; notes only for risks, failed
-  checks, dependent changes, or artifact paths.`
-- Audit: `OUTPUT: Top 5 findings only, with file paths; no exhaustive narrative.`
-- Long handoff: if `FILES` allows `.tt/`, ask the worker to write a handoff file
-  and return only its path plus key risks.
-
-## Operating rules
-
-- Default independent task: `tt pi auto --rm [--medium|--high|--xhigh] -`.
-- For fan-out, ensure `FILES` are disjoint; join with `tt pi wait all` or
-  `tt pi collect` if some may already be done.
-- Wait for the `tt pi wait` result marker before acting on output.
-- Summarize worker results; don't paste the full `WORKER_DONE` block unless asked.
-- Verify safety-critical diffs with `git diff` or targeted reads before accepting.
-- On `BLOCKED:`, clarify/rephrase; don't blindly escalate the tier.
-- Persistent workers are only for short bounded follow-up chains. When judgment is
-  needed or scope drifts, stop and `tt pi clear <cs>`.
-
-## What pi handles well
-
-- Capped architecture/design analysis with file citations and why-not tradeoffs.
-- Focused diagnostic debugging across a handful of files.
-- Cross-file consistency audits and mechanical refactors.
-- Codegen/scaffolding from a clear spec.
-- Removal plans / dead-code analysis before deletion.
-
-Search/exploration split:
-
-- Bulk or parallel sweeps: delegate.
-- One precise lookup needing trustworthy `file:line`: use the read-only Explore
-  agent or do it inline; verify pi citations if used.
-- One file / one grep: inline.
-- Open-ended, step-dependent exploration: keep with orchestrator.
-
-## Result protocol
-
-- `BLOCKED: <reason>` — ambiguous/impossible; rewrite the task.
-- `WORKER_DONE\nfiles_changed: ...\nsummary: ...\nnotes: ...` — completed;
-  extract the facts, verify as needed, then report concisely.
+Inline/keep/delegate was chosen deliberately. Delegated work had bounded scope, an appropriate tier, and a concrete success check; results were collected, summarized, and verified before being accepted. Safety-critical or drifting work stayed under orchestrator review.

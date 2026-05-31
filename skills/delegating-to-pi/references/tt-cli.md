@@ -19,13 +19,13 @@ removed, and are capped at `min(cores-2, 26)`.
 - **Inspect pool:** `tt pi status`.
 
 Tier flags: `--low` (default), `--medium`, `--high`, `--xhigh`. Put them on
-`auto`/`send` per the tier guide in `SKILL.md`.
+`auto`/`send` per the tier guide in `prompting-and-tiers.md`.
 
 ## Send + wait
 
 ```sh
 # Named continuation
-TID=$(tt pi send alfa [--medium|--high|--xhigh] [--notify] - <<'PROMPT'
+TID=$(tt pi send alfa [--low|--medium|--high|--xhigh] [--notify] - <<'PROMPT'
 TASK: ...
 FILES: ...
 CHANGE: ...
@@ -35,7 +35,7 @@ PROMPT
 tt pi wait "$TID"        # or: tt pi wait alfa  # latest task for that worker
 
 # Let tt choose the worker
-TID=$(tt pi auto [--rm|--prefer-fresh] [--medium|--high|--xhigh] - <<<'TASK: ...')
+TID=$(tt pi auto [--rm|--prefer-fresh] [--low|--medium|--high|--xhigh] - <<<'TASK: ...')
 tt pi wait "$TID"
 ```
 
