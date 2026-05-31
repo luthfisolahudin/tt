@@ -7,4 +7,4 @@
 pi-worker/auth.json
 
 # skill eval scratch — transient runs, snapshots, logs
-.agents/skills/*-workspace/
+skills/*-workspace/

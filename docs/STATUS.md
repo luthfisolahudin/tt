@@ -6,10 +6,13 @@ history in `CHANGELOG.md`.
 ## Current state
 
 - Single bash file (`~/code/tt/tt`, symlinked from `~/.local/bin/tt`) plus
-  worker templates under `pi-worker/`. State lives under
+  worker templates under `pi-worker/` and the consumer delegation skill under
+  `skills/delegating-to-pi/`. State lives under
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` (override `TT_STATE_DIR`);
   worker runtime under `${XDG_DATA_HOME:-$HOME/.local/share}/tt/pi-worker`
-  (override `TT_PI_WORKER_DIR`). See DESIGN "Files and external state".
+  (override `TT_PI_WORKER_DIR`). The global skill entry
+  `~/.agents/skills/delegating-to-pi` is a symlink to the repo skill. See DESIGN
+  "Files and external state".
 - `tt up` builds only `dev`/`claude`, launches claude, attaches. The worker
   pool is lazy — no REPLs are pre-spawned; the first `tt pi send`/`auto`
   spawns the worker and waits for its readiness. `up` also stamps `TT_VERSION`
