@@ -255,6 +255,14 @@ shared-pool tasks honest, because the stealing worker is unknown at dispatch
 time). A tier change therefore does **not** respawn the REPL — pi context is
 preserved across it. The tier sticks until the next explicit tier flag.
 
+The provider/model is fixed at `openai-codex/gpt-5.5` (`PI_MODEL_PROVIDER` in
+`tt`); only the thinking tier varies per task, never the model. Evals drove this:
+`gpt-5.5:low` cleared ~80% of routine bounded tasks at the quality bar, so it is
+the default. Cheaper/alternative models were disqualifying for an autonomous
+worker that must report honest completion — **mini tiers hallucinated success**
+on impossible/ambiguous tasks, and **`gpt-5.3-codex:high` refused a multi-file
+task** outright.
+
 ## Context reset
 
 `tt pi clear` bumps `<callsign>.gen` and respawns the REPL on a new
