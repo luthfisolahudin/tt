@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.10.6"
+VERSION="0.11.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -15,6 +15,19 @@ TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
 # TT_PI_AGENT_DIR is a legacy override kept for compatibility; prefer TT_PI_WORKER_DIR.
 TT_PI_WORKER_DIR="${TT_PI_WORKER_DIR:-${TT_PI_AGENT_DIR:-$TT_DATA_DIR/pi-worker}}"
 TT_REPO_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+
+# Default orchestrator launch: resume the prior session, else start fresh.
+# Used when `.tt/windows.json` does not override the `claude` window's command.
+DEFAULT_CLAUDE_CMD='claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions'
+
+# jq program: read an optional <project>/.tt/windows.json and emit a normalized,
+# defaults-applied window array `[{role,name,layout,panes:[{cmd,enter}]}]`.
+# Absent/empty input ({}) yields the built-in default (dev + claude) — one code
+# path serves both default and override. `$cc` carries DEFAULT_CLAUDE_CMD.
+NORMALIZE_JQ='def norm: {cmd: (.cmd // ""), enter: (.enter != false)};
+[ ( (.dev    // {}) | {role:"dev",    name:(.name // "dev"),    layout:(.layout // null), panes:((.panes // [{}])       | map(norm))} ),
+  ( (.claude // {}) | {role:"claude", name:(.name // "claude"), layout:(.layout // null), panes:((.panes // [{cmd:$cc}]) | map(norm))} ) ]
++ ((.extra_windows // []) | map({role:"extra", name:.name, layout:(.layout // null), panes:((.panes // [{}]) | map(norm))}))'
 
 # ---------- helpers ----------
 
@@ -86,17 +99,105 @@ set_session_version() {
   printf '%s\n' "$VERSION" > "$(state_dir)/version"
 }
 
+# ---------- window config (.tt/windows.json) ----------
+#
+# `tt up` lays out FIXED windows (the orchestrator + dev/aux) from an optional
+# per-project `<project>/.tt/windows.json`. The lazy `pi-*` worker pool is
+# tt-owned and NOT configurable here. Every pane command is applied with a
+# bare-shell guard (see pane_is_bare): a cmd is (re)sent only when the pane is
+# currently a bare shell, so `tt up` is idempotent and reboots self-heal.
+# Requires `jq`; without it tt falls back to the legacy dev+claude layout.
+
+have_jq() { command -v jq >/dev/null 2>&1; }
+
+# Normalized window array (memoized per process). Malformed config is ignored
+# with a note; absent config yields the built-in default.
+windows_config() {
+  if [[ -z ${_TT_WIN_CFG+x} ]]; then
+    local file="$PWD/.tt/windows.json"
+    if [[ -f $file ]] && ! _TT_WIN_CFG=$(jq -c --arg cc "$DEFAULT_CLAUDE_CMD" "$NORMALIZE_JQ" < "$file" 2>/dev/null); then
+      note "ignoring malformed $file; using built-in window layout"
+      _TT_WIN_CFG=""
+    fi
+    [[ -n ${_TT_WIN_CFG:-} ]] || _TT_WIN_CFG=$(jq -c --arg cc "$DEFAULT_CLAUDE_CMD" "$NORMALIZE_JQ" <<<'{}')
+  fi
+  printf '%s' "$_TT_WIN_CFG"
+}
+
+win_field() { windows_config | jq -r ".[$1] | $2"; }                       # win_field <index> <jq>
+configured_window_names()  { windows_config | jq -r '.[].name'; }
+first_window_name()        { if have_jq; then windows_config | jq -r '.[0].name'; else printf 'dev'; fi; }
+orchestrator_window_name() { if have_jq; then windows_config | jq -r 'map(select(.role=="claude"))[0].name // "claude"'; else printf 'claude'; fi; }
+
+# Is the pane (targeted by pane_id) sitting at a bare shell? Mirrors the guard
+# that kept claude-relaunch idempotent — pane_current_command is reliable here
+# because we target a specific pane, not a grandchild-hosting pi window.
+pane_is_bare() {
+  local cmd; cmd=$(tmux display-message -t "$1" -p '#{pane_current_command}' 2>/dev/null) || return 1
+  case "$cmd" in bash|zsh|sh|fish) return 0 ;; *) return 1 ;; esac
+}
+
+# Split a freshly-created window to its configured pane count and (re)send each
+# pane's command, bare-shell-guarded. Heals at WINDOW granularity: a window that
+# already has >1 pane is never re-split (a partially-closed window is left
+# alone), but any bare-shell pane still gets its command re-sent.
+apply_window_panes() {
+  local i=$1 created=${2:-0} s; s=$(session_name)
+  local name npanes
+  name=$(win_field "$i" '.name')
+  npanes=$(win_field "$i" '.panes | length')
+
+  local -a pids
+  mapfile -t pids < <(tmux list-panes -t "=$s:$name" -F '#{pane_id}' 2>/dev/null)
+  (( ${#pids[@]} == 0 )) && return 0
+
+  # Fresh single bare-shell window -> split up to the configured pane count.
+  local did_split=0
+  if (( ${#pids[@]} == 1 && npanes > 1 )) && pane_is_bare "${pids[0]}"; then
+    local last="${pids[0]}" newid j
+    for (( j=1; j<npanes; j++ )); do
+      newid=$(tmux split-window -t "$last" -c "$PWD" -P -F '#{pane_id}' 2>/dev/null) || break
+      last="$newid"
+    done
+    tmux select-layout -t "=$s:$name" "$(win_field "$i" '.layout // "even-horizontal"')" >/dev/null 2>&1 || true
+    mapfile -t pids < <(tmux list-panes -t "=$s:$name" -F '#{pane_id}' 2>/dev/null)
+    tmux select-pane -t "${pids[0]}" >/dev/null 2>&1 || true
+    did_split=1
+  fi
+
+  # "Fresh" = panes born this invocation (cold session, new window, or just
+  # split). On a fresh pane any command is sent. On a heal re-`up` only a RUN
+  # command (enter:true) is resumed into a now-bare pane — a typed prefill
+  # (enter:false) is NOT re-sent, else its buffer would be doubled.
+  local fresh=0; (( ${_TT_COLD_START:-0} || created || did_split )) && fresh=1
+
+  local lim=${#pids[@]}; (( npanes < lim )) && lim=$npanes
+  local j cmd enter
+  for (( j=0; j<lim; j++ )); do
+    cmd=$(win_field "$i" ".panes[$j].cmd")
+    [[ -n $cmd ]] || continue
+    pane_is_bare "${pids[j]}" || continue
+    enter=$(win_field "$i" ".panes[$j].enter")
+    if [[ $enter == true ]]; then
+      tmux send-keys -t "${pids[j]}" "$cmd" Enter
+    elif (( fresh )); then
+      tmux send-keys -t "${pids[j]}" "$cmd"
+    fi
+  done
+}
+
 # ---------- session lifecycle ----------
 
 create_session() {
   local s; s=$(session_name)
-  tmux new-session -d -s "$s" -n dev -c "$PWD"
+  local _TT_COLD_START=1   # brand-new session: every pane is fresh (prefills fire once)
+  tmux new-session -d -s "$s" -n "$(first_window_name)" -c "$PWD"
   set_session_version
   # set-option does not accept the `=` exact-match prefix; use the
   # bare-name + colon target form instead.
   tmux set-option -t "$s:" history-limit "$PI_HISTORY_LIMIT" >/dev/null
   ensure_standard_windows
-  tmux select-window -t "=$s:claude"
+  tmux select-window -t "=$s:$(orchestrator_window_name)"
 }
 
 # Collapse duplicate standard windows. A tmux-resurrect/continuum restore
@@ -111,8 +212,10 @@ dedup_windows() {
   local cur; cur=$(tmux display-message -p '#{window_id}' 2>/dev/null) || cur=""
   local allwin
   allwin=$(tmux list-windows -t "=$s" -F '#{window_id} #{window_name}' 2>/dev/null) || return 0
+  local -a stdnames
+  if have_jq; then mapfile -t stdnames < <(configured_window_names); else stdnames=(dev claude); fi
   local name
-  for name in dev claude "${NATO[@]/#/pi-}"; do
+  for name in "${stdnames[@]}" "${NATO[@]/#/pi-}"; do
     local -a ids=()
     ids=( $(printf '%s\n' "$allwin" | awk -v n="$name" '$2==n{print $1}') )
     (( ${#ids[@]} > 1 )) || continue
@@ -138,8 +241,24 @@ dedup_windows() {
 ensure_standard_windows() {
   local s; s=$(session_name)
   dedup_windows
-  window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
-  window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
+  if ! have_jq; then
+    # Legacy fallback (no jq): the historical dev + claude layout.
+    window_exists dev    || tmux new-window -t "=$s:" -n dev    -c "$PWD"
+    window_exists claude || tmux new-window -t "=$s:" -n claude -c "$PWD"
+    [[ -f "$PWD/.tt/windows.json" ]] && note "jq not found; ignoring .tt/windows.json"
+    legacy_launch_claude
+    return 0
+  fi
+  local n i name created
+  n=$(windows_config | jq 'length')
+  for (( i=0; i<n; i++ )); do
+    name=$(win_field "$i" '.name')
+    if window_exists "$name"; then created=0; else tmux new-window -t "=$s:" -n "$name" -c "$PWD"; created=1; fi
+    # Keep the name stable for window_exists even while a long-running command
+    # (e.g. `pnpm dev`) would otherwise trigger tmux automatic-rename.
+    tmux set-window-option -t "=$s:$name" automatic-rename off >/dev/null 2>&1 || true
+    apply_window_panes "$i" "$created"
+  done
 }
 
 spawn_pi_window() {
@@ -160,15 +279,15 @@ up_cmd() {
   else
     create_session
   fi
-  # Launch the orchestrator. No pi workers are pre-spawned — the pool is
-  # lazy: workers materialize on the first `tt pi send`/`auto`.
-  auto_launch_claude
+  # The orchestrator + dev/aux panes are (re)launched by ensure_standard_windows
+  # via apply_window_panes (bare-shell-guarded). No pi workers are pre-spawned —
+  # the pool is lazy: workers materialize on the first `tt pi send`/`auto`.
   printf '%s\n' "$PWD" > "$(state_dir)/project"
   # Already attached to this session — healing is done, nothing to switch to.
   if [[ -n "${TMUX:-}" ]] && [[ "$(tmux display-message -p '#S')" == "$(session_name)" ]]; then
     return 0
   fi
-  enter_session "claude"
+  enter_session "$(orchestrator_window_name)"
 }
 
 attach_cmd() {
@@ -394,10 +513,10 @@ ensure_repl_ready() {
   wait_repl_ready "$name"
 }
 
-# Auto-launch claude in the claude window if the pane is running a bare
-# shell. Called by up_cmd so the orchestrator starts automatically on
-# tt up, and resumes (--continue) on re-attach after a crash or reboot.
-auto_launch_claude() {
+# Legacy no-jq fallback: auto-launch claude in the claude window if the pane is
+# a bare shell. The jq path handles this generically via apply_window_panes;
+# this remains only for hosts without jq. Resumes (--continue) after reboot.
+legacy_launch_claude() {
   local s; s=$(session_name)
   local cmd
   cmd=$(tmux display-message -t "=$s:claude" -p '#{pane_current_command}' 2>/dev/null) || return 0
@@ -405,7 +524,7 @@ auto_launch_claude() {
     bash|zsh|sh|fish) ;;
     *) return 0 ;;
   esac
-  tmux send-keys -t "=$s:claude" 'claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions' Enter
+  tmux send-keys -t "=$s:claude" "$DEFAULT_CLAUDE_CMD" Enter
 }
 
 # Fields of a result file (written by the tt-worker extension). The *_file

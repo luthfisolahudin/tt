@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tt/schema/windows.json",
+  "title": "tt windows config",
+  "description": "Per-project tmux layout for `tt up`, read from <project>/.tt/windows.json. Absent => tt's built-in default (dev + claude). Configures FIXED windows only; the lazy pi-* worker pool is tt-owned and not configurable here. Every pane cmd is applied with a bare-shell guard: a cmd is (re)sent only when its pane is a bare shell, so `tt up` is idempotent and reboots self-heal. A run command (enter:true) resumes into a now-bare pane on a later `tt up`; a typed prefill (enter:false) fires only on fresh creation (never re-typed). Requires jq; without it tt falls back to the legacy dev+claude layout and ignores this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "dev": {
+      "$ref": "#/$defs/window",
+      "description": "Primary work window (tmux window 0). Default name 'dev'. Default panes: one bare shell."
+    },
+    "claude": {
+      "$ref": "#/$defs/window",
+      "description": "Orchestrator window — the attach/focus target on `tt up`. Default name 'claude'. Default panes: one pane running `claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions`. To use a different coding agent, set claude.panes[0].cmd (e.g. \"pi\")."
+    },
+    "extra_windows": {
+      "type": "array",
+      "description": "Additional fixed windows, created in order AFTER dev+claude and BEFORE the pi-* pool.",
+      "items": { "$ref": "#/$defs/namedWindow" }
+    }
+  },
+  "$defs": {
+    "pane": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One pane. {} or an omitted cmd => bare shell.",
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Command typed into the pane, sent only when the pane is a bare shell."
+        },
+        "enter": {
+          "type": "boolean",
+          "default": true,
+          "description": "Press Enter after cmd. false => pre-type only and never re-send on a later `tt up` (e.g. a tunnel cmd needing an ssh-agent key loaded first)."
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "tmux window name. Defaults to the role key (dev / claude)."
+        },
+        "layout": {
+          "type": "string",
+          "enum": ["even-horizontal", "even-vertical", "main-horizontal", "main-vertical", "tiled"],
+          "description": "tmux layout applied after splitting. Default: even-horizontal when >1 pane."
+        },
+        "panes": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Panes in split order (left-to-right / top-to-bottom). Omit to use the role default.",
+          "items": { "$ref": "#/$defs/pane" }
+        }
+      }
+    },
+    "namedWindow": {
+      "allOf": [{ "$ref": "#/$defs/window" }],
+      "required": ["name"],
+      "description": "An extra window — name is required (no role key to default from)."
+    }
+  }
+}

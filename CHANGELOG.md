@@ -5,6 +5,30 @@ Notable changes to `tt`, newest first. Reconstructed from git history and prior
 constant in `tt` and the commit-message milestones (the constant jumped
 0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
 
+## [0.11.0] — 2026-06-15
+
+`tt up` can now build a project's fixed windows from an optional
+`<project>/.tt/windows.json` — split panes, pre-run per-pane commands, and swap
+the orchestrator agent (some projects run `pi` or another agent in the `claude`
+window, not Claude Code). Absent file → the historical `dev` + `claude` default,
+via the **same code path** (one normalized config, defaults applied in jq).
+
+- Schema: `docs/windows.schema.json`. Shape: `{ dev, claude, extra_windows[] }`
+  where `dev`/`claude` are *roles* (claude is always the attach target) sharing
+  one window shape `{ name?, layout?, panes:[{cmd?, enter?}] }`.
+- Pane commands are applied with a **bare-shell guard**: a cmd is (re)sent only
+  when its pane is a bare shell — `tt up` stays idempotent (no doubled panes, no
+  injection into a running process) and a crashed `enter:true` daemon relaunches
+  on the next `tt up`. `enter:false` panes pre-type once on creation and are
+  never re-sent.
+- Heals at **window** granularity: a missing window is recreated + laid out; a
+  partially-closed multi-pane window is left alone (not re-split).
+- Panes are targeted by `pane_id`, not index — safe under `pane-base-index 1`.
+- Requires `jq`; without it tt falls back to the legacy `dev`+`claude` layout and
+  ignores the file. Verified live against a throwaway tmux server: custom layout,
+  `enter:false` buffer correctness, idempotent re-`up`, default fallback, and
+  malformed-config rejection. `bash -n` clean.
+
 ## [0.10.6] — 2026-06-01
 
 Pi workers now strip worker-only exclusion blocks from loaded context files before

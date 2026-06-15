@@ -13,10 +13,16 @@ history in `CHANGELOG.md`.
   (override `TT_PI_WORKER_DIR`). The global skill entry
   `~/.agents/skills/delegating-to-pi` is a symlink to the repo skill. See DESIGN
   "Files and external state".
-- `tt up` builds only `dev`/`claude`, launches claude, attaches. The worker
-  pool is lazy — no REPLs are pre-spawned; the first `tt pi send`/`auto`
-  spawns the worker and waits for its readiness. `up` also stamps `TT_VERSION`
-  into the session env and `$(state_dir)/version`.
+- `tt up` builds the fixed windows (default `dev`/`claude`, or whatever
+  `<project>/.tt/windows.json` declares — see README "Custom window layout" and
+  `docs/windows.schema.json`), launches the orchestrator, attaches. Pane commands
+  are bare-shell-guarded so re-`up` is idempotent and reboots self-heal; healing
+  is at window granularity; panes are targeted by `pane_id` (safe under
+  `pane-base-index 1`). Needs `jq` for the config path; without it the legacy
+  `dev`/`claude` layout is used. The worker pool is lazy — no REPLs are
+  pre-spawned; the first `tt pi send`/`auto` spawns the worker and waits for its
+  readiness. `up` also stamps `TT_VERSION` into the session env and
+  `$(state_dir)/version`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.

@@ -36,6 +36,35 @@ windows: `dev` and `claude`. Run the dev server in `dev`; the orchestrator
 `pi-*` workers are pre-spawned; a worker's REPL is created on demand by the
 first `tt pi send <cs>` or `tt pi auto`.
 
+### Custom window layout (`.tt/windows.json`)
+
+Drop a `.tt/windows.json` in a project to make `tt up` build its fixed windows
+for you — split panes, pre-run commands, swap the orchestrator agent. Absent
+file → the built-in `dev` + `claude` default. Schema: [`docs/windows.schema.json`](docs/windows.schema.json).
+
+```jsonc
+{
+  "dev": {
+    "layout": "even-horizontal",
+    "panes": [
+      { "cmd": "pnpm dev" },                                   // split + type + Enter
+      { "cmd": "pnpm emu" },
+      { "cmd": "./scripts/tunnel.sh", "enter": false }         // pre-type only; you press Enter
+    ]
+  },
+  "claude": { "panes": [ { "cmd": "pi" } ] }                   // different orchestrator agent
+}
+```
+
+- A pane `cmd` is sent **only into a bare shell** (idempotency guard), so re-running
+  `tt up` never doubles panes or re-injects into a running process — and a crashed
+  daemon (`enter:true`) is relaunched on the next `tt up`. `enter:false` panes are
+  pre-typed once on creation and never re-sent.
+- `dev`/`claude` are *roles*; `claude` is always the attach/focus target. Override
+  `claude.panes[0].cmd` to launch any agent. Add more windows via `extra_windows`.
+- The lazy `pi-*` worker pool is **not** configured here — that stays tt-owned.
+- Requires `jq`; without it tt ignores the file and uses the legacy `dev`+`claude` layout.
+
 ## Delegating to a pi worker
 
 ```sh

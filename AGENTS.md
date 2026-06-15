@@ -29,6 +29,14 @@ a pool of `pi` code workers. This file orients an AI agent working **on**
   The `=` exact-match prefix is rejected by `set-option`.
 - **Never `tmux attach` when `$TMUX` is set** — use `switch-client` via
   `enter_session()`.
+- **Fixed windows come from `<project>/.tt/windows.json`** (normalized in jq via
+  `NORMALIZE_JQ`; absent → built-in `dev`+`claude` default, same code path). Pane
+  commands MUST stay **bare-shell-guarded** (`pane_is_bare`) so re-`up` is
+  idempotent and reboots self-heal; `enter:false` prefills fire only on fresh
+  panes (`_TT_COLD_START`/`created`/`did_split`), never on heal. Target panes by
+  `pane_id`, never index (`pane-base-index` may be 1). Heal at **window**
+  granularity — do not re-split a partially-closed window. The `pi-*` pool is NOT
+  configurable here.
 - **Pi windows host a live interactive pi REPL**, not a shell. `tt`
   drives them via the `tt-worker` extension's trigger/result files —
   never by `capture-pane` scraping (the retired watermark model was the
