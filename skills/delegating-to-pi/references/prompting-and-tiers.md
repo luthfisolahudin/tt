@@ -26,7 +26,7 @@ FILES: <exact/path.ts>          # or "dir/* read+write" for multi-file scope
 CHANGE: <specific change; avoid "improve/fix/clean up/better">
 CONTEXT: <optional surgical snippet or constraint>
 SUCCESS: <one-line check that the worker can verify themselves>
-VERIFY: <optional command the worker runs to prove correctness>
+VERIFY: <recommended command the worker runs to prove correctness>
 OUTPUT: <optional cap, e.g. "Terminal block only; notes only for risks/checks">
 ```
 
@@ -44,9 +44,10 @@ OUTPUT: <optional cap, e.g. "Terminal block only; notes only for risks/checks">
   diff — e.g. "No remaining references to the old name", "build passes",
   "the exported type matches the schema". If the worker cannot self-verify,
   the SUCCESS is too vague.
-- VERIFY (optional) is a shell command the worker executes to confirm the
+- VERIFY (recommended) is a shell command the worker executes to confirm the
   change is correct — e.g. `pnpm tsc --noEmit`, `cargo check`, `grep -r
-  OLD_NAME src/`.
+  OLD_NAME src/`. Include a VERIFY whenever there is a mechanical check the
+  worker can run (linter, type-check, grep for stale references, etc.).
 
 ### Output caps
 
