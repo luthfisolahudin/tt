@@ -17,6 +17,8 @@ Use when work can be bounded with files, a concrete change, and a success check:
 - Delegate for **parallelism and lean orchestrator context**, not because one sequential worker turn is faster.
 - A delegated task MUST have bounded `FILES`, a specific `CHANGE`, and concrete `SUCCESS`; use the prompt contract in [prompting-and-tiers.md](references/prompting-and-tiers.md).
 - Tier is locked to **xhigh** (`opencode-go/deepseek-v4-flash`); see [prompting-and-tiers.md](references/prompting-and-tiers.md). Tier flags are rejected.
+- **Prompt clarity is your job.** Review your prompt for ambiguity before sending. If the worker could interpret TASK, CHANGE, or SUCCESS in more than one way, sharpen it. A `BLOCKED` or wrong output means the prompt was not clear enough.
+- **Give the worker a way to verify their own work.** Every prompt MUST include a concrete SUCCESS check (and optionally a VERIFY command) so the worker can falsify their result before reporting `WORKER_DONE`.
 - Fan-out MUST follow the disjoint-scope rules in [tt-cli.md](references/tt-cli.md); if overlap is possible, serialize, narrow the scopes, or keep the work.
 - Worker output MUST be summarized and verified before being accepted; never paste raw `WORKER_DONE` blocks unless asked.
 - On `BLOCKED:` or drift, clarify/rephrase the task; do not escalate tier (it is locked).
@@ -25,7 +27,7 @@ Use when work can be bounded with files, a concrete change, and a success check:
 ## Workflow
 
 1. Decide: inline, delegate, or keep. All delegated work runs at xhigh (locked).
-2. Write a bounded prompt with `TASK / FILES / CHANGE / SUCCESS` and any output cap.
+2. Write a bounded prompt with `TASK / FILES / CHANGE / SUCCESS` (and optionally `VERIFY`) — see the prompt contract in [prompting-and-tiers.md](references/prompting-and-tiers.md). Review for ambiguity before sending.
 3. Dispatch through `tt pi` only; choose the exact `auto`/`send`/`wait`/`collect` command from [tt-cli.md](references/tt-cli.md).
 4. Wait for or collect results, then verify with `git diff`, targeted reads, or checks appropriate to risk.
 5. Report the extracted result, files touched, verification, and any risks or blocked follow-ups.

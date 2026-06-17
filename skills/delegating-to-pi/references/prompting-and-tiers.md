@@ -17,18 +17,38 @@ Treat these as safety-critical contexts that warrant extra care in the prompt:
 
 ## Prompt contract
 
-Use this shape; vague prompts drift.
+Use this shape; vague prompts drift. Every prompt MUST be unambiguous and
+MUST give the worker a concrete way to falsify their own work.
 
 ```text
 TASK: <one imperative sentence>
 FILES: <exact/path.ts>          # or "dir/* read+write" for multi-file scope
 CHANGE: <specific change; avoid "improve/fix/clean up/better">
 CONTEXT: <optional surgical snippet or constraint>
-SUCCESS: <one-line check>
+SUCCESS: <one-line check that the worker can verify themselves>
+VERIFY: <optional command the worker runs to prove correctness>
 OUTPUT: <optional cap, e.g. "Terminal block only; notes only for risks/checks">
 ```
 
-Good output caps:
+### Clarity rules
+
+- TASK must name the **single goal** in one sentence. If the task has multiple
+  independent goals, split into separate dispatches.
+- FILES must list every file the worker may touch. Use `dir/*` only when the
+  worker can safely touch any file in that directory.
+- CHANGE must say **what** to do, not how — but be concrete enough that a wrong
+  implementation is detectable. Avoid weasel words like "improve", "fix",
+  "clean up", "better", "optimize". Prefer "rename X to Y", "add Z parameter
+  to function A", "remove B and update all callers".
+- SUCCESS must be a **falsifiable check** the worker can run against their own
+  diff — e.g. "No remaining references to the old name", "build passes",
+  "the exported type matches the schema". If the worker cannot self-verify,
+  the SUCCESS is too vague.
+- VERIFY (optional) is a shell command the worker executes to confirm the
+  change is correct — e.g. `pnpm tsc --noEmit`, `cargo check`, `grep -r
+  OLD_NAME src/`.
+
+### Output caps
 
 - Implementation: `OUTPUT: Terminal block only; notes only for risks, failed checks, dependent changes, or artifact paths.`
 - Audit: `OUTPUT: Top 5 findings only, with file paths; no exhaustive narrative.`
