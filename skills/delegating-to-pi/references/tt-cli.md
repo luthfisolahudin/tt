@@ -59,6 +59,9 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
 - `tt pi clear <cs>` — wipe context and respawn; use only when you want a fresh
   REPL.
 - `tt pi rm <cs>` — remove a persistent worker when done.
+- `tt pi update [--self|--extensions|<source>]` — run `pi update` against the
+  worker's private `PI_CODING_AGENT_DIR` (the pool's installed extensions
+  get updated, not the orchestrator's own pi config). Forwards all args.
 
 ## Parallelism rules
 

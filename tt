@@ -1682,6 +1682,15 @@ pi_notify_drain_cmd() {
   done
 }
 
+# Run `pi update` against the worker's private config dir
+# (PI_CODING_AGENT_DIR=$TT_PI_WORKER_DIR), so extensions installed into the
+# worker pool get updated — not the orchestrator's own pi config. Forwards
+# all args and exit code; no `tt` session required.
+pi_update_cmd() {
+  ensure_pi_worker_dir
+  PI_CODING_AGENT_DIR="$TT_PI_WORKER_DIR" exec pi update "$@"
+}
+
 # ---------- cross-session messaging ----------
 
 x_target_state_dir() {
@@ -2222,6 +2231,14 @@ PI WORKER VERBS
       Remove the highest-NATO idle worker. No-op if none idle. Prints the
       removed callsign.
 
+  tt pi update [<args>...]
+      Run `pi update` against the worker's private config dir
+      (PI_CODING_AGENT_DIR=$TT_PI_WORKER_DIR), so extensions installed in
+      the worker pool get updated — not the orchestrator's own pi config.
+      All args are forwarded (e.g. `tt pi update --self`, `tt pi update
+      --extensions`, `tt pi update <source>`); exit code passes through.
+      No tt session required.
+
 CROSS-SESSION VERBS
   tt x send [--timeout SECONDS] <session-id> (FILE | -)
       Send a message to another tt session's orchestrator (its live
@@ -2371,6 +2388,7 @@ case "$cmd" in
       collect)  pi_collect_cmd "$@" ;;
       rm|remove) pi_rm_cmd "$@" ;;
       popidle)  pi_popidle_cmd "$@" ;;
+      update)   pi_update_cmd "$@" ;;
       "")       die "pi: subcommand required (try \`tt --help\`)" ;;
       *)        die "unknown pi subcommand '$sub' (try \`tt --help\`)" ;;
     esac ;;

@@ -120,6 +120,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi status [--json]` | One row per worker: state, **elapsed** (in-flight turn time when busy), **queue depth** (`+N` pinned tasks waiting), last task, tier, generation; interrupted/blocked rows carry a reason hint. `--json` adds `elapsed_s`/`queued`. |
 | `tt pi rm [--force] <cs>`, `tt pi remove [--force] <cs>` | Remove a worker (kill REPL + window, wipe state incl. its durable results). |
 | `tt pi popidle` | Remove the highest-NATO idle worker. |
+| `tt pi update [<args>...]` | Run `pi update` against the worker's private `PI_CODING_AGENT_DIR` (the worker pool's installed extensions get updated, not the orchestrator's pi config). Forwards all args and exit code. No `tt` session required. |
 | `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to safely accept input, then send + submit a message. Waits forever by default. |
 | `tt x ls [--all]`, `tt x list [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
 | `tt x observe [run] [--interval N] [--duration N] [--all]` | Passively sample Claude panes to SQLite for improving `tt x send` safe-input detection; duplicate non-`ts` payloads are ignored. |
