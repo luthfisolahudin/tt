@@ -139,6 +139,7 @@ format so the bash side needs no JSON parser:
 - **`results/<id>.result`** — the unified id-keyed result store. The extension
   writes a lifecycle file atomically for **every** task (named `<cs>-<turn>` and
   pool `pool-<seq>` alike):
+
   ```
   id: <task id>
   status: running|done|blocked|other|error
@@ -146,6 +147,7 @@ format so the bash side needs no JSON parser:
   ---
   <text>
   ```
+
   `running` is written when a task is claimed (empty text, `started_at` stamped);
   `done`/`blocked`/`other` on `agent_end` (adds `ended_at`); `error` when the
   extension catches an internal exception (text = the message). The two
@@ -249,29 +251,15 @@ State is derived from the window plus the control files:
 - `idle` — anything else (incl. an idle worker whose `<cs>.result` describes a
   pool/steer turn or an older task).
 
-## Model tiers
+## Model tier
 
-Default tier is `low`. `tt pi send` and `tt pi auto` accept
-`--low`/`--medium`/`--high`/`--xhigh`; `tt` does not expose a no-thinking/none
-worker tier, because worker turns need enough planning to follow the task and
-completion protocol. Selection is a reasoning-budget dial: low for one-step
-routine tasks, medium for safety-critical or 2–4 step work, high for 5–8 step
-multi-file/multi-source work where wrong answers are costly, and xhigh only for
-deep debugging, architecture, complex logic/math, or other branching problems.
-Reasoning effort is a **runtime knob**: dispatch writes the tier into the queued
-task and the `tt-worker` extension records it in `<callsign>.tier` and applies
-it with `pi.setThinkingLevel` before the turn (recording in the extension keeps
-shared-pool tasks honest, because the stealing worker is unknown at dispatch
-time). A tier change therefore does **not** respawn the REPL — pi context is
-preserved across it. The tier sticks until the next explicit tier flag.
-
-The provider/model is fixed at `openai-codex/gpt-5.5` (`PI_MODEL_PROVIDER` in
-`tt`); only the thinking tier varies per task, never the model. Evals drove this:
-`gpt-5.5:low` cleared ~80% of routine bounded tasks at the quality bar, so it is
-the default. Cheaper/alternative models were disqualifying for an autonomous
-worker that must report honest completion — **mini tiers hallucinated success**
-on impossible/ambiguous tasks, and **`gpt-5.3-codex:high` refused a multi-file
-task** outright.
+The model is fixed at `opencode-go/deepseek-v4-flash` (`PI_MODEL_PROVIDER` in
+`tt`) and the thinking effort is locked to `xhigh`. No tier flags are available
+— `tt pi send` and `tt pi auto` reject `--low`/`--medium`/`--high`/`--xhigh`.
+All workers launch at maximum reasoning effort. This is a deployment decision:
+the orchestrator runs on a premium model for judgment work while pi workers use
+a capable cost-efficient model at its highest thinking setting for delegated
+tasks.
 
 ## Context reset
 
@@ -314,7 +302,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 - `pi-worker/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
-- The model ladder (`gpt-5.5:low` default, explicit `:medium`/`:high`/`:xhigh` tiers).
+- Model locked to `opencode-go/deepseek-v4-flash:xhigh` — no tier selection.
 - The `tt pi send` / `wait` interface — same verbs, same task-ids.
 
 ## Cross-session messaging — `tt x send`
@@ -385,7 +373,7 @@ Workflow subagent structurally cannot match.
 
 ### Front door: `tt pi auto`
 
-`tt pi auto [--low|--medium|--high|--xhigh] [--rm] [--notify] <prompt>` picks the worker and **echoes which one**
+`tt pi auto [--rm] [--notify] <prompt>` picks the worker and **echoes which one**
 ("using pi-alfa …") — that string is the return contract, so a later
 `wait`/`steer`/follow-up can target it. Policy: reuse an idle persistent worker
 → else spawn (under cap) → else queue. `--rm` forces a fresh ephemeral worker.

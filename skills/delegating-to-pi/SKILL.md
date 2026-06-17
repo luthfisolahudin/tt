@@ -16,15 +16,15 @@ Use when work can be bounded with files, a concrete change, and a success check:
 
 - Delegate for **parallelism and lean orchestrator context**, not because one sequential worker turn is faster.
 - A delegated task MUST have bounded `FILES`, a specific `CHANGE`, and concrete `SUCCESS`; use the prompt contract in [prompting-and-tiers.md](references/prompting-and-tiers.md).
-- Tier choice MUST be deliberate and follow [prompting-and-tiers.md](references/prompting-and-tiers.md); do not default risky work without checking the guide.
+- Tier is locked to **xhigh** (`opencode-go/deepseek-v4-flash`); see [prompting-and-tiers.md](references/prompting-and-tiers.md). Tier flags are rejected.
 - Fan-out MUST follow the disjoint-scope rules in [tt-cli.md](references/tt-cli.md); if overlap is possible, serialize, narrow the scopes, or keep the work.
 - Worker output MUST be summarized and verified before being accepted; never paste raw `WORKER_DONE` blocks unless asked.
-- On `BLOCKED:` or drift, clarify/rephrase the task; do not blindly escalate the tier.
+- On `BLOCKED:` or drift, clarify/rephrase the task; do not escalate tier (it is locked).
 - Persistent workers SHOULD be reserved for short context-bearing follow-up chains; stop and clear when judgment is needed or scope drifts.
 
 ## Workflow
 
-1. Decide: inline, delegate, or keep. If delegating, choose a tier using [prompting-and-tiers.md](references/prompting-and-tiers.md).
+1. Decide: inline, delegate, or keep. All delegated work runs at xhigh (locked).
 2. Write a bounded prompt with `TASK / FILES / CHANGE / SUCCESS` and any output cap.
 3. Dispatch through `tt pi` only; choose the exact `auto`/`send`/`wait`/`collect` command from [tt-cli.md](references/tt-cli.md).
 4. Wait for or collect results, then verify with `git diff`, targeted reads, or checks appropriate to risk.
@@ -43,4 +43,4 @@ Use when work can be bounded with files, a concrete change, and a success check:
 
 ## Done means
 
-Inline/keep/delegate was chosen deliberately. Delegated work had bounded scope, an appropriate tier, and a concrete success check; results were collected, summarized, and verified before being accepted. Safety-critical or drifting work stayed under orchestrator review.
+Inline/keep/delegate was chosen deliberately. Delegated work had bounded scope and a concrete success check; results were collected, summarized, and verified before being accepted. Safety-critical or drifting work stayed under orchestrator review.

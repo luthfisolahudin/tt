@@ -26,9 +26,8 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- `tt pi send` / `tt pi auto` accept `--low/--medium/--high/--xhigh`, switching
-  tier at runtime via `pi.setThinkingLevel` while preserving pi context (no
-  respawn).
+- Model locked to `opencode-go/deepseek-v4-flash:xhigh` — tier flags
+  `--low`/`--medium`/`--high`/`--xhigh` are **rejected**.
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
 - **Results are durable and id-addressable.** Every task — named and pool
@@ -84,7 +83,7 @@ session — what a handoff can trust without retesting:
   nonce re-validated). `rm` wipes the worker's `results/<cs>-*` too. (The
   `--json`/parse/escape paths and cursor edges were additionally exercised
   against fabricated result files; the `status` reason hint is covered by those
-  + logic — the live interrupt landed before any assistant text, so its body was
+  - logic — the live interrupt landed before any assistant text, so its body was
   empty and no hint was shown, which is correct.)
 - **Completion-footer robustness (0.10.1), verified live 2026-05-29** against the
   repo's own session: a turn whose `WORKER_DONE` footer carried a **multi-line
@@ -119,10 +118,8 @@ session — what a handoff can trust without retesting:
   windows, revives dead REPLs), but keep `pi`/`claude` out of
   `@resurrect-processes` in `~/.tmux.conf` so stale REPL command lines are never
   resurrected.
-- The new `--high`/`--xhigh` tier flags are parser/syntax-checked only in this
-  change; live tier-switching was not re-exercised because it spends pi quota.
-  Existing worker REPLs must be respawned (`tt pi clear <cs>`) to load the
-  updated extension before high/xhigh runtime switching takes effect.
+- Tier is locked to `xhigh` — `--low`/`--medium`/`--high`/`--xhigh` flags are
+  rejected. All workers run `opencode-go/deepseek-v4-flash:xhigh`.
 - The `pi-worker:exclude-*` context filter is syntax/transpile-checked and
   exercised through a fake `before_agent_start` hook only; no live pi turn was
   run to confirm the provider payload because that spends pi quota. Existing

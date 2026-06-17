@@ -2,18 +2,13 @@
 
 Use this after `SKILL.md` says to delegate. Keep prompts narrow: pi performs best when the job has explicit scope, a concrete change, and a falsifiable success check.
 
-## Tier guide
+## Tier
 
-| Tier | Use when |
-| --- | --- |
-| `--low` (default) | Routine bounded work with one obvious path. |
-| `--medium` | Safety-critical edits, 2–4 step workflows, or output with little human safety net. |
-| `--high` | 5–8 step analytical / multi-file work, dependency mapping, costly wrong answers. |
-| `--xhigh` | Rare: architecture, deep debugging, complex logic/math, novel reasoning. |
+All workers run at **xhigh** — `opencode-go/deepseek-v4-flash` at maximum
+reasoning effort. Tier flags (`--low`/`--medium`/`--high`/`--xhigh`) are
+rejected; there is no tier to choose.
 
-If output looks wrong, retry once one tier up; if still wrong, take the task back.
-
-Treat these as at least **medium**:
+Treat these as safety-critical contexts that warrant extra care in the prompt:
 
 - Dead-code/deletion where build scripts, config, tests, or entrypoints may still import the symbol.
 - Type fixes near generated/codegen output; prefer fixing importers over edited generated files.

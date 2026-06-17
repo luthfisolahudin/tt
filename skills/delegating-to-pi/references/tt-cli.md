@@ -18,14 +18,15 @@ removed, and are capped at `min(cores-2, 26)`.
   queues behind that worker's current turn.
 - **Inspect pool:** `tt pi status`.
 
-Tier flags: `--low` (default), `--medium`, `--high`, `--xhigh`. Put them on
-`auto`/`send` per the tier guide in `prompting-and-tiers.md`.
+Tier is locked to `xhigh` — all workers run `opencode-go/deepseek-v4-flash` at
+maximum reasoning effort. Tier flags (`--low`/`--medium`/`--high`/`--xhigh`) are
+**rejected** with an error; do not pass them.
 
 ## Send + wait
 
 ```sh
 # Named continuation
-TID=$(tt pi send alfa [--low|--medium|--high|--xhigh] [--notify] - <<'PROMPT'
+TID=$(tt pi send alfa [--notify] - <<'PROMPT'
 TASK: ...
 FILES: ...
 CHANGE: ...
@@ -35,7 +36,7 @@ PROMPT
 tt pi wait "$TID"        # or: tt pi wait alfa  # latest task for that worker
 
 # Let tt choose the worker
-TID=$(tt pi auto [--rm|--prefer-fresh] [--low|--medium|--high|--xhigh] - <<<'TASK: ...')
+TID=$(tt pi auto [--rm|--prefer-fresh] - <<<'TASK: ...')
 tt pi wait "$TID"
 ```
 

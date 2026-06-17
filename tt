@@ -8,8 +8,8 @@ NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
 PI_HISTORY_LIMIT=50000
-PI_DEFAULT_TIER=low
-PI_MODEL_PROVIDER="openai-codex/gpt-5.5"
+PI_DEFAULT_TIER=xhigh
+PI_MODEL_PROVIDER="opencode-go/deepseek-v4-flash"
 TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
 TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
 # TT_PI_AGENT_DIR is a legacy override kept for compatibility; prefer TT_PI_WORKER_DIR.
@@ -473,7 +473,7 @@ start_repl() {
   [[ -f "$(state_dir)/$name.ephemeral" ]] && ephemeral_env="TT_WORKER_EPHEMERAL=1 "
   launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_WORKER_DIR' \
 TT_VERSION='$VERSION' TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' ${ephemeral_env}\
-pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:$tier --no-skills${append_flag:+ $append_flag}; exec bash"
+pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:xhigh --no-skills${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   date +%s > "$(state_dir)/$name.starting"
 }
@@ -758,10 +758,7 @@ pi_send_cmd() {
   local name="" req_tier="" src="" notify=0
   while (( $# )); do
     case $1 in
-      --low)    req_tier=low;    shift ;;
-      --medium) req_tier=medium; shift ;;
-      --high)   req_tier=high;   shift ;;
-      --xhigh)  req_tier=xhigh;  shift ;;
+      --low|--medium|--high|--xhigh) die "tier selection is locked to xhigh only — remove the $1 flag" ;;
       --notify) notify=1;        shift ;;
       -)        src=-;           shift ;;
       -*)       die "unknown flag for send: $1" ;;
@@ -883,10 +880,7 @@ pi_auto_cmd() {
   local req_tier="" src="" rm_flag=0 notify=0 json=0 prefer_fresh=0
   while (( $# )); do
     case $1 in
-      --low)          req_tier=low;    shift ;;
-      --medium)       req_tier=medium; shift ;;
-      --high)         req_tier=high;   shift ;;
-      --xhigh)        req_tier=xhigh;  shift ;;
+      --low|--medium|--high|--xhigh) die "tier selection is locked to xhigh only — remove the $1 flag" ;;
       --rm)           rm_flag=1;       shift ;;
       --notify)       notify=1;        shift ;;
       --json)         json=1;          shift ;;
@@ -2122,25 +2116,25 @@ PI WORKER VERBS
       runs asynchronously; join it with `tt pi wait <callsign>`. (In the worker's
       own pane you can instead type `/tt-resume`.)
 
-  tt pi send [--low|--medium|--high|--xhigh] [--notify] <callsign> (FILE | -)
+  tt pi send [--notify] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin — feed inline text with a here-string or heredoc:
       `tt pi send alfa - <<<'TASK: ...'`.
-      --low/--medium/--high/--xhigh selects pi thinking effort; it takes
-      effect at runtime (no respawn, context preserved) and the tier sticks.
-      A send to an absent worker lazily spawns it (under the cap). A send
+      Thinking effort is locked to xhigh (this deployment uses
+      opencode-go/deepseek-v4-flash at maximum effort). A send to an
+      absent worker lazily spawns it (under the cap). A send
       to a BUSY worker queues behind the current turn (run-next; use
       `tt pi steer` for run-now). --notify: on completion, ping this
       session's orchestrator (see below). Prints task-id (e.g. "alfa-3").
 
-  tt pi auto [--low|--medium|--high|--xhigh] [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
+  tt pi auto [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
       Dispatch without naming a worker: reuse an idle worker, else spawn one
       (under the cap), else queue on the shared pool where the first worker
       to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
       task-id to stdout (`<cs>-<n>` when assigned, `pool-<n>` when pooled), so
-      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id. Tier flags
-      select pi thinking effort for the chosen/pooled worker; for persistent
-      workers the tier sticks.
+      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id. Thinking
+      effort is locked to xhigh (this deployment uses
+      opencode-go/deepseek-v4-flash at maximum effort).
       With --prefer-fresh, spawn a NEW worker before reusing an idle one (as
       long as the cap allows) — for eager parallelism and a clean pi context,
       since a reused idle worker still carries its previous task's context.
@@ -2152,12 +2146,10 @@ PI WORKER VERBS
       split: {"worker","task_id","routed"} where routed is the actual
       placement (idle|spawn|pool|ephemeral). --notify: see below.
 
-  Thinking tiers (on send / auto)
-      Use --low for one-step routine tasks (default); --medium for
-      safety-critical or 2–4 step work; --high for 5–8 step multi-file /
-      multi-source work where wrong answers are costly; --xhigh only for deep
-      debugging, architecture, complex logic/math, or other branching problems.
-      tt does not expose a no-thinking/none tier for workers; low is the minimum.
+  Thinking tier
+      All workers run at xhigh effort only — this deployment uses
+      opencode-go/deepseek-v4-flash at maximum reasoning effort.
+      The tier is not configurable per task.
 
   --notify (on send / auto)
       Fire-and-forget completion ping: when the task finishes, the worker
@@ -2340,8 +2332,8 @@ PROMPT
   tt pi results                      # all recorded tasks, newest first
   tt pi results alfa-3 --json        # one envelope: {id,status,summary,files_changed,...}
 
-  # One-shot on a fresh ephemeral worker at medium effort (reaped after)
-  TID=$(tt pi auto --medium --rm - <<<'TASK: ...')
+  # One-shot on a fresh ephemeral worker (reaped after)
+  TID=$(tt pi auto --rm - <<<'TASK: ...')
   tt pi wait "$TID"
 
   # You interrupted a worker (Esc / typed in its pane) → it's now `interrupted`.
