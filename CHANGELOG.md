@@ -1,9 +1,29 @@
 # Changelog
 
-Notable changes to `tt`, newest first. Reconstructed from git history and prior
-`docs/STATUS.md` notes. There are no release tags; versions follow the `VERSION`
-constant in `tt` and the commit-message milestones (the constant jumped
-0.3.0 → 0.3.4, but 0.3.1–0.3.3 were tracked as distinct milestones).
+Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
+in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
+v<x.y.z>` to inspect a range.
+
+## [0.12.0] — 2026-06-17
+
+Locked-tier runtime swap: all pi workers now run
+`opencode-go/deepseek-v4-flash:xhigh`. The tier is fixed at xhigh — the
+prior `--low`/`--medium`/`--high`/`--xhigh` flags on `tt pi send`/`auto` are
+rejected, and the model string hard-codes `:xhigh`. `PI_DEFAULT_TIER` and
+`PI_MODEL_PROVIDER` are the single source of truth; the deployment provider
+choice and reasoning are recorded in `docs/DESIGN.md` (model tiers).
+
+- `tt pi update [<args>...]` — run `pi update` against the worker's private
+  `PI_CODING_AGENT_DIR` (`$TT_PI_WORKER_DIR`), so the pool's installed
+  extensions get updated — not the orchestrator's own pi config. Forwards
+  all args and exit code. No `tt` session required. Useful after bumping
+  the bundled `pi-worker/extensions/tt-worker.ts` or after upgrading pi
+  globally, when worker REPLs need a refresh.
+- `delegating-to-pi` skill: prompt-clarity + self-verification rules
+  consolidated into `references/prompting-and-tiers.md`; `VERIFY` bumped
+  from optional to recommended, and broadened to include prompted reviews
+  (not only shell commands) so a worker can be told to re-read its own
+  output as a sanity check.
 
 ## [0.11.0] — 2026-06-15
 
