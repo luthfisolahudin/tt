@@ -4,6 +4,33 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.12.1] — 2026-06-28
+
+Model tiers: a named preset that bundles (model, thinking effort). `tt pi
+send` and `tt pi auto` now accept `--tier NAME`; the legacy
+`--low`/`--medium`/`--high`/`--xhigh` flags are rejected with a pointer
+to `--tier` (effort is fixed per tier, not independently settable). Two
+tiers ship, both via the `opencode-go` provider:
+
+- `deepseek` (default) — `opencode-go/deepseek-v4-flash` at xhigh effort.
+  Cost-efficient default for high-volume, structured work.
+- `minimax` — `opencode-go/minimax-m3` at high effort. Premium tier for
+  harder or longer-horizon work; positioned above `deepseek` even
+  though it runs at lower effort, because the model's higher base
+  capability earns its way.
+
+The tier name is persisted in `<cs>.tier` (replacing the prior raw
+effort value); the worker's REPL launches with `--model $provider:$effort`
+derived from the tier. The `tt-worker` extension maps the tier name to
+its effort when calling `pi.setThinkingLevel`. Existing
+`<cs>.tier` files containing a legacy effort (`xhigh` etc.) are
+normalized to the default tier on read — no manual migration needed,
+just respawn workers (`tt pi clear <cs>`) to load the new extension.
+
+Per-tier prompting reference docs added at
+`skills/delegating-to-pi/references/prompting-deepseek.md` and
+`prompting-minimax.md`; `prompting-and-tiers.md` links to both.
+
 ## [0.12.0] — 2026-06-17
 
 Locked-tier runtime swap: all pi workers now run

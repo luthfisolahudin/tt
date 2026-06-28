@@ -18,15 +18,26 @@ removed, and are capped at `min(cores-2, 26)`.
   queues behind that worker's current turn.
 - **Inspect pool:** `tt pi status`.
 
-Tier is locked to `xhigh` — all workers run `opencode-go/deepseek-v4-flash` at
-maximum reasoning effort. Tier flags (`--low`/`--medium`/`--high`/`--xhigh`) are
-**rejected** with an error; do not pass them.
+Tier flags (`--low`/`--medium`/`--high`/`--xhigh`) are **rejected** — thinking
+effort is fixed per tier, not independently settable. Pick a model preset with
+`--tier NAME` on `send`/`auto`:
+
+- `--tier deepseek` (default) — `opencode-go/deepseek-v4-flash` at xhigh effort.
+  Cost-efficient default for high-volume, structured work.
+- `--tier minimax` — `opencode-go/minimax-m3` at high effort. Premium tier for
+  harder or longer-horizon work; positioned above `deepseek` even at lower
+  effort, because the model's higher base capability earns its way.
+
+Omit `--tier` to keep the worker's current tier (a fresh worker starts on
+`deepseek`). The tier name persists on the worker; successive sends to the same
+worker keep the tier until you pass a different `--tier NAME`. See the per-tier
+prompting guides for how to structure prompts for each.
 
 ## Send + wait
 
 ```sh
-# Named continuation
-TID=$(tt pi send alfa [--notify] - <<'PROMPT'
+# Named continuation (default tier: deepseek)
+TID=$(tt pi send alfa [--tier NAME] [--notify] - <<'PROMPT'
 TASK: ...
 FILES: ...
 CHANGE: ...
@@ -35,8 +46,11 @@ PROMPT
 )
 tt pi wait "$TID"        # or: tt pi wait alfa  # latest task for that worker
 
+# Premium tier for harder work
+TID=$(tt pi send alfa --tier minimax - <<<'TASK: ...')
+
 # Let tt choose the worker
-TID=$(tt pi auto [--rm|--prefer-fresh] - <<<'TASK: ...')
+TID=$(tt pi auto [--tier NAME] [--rm|--prefer-fresh] - <<<'TASK: ...')
 tt pi wait "$TID"
 ```
 

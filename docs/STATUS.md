@@ -26,8 +26,12 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- Model locked to `opencode-go/deepseek-v4-flash:xhigh` — tier flags
-  `--low`/`--medium`/`--high`/`--xhigh` are **rejected**.
+- Model tier is selectable: `tt pi send` / `tt pi auto` accept `--tier
+  deepseek|minimax`. `deepseek` (default) = `opencode-go/deepseek-v4-flash`
+  at `xhigh` effort; `minimax` = `opencode-go/minimax-m3` at `high` effort.
+  The legacy `--low`/`--medium`/`--high`/`--xhigh` flags are **rejected**
+  (thinking effort is fixed per tier, not independently settable). See
+  the "Model tier" section below and the per-tier prompting guides.
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
 - **Results are durable and id-addressable.** Every task — named and pool
@@ -118,8 +122,12 @@ session — what a handoff can trust without retesting:
   windows, revives dead REPLs), but keep `pi`/`claude` out of
   `@resurrect-processes` in `~/.tmux.conf` so stale REPL command lines are never
   resurrected.
-- Tier is locked to `xhigh` — `--low`/`--medium`/`--high`/`--xhigh` flags are
-  rejected. All workers run `opencode-go/deepseek-v4-flash:xhigh`.
+- The tier registry (0.12.1) has not been live-exercised yet — only
+  parsed/syntax-checked. The two defined tiers (`deepseek` default,
+  `minimax` opt-in) ship with the same `opencode-go` provider; live
+  switch between them via `--tier NAME` and the per-tier prompting
+  guides need a real worker turn to confirm. Respawn workers
+  (`tt pi clear <cs>`) to load the new extension.
 - The `pi-worker:exclude-*` context filter is syntax/transpile-checked and
   exercised through a fake `before_agent_start` hook only; no live pi turn was
   run to confirm the provider payload because that spends pi quota. Existing

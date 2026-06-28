@@ -253,13 +253,34 @@ State is derived from the window plus the control files:
 
 ## Model tier
 
-The model is fixed at `opencode-go/deepseek-v4-flash` (`PI_MODEL_PROVIDER` in
-`tt`) and the thinking effort is locked to `xhigh`. No tier flags are available
-— `tt pi send` and `tt pi auto` reject `--low`/`--medium`/`--high`/`--xhigh`.
-All workers launch at maximum reasoning effort. This is a deployment decision:
-the orchestrator runs on a premium model for judgment work while pi workers use
-a capable cost-efficient model at its highest thinking setting for delegated
-tasks.
+A "tier" is a named preset that bundles (model provider, thinking
+effort). The effort is **fixed per tier** and cannot be set independently
+— `tt pi send` / `tt pi auto` reject `--low`/`--medium`/`--high`/`--xhigh`
+with a pointer to `--tier=<name>`. The tier registry lives at the top of
+`tt` (`PI_TIER_DEFAULT`, `PI_TIER_NAMES`, per-tier
+`PI_TIER_<NAME>_MODEL` / `_EFFORT` constants, with
+`tier_is_known` / `tier_model` / `tier_effort` helpers); the
+`tt-worker` extension mirrors the mapping. Add a tier in both places.
+
+Two tiers ship, both via the `opencode-go` provider:
+
+| Tier | Model | Effort | Role |
+|------|-------|--------|------|
+| `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
+| `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder or longer-horizon work. Positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
+
+`<cs>.tier` stores the tier name. `start_repl` derives
+`--model $provider:$effort` from it; the extension maps the tier name to
+its effort when calling `pi.setThinkingLevel` at task claim. Legacy
+`<cs>.tier` files containing a raw effort (`xhigh` etc.) are normalized
+to the default tier on read by `current_tier()` — no manual migration.
+
+The default is `deepseek` because that preserves prior behavior
+(`opencode-go/deepseek-v4-flash:xhigh` was the only worker config in
+0.10.5–0.12.0). `minimax` is opt-in per dispatch via `--tier NAME`;
+the orchestrator chooses per task based on the work's cost/value and
+the per-tier prompting guides in
+`skills/delegating-to-pi/references/`.
 
 ## Context reset
 
@@ -277,7 +298,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | File | Contents |
 |------|----------|
 | `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier,nonce,notify}`; plus a `{"clear":<gen>}` marker line per `clear`. |
-| `<cs>.tier` | Current pi thinking tier. |
+| `<cs>.tier` | Current model-tier name (e.g. `deepseek`, `minimax`). |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
 | `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming.<cs>` is the transient mid-claim rename. |
@@ -302,7 +323,8 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 - `pi-worker/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
-- Model locked to `opencode-go/deepseek-v4-flash:xhigh` — no tier selection.
+- Model tier is selectable via `--tier NAME` on `tt pi send` / `auto`;
+  thinking effort is fixed per tier and the legacy `--low`/`--medium`/`--high`/`--xhigh` flags are rejected.
 - The `tt pi send` / `wait` interface — same verbs, same task-ids.
 
 ## Cross-session messaging — `tt x send`

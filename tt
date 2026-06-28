@@ -3,13 +3,53 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.12.0"
+VERSION="0.12.1"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
 PI_HISTORY_LIMIT=50000
-PI_DEFAULT_TIER=xhigh
-PI_MODEL_PROVIDER="opencode-go/deepseek-v4-flash"
+# Tier registry: each tier bundles (model, thinking effort) into a named
+# preset. Add a tier by adding a branch to tier_model()/tier_effort() and
+# listing the name in PI_TIER_NAMES — nothing else needs to change. The
+# default tier preserves prior behavior (deepseek-v4-flash at xhigh). Note
+# that thinking effort is *fixed per tier* and cannot be set independently
+# (`--low`/`--high`/`--xhigh` are rejected on `send`/`auto`).
+PI_TIER_DEFAULT=deepseek
+PI_TIER_NAMES="deepseek minimax"
+PI_TIER_DEEPSEEK_MODEL="opencode-go/deepseek-v4-flash"
+PI_TIER_DEEPSEEK_EFFORT=xhigh
+PI_TIER_MINIMAX_MODEL="opencode-go/minimax-m3"
+PI_TIER_MINIMAX_EFFORT=high
+
+# Validate a tier name. Returns 0 for known tiers, 1 otherwise.
+tier_is_known() {
+  case $1 in
+    deepseek|minimax) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Resolve a tier name to its model provider (the `--model` value on the pi
+# CLI, minus the `:effort` suffix). Falls back to the default tier for
+# empty/unknown input so legacy `<cs>.tier` files and external state keep
+# working.
+tier_model() {
+  case ${1:-$PI_TIER_DEFAULT} in
+    deepseek) printf '%s' "$PI_TIER_DEEPSEEK_MODEL" ;;
+    minimax)  printf '%s' "$PI_TIER_MINIMAX_MODEL"  ;;
+    *)        printf '%s' "$PI_TIER_DEEPSEEK_MODEL" ;;
+  esac
+}
+
+# Resolve a tier name to its thinking effort (the `:effort` suffix and the
+# value passed to pi.setThinkingLevel). Same fallback rules.
+tier_effort() {
+  case ${1:-$PI_TIER_DEFAULT} in
+    deepseek) printf '%s' "$PI_TIER_DEEPSEEK_EFFORT" ;;
+    minimax)  printf '%s' "$PI_TIER_MINIMAX_EFFORT"  ;;
+    *)        printf '%s' "$PI_TIER_DEEPSEEK_EFFORT" ;;
+  esac
+}
 TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
 TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
 # TT_PI_AGENT_DIR is a legacy override kept for compatibility; prefer TT_PI_WORKER_DIR.
@@ -266,7 +306,7 @@ spawn_pi_window() {
   local s; s=$(session_name)
   tmux new-window -t "=$s:" -n "pi-$name" -c "$PWD"
   tmux set-window-option -t "=$s:pi-$name" automatic-rename off
-  printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
+  printf '%s' "$PI_TIER_DEFAULT" > "$(state_dir)/$name.tier"
   printf '0' > "$(state_dir)/$name.gen"
   : > "$(state_dir)/$name.tasks.jsonl"
   start_repl "$name"
@@ -330,7 +370,18 @@ down_cmd() {
 
 # ---------- pi state ----------
 
-current_tier() { cat "$(state_dir)/$1.tier" 2>/dev/null || printf '%s' "$PI_DEFAULT_TIER"; }
+current_tier() {
+  # Returns the worker's tier NAME (not the thinking effort). Normalizes
+  # legacy `xhigh`/empty values to the default tier so state dirs from
+  # before the tier-preset era keep working without manual cleanup.
+  local t
+  t=$(cat "$(state_dir)/$1.tier" 2>/dev/null || true)
+  if tier_is_known "$t"; then
+    printf '%s' "$t"
+  else
+    printf '%s' "$PI_TIER_DEFAULT"
+  fi
+}
 current_gen()  { cat "$(state_dir)/$1.gen"  2>/dev/null || printf '0'; }
 
 bump_gen() {
@@ -471,9 +522,12 @@ start_repl() {
   # env so the extension's pump drains only this worker's own queue.
   local ephemeral_env=""
   [[ -f "$(state_dir)/$name.ephemeral" ]] && ephemeral_env="TT_WORKER_EPHEMERAL=1 "
+  # Model + effort come from the worker's tier; the tier name is stored in
+  # <cs>.tier and resolved through the tier_model/tier_effort helpers.
+  local model_arg="$(tier_model "$tier"):$(tier_effort "$tier")"
   launch="$nice_prefix env PI_CODING_AGENT_DIR='$TT_PI_WORKER_DIR' \
 TT_VERSION='$VERSION' TT_WORKER_CS=$name TT_WORKER_STATE='$(state_dir)' ${ephemeral_env}\
-pi --session-dir '$sdir' --model $PI_MODEL_PROVIDER:xhigh --no-skills${append_flag:+ $append_flag}; exec bash"
+pi --session-dir '$sdir' --model $model_arg --no-skills${append_flag:+ $append_flag}; exec bash"
   tmux respawn-pane -k -t "=$s:pi-$name" -c "$PWD" "$launch"
   date +%s > "$(state_dir)/$name.starting"
 }
@@ -718,7 +772,7 @@ pi_clear_cmd() {
   bump_gen "$name"
   printf '{"clear":%d,"at":%d}\n' "$(current_gen "$name")" "$(date +%s)" >> "$(state_dir)/$name.tasks.jsonl"
   rm -f "$(state_dir)/$name".in.*.txt
-  printf '%s' "$PI_DEFAULT_TIER" > "$(state_dir)/$name.tier"
+  printf '%s' "$PI_TIER_DEFAULT" > "$(state_dir)/$name.tier"
   # Respawn the REPL on the new generation's session-dir → fresh context.
   # Non-blocking; the next `tt pi send` waits for readiness lazily.
   start_repl "$name"
@@ -758,7 +812,11 @@ pi_send_cmd() {
   local name="" req_tier="" src="" notify=0
   while (( $# )); do
     case $1 in
-      --low|--medium|--high|--xhigh) die "tier selection is locked to xhigh only — remove the $1 flag" ;;
+      # Thinking effort is fixed per tier — the legacy effort flags are
+      # rejected. Users who want a different model pick --tier=<name> instead.
+      --low|--medium|--high|--xhigh) die "thinking effort is fixed per tier — use --tier=<name> (one of: $PI_TIER_NAMES) instead of the $1 flag" ;;
+      --tier)   shift; req_tier=$1; shift ;;
+      --tier=*) req_tier=${1#--tier=}; shift ;;
       --notify) notify=1;        shift ;;
       -)        src=-;           shift ;;
       -*)       die "unknown flag for send: $1" ;;
@@ -769,6 +827,11 @@ pi_send_cmd() {
         shift ;;
     esac
   done
+  # Validate --tier only when the user actually passed it; an empty
+  # req_tier falls back to the worker's current tier later in this fn.
+  if [[ -n $req_tier ]] && ! tier_is_known "$req_tier"; then
+    die "unknown --tier '$req_tier' (valid: $PI_TIER_NAMES)"
+  fi
   [[ -n $name ]] || die "send: callsign required"
   [[ -n $src ]]  || die "send: prompt source required (file path or -)"
   if [[ $src != - && ! -r $src ]]; then
@@ -880,7 +943,9 @@ pi_auto_cmd() {
   local req_tier="" src="" rm_flag=0 notify=0 json=0 prefer_fresh=0
   while (( $# )); do
     case $1 in
-      --low|--medium|--high|--xhigh) die "tier selection is locked to xhigh only — remove the $1 flag" ;;
+      --low|--medium|--high|--xhigh) die "thinking effort is fixed per tier — use --tier=<name> (one of: $PI_TIER_NAMES) instead of the $1 flag" ;;
+      --tier)   shift; req_tier=$1; shift ;;
+      --tier=*) req_tier=${1#--tier=}; shift ;;
       --rm)           rm_flag=1;       shift ;;
       --notify)       notify=1;        shift ;;
       --json)         json=1;          shift ;;
@@ -890,6 +955,11 @@ pi_auto_cmd() {
       *)              [[ -z $src ]] && src=$1 || die "extra arg: $1"; shift ;;
     esac
   done
+  # Validate --tier only when the user actually passed it; an empty
+  # req_tier falls back to the worker's current tier later in this fn.
+  if [[ -n $req_tier ]] && ! tier_is_known "$req_tier"; then
+    die "unknown --tier '$req_tier' (valid: $PI_TIER_NAMES)"
+  fi
   [[ -n $src ]] || die "auto: prompt source required (file path or -)"
   if [[ $src != - && ! -r $src ]]; then
     die "auto: '$src' is not a readable file. Source must be a FILE path or '-' for stdin."
@@ -1503,7 +1573,7 @@ pi_status_cmd() {
     return 0
   fi
 
-  printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-6s  %s\n' CALLSIGN STATE ELAPSED QUEUE LAST-TASK TIER GEN
+  printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-8s  %s\n' CALLSIGN STATE ELAPSED QUEUE LAST-TASK TIER    GEN
   for n in "${NATO[@]}"; do
     window_exists "pi-$n" || continue
     local s tier gen last_id="-" reason="" q el_disp="-" q_disp="-"
@@ -1527,9 +1597,9 @@ pi_status_cmd() {
         reason=$(result_reason_hint "$(result_text_by_id "$last_id")") ;;
     esac
     if [[ -n $reason ]]; then
-      printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-6s  g%-4s — %s\n' "$n" "$s" "$el_disp" "$q_disp" "$last_id" "$tier" "$gen" "$reason"
+      printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-8s  g%-4s — %s\n' "$n" "$s" "$el_disp" "$q_disp" "$last_id" "$tier" "$gen" "$reason"
     else
-      printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-6s  g%s\n' "$n" "$s" "$el_disp" "$q_disp" "$last_id" "$tier" "$gen"
+      printf '%-9s  %-11s  %-7s  %-5s  %-12s  %-8s  g%s\n' "$n" "$s" "$el_disp" "$q_disp" "$last_id" "$tier" "$gen"
     fi
   done
   # Shared pool: tasks dispatched via `tt pi auto` while every worker was busy,
@@ -2125,25 +2195,23 @@ PI WORKER VERBS
       runs asynchronously; join it with `tt pi wait <callsign>`. (In the worker's
       own pane you can instead type `/tt-resume`.)
 
-  tt pi send [--notify] <callsign> (FILE | -)
+  tt pi send [--tier NAME] [--notify] <callsign> (FILE | -)
       Send a prompt to the worker's live pi REPL. Source is a file path,
       or `-` for stdin — feed inline text with a here-string or heredoc:
       `tt pi send alfa - <<<'TASK: ...'`.
-      Thinking effort is locked to xhigh (this deployment uses
-      opencode-go/deepseek-v4-flash at maximum effort). A send to an
-      absent worker lazily spawns it (under the cap). A send
-      to a BUSY worker queues behind the current turn (run-next; use
-      `tt pi steer` for run-now). --notify: on completion, ping this
+      Pass --tier NAME to choose the model preset (see "Thinking tier"
+      below). A send to an absent worker lazily spawns it (under the cap).
+      A send to a BUSY worker queues behind the current turn (run-next;
+      use `tt pi steer` for run-now). --notify: on completion, ping this
       session's orchestrator (see below). Prints task-id (e.g. "alfa-3").
 
-  tt pi auto [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
+  tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)
       Dispatch without naming a worker: reuse an idle worker, else spawn one
       (under the cap), else queue on the shared pool where the first worker
       to go idle steals it. Echoes "using pi-<cs>" to stderr; prints the
       task-id to stdout (`<cs>-<n>` when assigned, `pool-<n>` when pooled), so
-      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id. Thinking
-      effort is locked to xhigh (this deployment uses
-      opencode-go/deepseek-v4-flash at maximum effort).
+      `TID=$(tt pi auto - <<<'TASK: ...')` captures just the id. Pass
+      --tier NAME to choose the model preset (see "Thinking tier" below).
       With --prefer-fresh, spawn a NEW worker before reusing an idle one (as
       long as the cap allows) — for eager parallelism and a clean pi context,
       since a reused idle worker still carries its previous task's context.
@@ -2156,9 +2224,22 @@ PI WORKER VERBS
       placement (idle|spawn|pool|ephemeral). --notify: see below.
 
   Thinking tier
-      All workers run at xhigh effort only — this deployment uses
-      opencode-go/deepseek-v4-flash at maximum reasoning effort.
-      The tier is not configurable per task.
+      A "tier" is a named preset that bundles (model, thinking effort).
+      The effort is fixed per tier and cannot be set independently — the
+      legacy --low/--medium/--high/--xhigh flags are rejected. Two tiers
+      are defined (both via the opencode-go provider):
+
+        deepseek  default. opencode-go/deepseek-v4-flash at xhigh effort.
+                  Cost-efficient default for high-volume, structured work.
+        minimax   opencode-go/minimax-m3 at high effort. Premium tier —
+                  pick for harder, longer-horizon, or more judgment-heavy
+                  work where the model's higher base capability earns
+                  its way past the lower thinking effort.
+
+      Pick a tier per dispatch with --tier NAME on `send`/`auto`. Omit
+      --tier to keep the worker's current tier. A fresh worker starts on
+      the default (deepseek). See references/prompting-deepseek.md and
+      references/prompting-minimax.md for per-tier prompting guidance.
 
   --notify (on send / auto)
       Fire-and-forget completion ping: when the task finishes, the worker

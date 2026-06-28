@@ -16,7 +16,7 @@ Use when work can be bounded with files, a concrete change, and a success check:
 
 - Delegate for **parallelism and lean orchestrator context**, not because one sequential worker turn is faster.
 - A delegated task MUST have bounded `FILES`, a specific `CHANGE`, and concrete `SUCCESS`; use the prompt contract in [prompting-and-tiers.md](references/prompting-and-tiers.md).
-- Tier is locked to **xhigh** (`opencode-go/deepseek-v4-flash`); see [prompting-and-tiers.md](references/prompting-and-tiers.md). Tier flags are rejected.
+- A **tier** is a named preset that bundles (model, thinking effort); pick it with `--tier NAME` on `tt pi send` / `tt pi auto`. Two tiers ship: `deepseek` (default, `opencode-go/deepseek-v4-flash` at xhigh) and `minimax` (`opencode-go/minimax-m3` at high, the premium tier). The legacy `--low`/`--medium`/`--high`/`--xhigh` flags are rejected — effort is fixed per tier. See [prompting-and-tiers.md](references/prompting-and-tiers.md) for the tier overview, [prompting-deepseek.md](references/prompting-deepseek.md) and [prompting-minimax.md](references/prompting-minimax.md) for per-tier prompting guidance.
 - **Your prompt is the single source of truth.** Put everything you need in one prompt. Do not send an incomplete prompt expecting to fix it with follow-ups — the worker acts on what you wrote, not what you meant. If you find yourself sending a second message to correct the first, the original prompt was the problem.
 - **Assume the worker takes every field literally.** A narrow interpretation is the default. If CHANGE says "update the function" and you also want to update its callers and its type signature, list those explicitly. If you want a broad search, say "every file that references X" not just the obvious file.
 - **Review your prompt for ambiguity before sending.** Read each field and imagine how someone with no outside context could misinterpret it. If TASK, CHANGE, or SUCCESS could mean more than one thing, sharpen it. A `BLOCKED` or wrong output means the prompt was not clear enough.
@@ -24,12 +24,12 @@ Use when work can be bounded with files, a concrete change, and a success check:
 - **Be precise about mandatory vs recommended.** "Optional" means skip it. "Recommended" means include it unless you have a concrete reason not to. If you mean "must", say MUST.
 - Fan-out MUST follow the disjoint-scope rules in [tt-cli.md](references/tt-cli.md); if overlap is possible, serialize, narrow the scopes, or keep the work.
 - Worker output MUST be summarized and verified before being accepted; never paste raw `WORKER_DONE` blocks unless asked.
-- On `BLOCKED:` or drift, clarify/rephrase the task; do not escalate tier (it is locked).
+- On `BLOCKED:` or drift, clarify/rephrase the task; if the work is beyond the chosen tier's strengths, retry on the other tier via `--tier NAME` (do not edit the prompt to compensate for a wrong tier).
 - Persistent workers SHOULD be reserved for short context-bearing follow-up chains; stop and clear when judgment is needed or scope drifts.
 
 ## Workflow
 
-1. Decide: inline, delegate, or keep. All delegated work runs at xhigh (locked).
+1. Decide: inline, delegate, or keep. If delegating, pick a tier — `deepseek` (default) for high-volume structured work, `minimax` for harder/longer-horizon/judgment-heavy work. See the per-tier guides in `references/`.
 2. Write a bounded prompt with all fields — see the prompt contract in [prompting-and-tiers.md](references/prompting-and-tiers.md#prompt-contract). Include `SUCCESS` (required) and `VERIFY` (recommended).
 3. **Review the prompt before sending.** Read TASK/CHANGE and imagine the narrowest literal interpretation. Check that SUCCESS is something the worker can falsify against their own output. If you'd need a follow-up to fix what comes back, fix the prompt now instead.
 4. Dispatch through `tt pi` only; choose the exact `auto`/`send`/`wait`/`collect` command from [tt-cli.md](references/tt-cli.md).
@@ -44,7 +44,9 @@ Use when work can be bounded with files, a concrete change, and a success check:
 
 ## Reference index
 
-- [prompting-and-tiers.md](references/prompting-and-tiers.md) — tier guide, prompt contract, output caps, result protocol, and good-fit tasks.
+- [prompting-and-tiers.md](references/prompting-and-tiers.md) — tier overview, prompt contract, output caps, result protocol, and good-fit tasks.
+- [prompting-deepseek.md](references/prompting-deepseek.md) — per-tier prompting guide for the `deepseek` tier (default).
+- [prompting-minimax.md](references/prompting-minimax.md) — per-tier prompting guide for the `minimax` tier (premium).
 - [tt-cli.md](references/tt-cli.md) — exact `tt pi` commands for dispatch, waiting, collection, status, logs, and recovery.
 
 ## Done means

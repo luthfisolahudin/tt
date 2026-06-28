@@ -4,11 +4,42 @@ Use this after `SKILL.md` says to delegate. Keep prompts narrow: pi performs bes
 
 ## Tier
 
-All workers run at **xhigh** — `opencode-go/deepseek-v4-flash` at maximum
-reasoning effort. Tier flags (`--low`/`--medium`/`--high`/`--xhigh`) are
-rejected; there is no tier to choose.
+A **tier** is a named preset that bundles (model, thinking effort). The
+effort is fixed per tier and cannot be set independently — the legacy
+`--low`/`--medium`/`--high`/`--xhigh` flags are rejected with a pointer
+to `--tier`. Two tiers ship, both via the `opencode-go` provider:
 
-Treat these as safety-critical contexts that warrant extra care in the prompt:
+- **`deepseek`** (default) — `opencode-go/deepseek-v4-flash` at `xhigh`
+  effort. Cost-efficient default for high-volume, structured work. See
+  [prompting-deepseek.md](prompting-deepseek.md) for how to prompt it.
+- **`minimax`** — `opencode-go/minimax-m3` at `high` effort. Premium
+  tier for harder or longer-horizon work; positioned above `deepseek`
+  even at lower effort, because the model's higher base capability
+  earns its way. See [prompting-minimax.md](prompting-minimax.md) for
+  how to prompt it.
+
+Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
+auto`. Omit `--tier` to keep the worker's current tier (a fresh worker
+starts on `deepseek`).
+
+### When to switch
+
+- Default to `deepseek` for high-volume, structured work — bounded
+  refactors, audits, codegen from a clear spec, dead-code sweeps, focused
+  debugs across a handful of files.
+- Switch to `minimax` for harder or longer-horizon work where the
+  model's higher base capability earns its way past `deepseek`'s lower
+  xhigh-baked thinking — multi-file architecture changes, ambiguous
+  specs, work that needs more judgment, or anything where you've seen
+  `deepseek` miss the right framing.
+- Do not switch tiers to compensate for a bad prompt. If a worker
+  returns `BLOCKED:` or drift, fix the prompt first; only escalate the
+  tier if the same well-written prompt genuinely underperforms.
+
+### Safety-critical prompting
+
+Independent of tier, treat these as safety-critical contexts that
+warrant extra care in the prompt:
 
 - Dead-code/deletion where build scripts, config, tests, or entrypoints may still import the symbol.
 - Type fixes near generated/codegen output; prefer fixing importers over edited generated files.
