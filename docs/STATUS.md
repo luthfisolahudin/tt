@@ -122,12 +122,20 @@ session — what a handoff can trust without retesting:
   windows, revives dead REPLs), but keep `pi`/`claude` out of
   `@resurrect-processes` in `~/.tmux.conf` so stale REPL command lines are never
   resurrected.
-- The tier registry (0.12.1) has not been live-exercised yet — only
-  parsed/syntax-checked. The two defined tiers (`deepseek` default,
-  `minimax` opt-in) ship with the same `opencode-go` provider; live
-  switch between them via `--tier NAME` and the per-tier prompting
-  guides need a real worker turn to confirm. Respawn workers
-  (`tt pi clear <cs>`) to load the new extension.
+- **Verified live (2026-06-28) — tier-change fix.** Live testing
+  caught the bug: `--tier NAME` on a fresh worker (or after a
+  `tt pi clear`) silently left the REPL on the default model
+  while only swapping the thinking effort. Fixed in 0.13.1:
+  `pi_send_cmd` / `pi_auto_cmd` write the requested tier to
+  `<cs>.tier` BEFORE any spawn work so `start_repl` launches the
+  REPL with the right `--model`; `spawn_pi_window` no longer
+  overwrites the tier. Tier change on a running worker is now
+  REFUSED with a clear error pointing at `tt pi clear <cs>`.
+  For `auto --tier NAME`, a non-matching idle worker is skipped
+  and a fresh worker spawned under cap. End-to-end test pass
+  (minimax-m3:high REPL, response self-identifies as MiniMax-M3;
+  tier-flip on running worker refused; `auto --tier` skipped
+  mismatched idle worker and spawned fresh).
 - The `pi-worker:exclude-*` context filter is syntax/transpile-checked and
   exercised through a fake `before_agent_start` hook only; no live pi turn was
   run to confirm the provider payload because that spends pi quota. Existing

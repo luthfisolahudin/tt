@@ -28,10 +28,10 @@ starts on `deepseek`).
   refactors, audits, codegen from a clear spec, dead-code sweeps, focused
   debugs across a handful of files.
 - Switch to `minimax` for harder or longer-horizon work where the
-  model's higher base capability earns its way past `deepseek`'s lower
-  xhigh-baked thinking — multi-file architecture changes, ambiguous
-  specs, work that needs more judgment, or anything where you've seen
-  `deepseek` miss the right framing.
+  model's higher base capability earns its way past its own lower
+  thinking effort (high vs xhigh) — multi-file architecture changes,
+  ambiguous specs, work that needs more judgment, or anything where
+  you've seen `deepseek` miss the right framing.
 - Do not switch tiers to compensate for a bad prompt. If a worker
   returns `BLOCKED:` or drift, fix the prompt first; only escalate the
   tier if the same well-written prompt genuinely underperforms.

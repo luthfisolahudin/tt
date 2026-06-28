@@ -4,28 +4,71 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
-## [0.12.1] — 2026-06-28
+## [0.13.1] — 2026-06-28
+
+Tier-change fix found in live testing. PATCH bump: same logical change
+as 0.13.0, just made correct. The 0.13.0 commit was local and never
+pushed; amending it.
+
+- `pi_send_cmd` / `pi_auto_cmd` now write the requested tier to
+  `<cs>.tier` **before** any spawn work, so `start_repl` launches the
+  REPL with the right `--model`. Previously, the default tier was
+  written first, the REPL launched with the default model, and only
+  then the tier file was overwritten — a silent wrong-model
+  dispatch.
+- `spawn_pi_window` no longer overwrites the tier file. Callers
+  (heal path in `ensure_standard_windows`, `pi_send_cmd`,
+  `pi_auto_cmd`) write the desired tier before calling it. The
+  heal path was updated to write the default explicitly.
+- Tier change on a running worker is now **refused** with a clear
+  error pointing at `tt pi clear <cs>` (respawns the REPL; loses
+  context, like a normal `clear`).
+- `auto --tier NAME` skips a non-matching idle worker and spawns
+  a fresh worker (under cap) so dispatch always lands on the
+  requested tier. The pool branch is refused when `--tier` is
+  set, since it cannot guarantee a matching worker.
+- All four scenarios verified live (2026-06-28) against a
+  throwaway `/tmp/tt-test-*` project: fresh-worker + `--tier
+  minimax` launched the REPL with `--model
+  opencode-go/minimax-m3:high` and the worker's response
+  self-identified as MiniMax-M3; a tier flip on a running
+  worker was refused; `auto --rm --tier minimax` spawned
+  fresh on the right model; `auto --tier minimax` with an
+  idle `deepseek` worker present skipped it and spawned a
+  fresh `minimax` worker.
+
+## [0.13.0] — 2026-06-28
 
 Model tiers: a named preset that bundles (model, thinking effort). `tt pi
 send` and `tt pi auto` now accept `--tier NAME`; the legacy
 `--low`/`--medium`/`--high`/`--xhigh` flags are rejected with a pointer
-to `--tier` (effort is fixed per tier, not independently settable). Two
-tiers ship, both via the `opencode-go` provider:
+to `--tier` (effort is fixed per tier, not independently settable).
+**MINOR** because this is more than a flag: a new tier registry in
+`tt`, a state-file semantic change (`.tier` stores a tier name, not
+an effort), a new extension mapping (tier → effort), and per-tier
+prompting reference docs. Two tiers ship, both via the `opencode-go`
+provider:
 
-- `deepseek` (default) — `opencode-go/deepseek-v4-flash` at xhigh effort.
-  Cost-efficient default for high-volume, structured work.
-- `minimax` — `opencode-go/minimax-m3` at high effort. Premium tier for
-  harder or longer-horizon work; positioned above `deepseek` even
-  though it runs at lower effort, because the model's higher base
-  capability earns its way.
+- `deepseek` (default) — `opencode-go/deepseek-v4-flash` at xhigh
+  effort. Cost-efficient default for high-volume, structured work.
+- `minimax` — `opencode-go/minimax-m3` at high effort. Premium tier
+  for harder or longer-horizon work; positioned above `deepseek`
+  even at lower effort, because the model's higher base capability
+  earns its way.
 
-The tier name is persisted in `<cs>.tier` (replacing the prior raw
-effort value); the worker's REPL launches with `--model $provider:$effort`
-derived from the tier. The `tt-worker` extension maps the tier name to
-its effort when calling `pi.setThinkingLevel`. Existing
-`<cs>.tier` files containing a legacy effort (`xhigh` etc.) are
-normalized to the default tier on read — no manual migration needed,
-just respawn workers (`tt pi clear <cs>`) to load the new extension.
+`<cs>.tier` now stores the tier name; `start_repl` derives
+`--model $provider:$effort` from it. The `tt-worker` extension
+maps tier → effort for `setThinkingLevel`. Legacy `.tier` files
+containing a raw effort (`xhigh` etc.) are normalized to the
+default tier on read — no manual migration, but respawn workers
+(`tt pi clear <cs>`) to load the new extension.
+
+**Sharp edge:** the model is baked into the REPL's `--model` flag
+at launch. `--tier NAME` on a `tt pi send` / `auto` to a worker
+already running on a different tier updates the file and the
+extension's `setThinkingLevel`, but does **not** swap the model —
+to pick up a new model, respawn the REPL (`tt pi clear <cs>`;
+context is lost, like a normal `clear`).
 
 Per-tier prompting reference docs added at
 `skills/delegating-to-pi/references/prompting-deepseek.md` and

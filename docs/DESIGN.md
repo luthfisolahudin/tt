@@ -254,33 +254,36 @@ State is derived from the window plus the control files:
 ## Model tier
 
 A "tier" is a named preset that bundles (model provider, thinking
-effort). The effort is **fixed per tier** and cannot be set independently
-— `tt pi send` / `tt pi auto` reject `--low`/`--medium`/`--high`/`--xhigh`
-with a pointer to `--tier=<name>`. The tier registry lives at the top of
-`tt` (`PI_TIER_DEFAULT`, `PI_TIER_NAMES`, per-tier
-`PI_TIER_<NAME>_MODEL` / `_EFFORT` constants, with
-`tier_is_known` / `tier_model` / `tier_effort` helpers); the
-`tt-worker` extension mirrors the mapping. Add a tier in both places.
-
-Two tiers ship, both via the `opencode-go` provider:
+effort). The effort is **fixed per tier** and cannot be set
+independently — `tt pi send` / `tt pi auto` reject
+`--low`/`--medium`/`--high`/`--xhigh` with a pointer to
+`--tier=<name>`. The registry lives at the top of `tt`
+(`PI_TIER_DEFAULT`, `PI_TIER_NAMES`, per-tier `PI_TIER_<NAME>_MODEL` /
+`_EFFORT` constants, with `tier_is_known` / `tier_model` /
+`tier_effort` helpers); the `tt-worker` extension mirrors the
+mapping. Add a tier in both places.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
 | `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
-| `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder or longer-horizon work. Positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
+| `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder / longer-horizon work. Positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
-`--model $provider:$effort` from it; the extension maps the tier name to
-its effort when calling `pi.setThinkingLevel` at task claim. Legacy
-`<cs>.tier` files containing a raw effort (`xhigh` etc.) are normalized
-to the default tier on read by `current_tier()` — no manual migration.
+`--model $provider:$effort` from it; the extension maps tier →
+effort for `setThinkingLevel` at task claim. Legacy `.tier` files
+containing a raw effort (`xhigh` etc.) are normalized to the
+default on read by `current_tier()` — no manual migration.
 
-The default is `deepseek` because that preserves prior behavior
-(`opencode-go/deepseek-v4-flash:xhigh` was the only worker config in
-0.10.5–0.12.0). `minimax` is opt-in per dispatch via `--tier NAME`;
-the orchestrator chooses per task based on the work's cost/value and
-the per-tier prompting guides in
-`skills/delegating-to-pi/references/`.
+**Tier change on a running worker is refused.** The model is
+baked into the REPL's `--model` at launch. `tt pi send` / `auto`
+**refuse** `--tier NAME` on a worker already running on a
+different tier (the error points at `tt pi clear <cs>`, which
+respawns the REPL on a fresh session-dir; context is lost). For
+`auto --tier NAME`, a non-matching idle worker is skipped and a
+fresh worker is spawned (under cap) so dispatch always lands on
+the requested tier. Pre-spawn tier write lives in `pi_send_cmd`
+and `pi_auto_cmd`; `spawn_pi_window` no longer owns the tier
+file.
 
 ## Context reset
 

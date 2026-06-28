@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.12.1"
+VERSION="0.13.1"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -263,6 +263,9 @@ dedup_windows() {
     local id
     if [[ $name == pi-* ]]; then
       for id in "${ids[@]}"; do tmux kill-window -t "$id" 2>/dev/null || true; done
+      # Heal path: no --tier is set, so restore the default explicitly
+      # before spawn_pi_window (which no longer writes the tier itself).
+      printf '%s' "$PI_TIER_DEFAULT" > "$(state_dir)/${name#pi-}.tier"
       spawn_pi_window "${name#pi-}"
     else
       local kept=""
@@ -306,7 +309,10 @@ spawn_pi_window() {
   local s; s=$(session_name)
   tmux new-window -t "=$s:" -n "pi-$name" -c "$PWD"
   tmux set-window-option -t "=$s:pi-$name" automatic-rename off
-  printf '%s' "$PI_TIER_DEFAULT" > "$(state_dir)/$name.tier"
+  # Caller is responsible for writing the tier to <cs>.tier before
+  # calling this — the file must reflect the desired tier so start_repl
+  # launches the REPL with the right --model. (Heal paths in
+  # ensure_standard_windows and `clear` write the default explicitly.)
   printf '0' > "$(state_dir)/$name.gen"
   : > "$(state_dir)/$name.tasks.jsonl"
   start_repl "$name"
@@ -841,6 +847,23 @@ pi_send_cmd() {
   fi
   valid_callsign "$name" || die "invalid callsign: $name"
   require_session
+  # Tier-change guard: refuse if the worker already exists on a different
+  # tier. The REPL is launched with --model baked into the command line,
+  # so changing the tier on a running worker would silently swap the
+  # thinking effort via setThinkingLevel while leaving the model stale.
+  # Use `tt pi clear <cs>` to respawn on the new tier (loses context).
+  if [[ -n $req_tier ]] && window_exists "pi-$name"; then
+    local cur_tier; cur_tier=$(current_tier "$name")
+    if [[ $req_tier != "$cur_tier" ]]; then
+      die "tier change on running worker requires \`tt pi clear $name\` (respawns the REPL; loses context); current tier '$cur_tier', requested '$req_tier'"
+    fi
+  fi
+  # Write the requested tier to <cs>.tier BEFORE any spawn work, so a
+  # fresh REPL launches with the right model. (Empty req_tier = no-op;
+  # the worker keeps its current tier, written by spawn_pi_window.)
+  if [[ -n $req_tier ]]; then
+    printf '%s' "$req_tier" > "$(state_dir)/$name.tier"
+  fi
   # Lazy spawn: a send to an absent worker brings it up (under the cap)
   # rather than erroring — the orchestrator never has to `add` first.
   if ! window_exists "pi-$name"; then
@@ -859,8 +882,6 @@ pi_send_cmd() {
   local cur_tier; cur_tier=$(current_tier "$name")
   local tier="${req_tier:-$cur_tier}"
   ensure_repl_ready "$name"
-  [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
-    printf '%s' "$tier" > "$(state_dir)/$name.tier"
 
   # A busy worker no longer refuses — the task is appended to the worker's
   # queue and runs when the current turn ends (`send` = run-next; use
@@ -979,10 +1000,13 @@ pi_auto_cmd() {
     done
     [[ -n $chosen ]] || die "auto --rm: no free callsign available"
     : > "$(state_dir)/$chosen.ephemeral"   # marker → start_repl sets TT_WORKER_EPHEMERAL
+    # Write the requested tier (or default) before spawn so the REPL
+    # launches with the right model. spawn_pi_window's own tier write
+    # is skipped because the file is already correct.
+    printf '%s' "${req_tier:-$PI_DEFAULT_TIER}" > "$(state_dir)/$chosen.tier"
     spawn_pi_window "$chosen"
     local tier="${req_tier:-$PI_DEFAULT_TIER}"
     ensure_repl_ready "$chosen"
-    printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
     local tid; tid=$(enqueue_to_worker "$chosen" "$tier" "$src" "$notify")
     if (( json )); then emit_auto_json "$chosen" "$tid" ephemeral
     else note "using pi-$chosen (ephemeral)"; printf '%s\n' "$tid"; fi
@@ -996,33 +1020,54 @@ pi_auto_cmd() {
   # reuse/pool below, so the ceiling is never exceeded.
   if (( prefer_fresh )) && (( $(count_workers) < $(pi_cap) )); then
     for n in "${NATO[@]}"; do
-      window_exists "pi-$n" || { chosen=$n; spawn_pi_window "$n"; routed=spawn; break; }
+      window_exists "pi-$n" || { chosen=$n; 
+        # Apply tier (or default) before spawn so the REPL launches on
+        # the right model.
+        printf '%s' "${req_tier:-$PI_DEFAULT_TIER}" > "$(state_dir)/$n.tier"
+        spawn_pi_window "$n"; routed=spawn; break; }
     done
   fi
-  # Reuse the first idle worker (NATO order).
+  # Reuse the first idle worker (NATO order). If --tier is set, skip
+  # workers whose current tier doesn't match — reusing them would mean
+  # the new task runs on the wrong model (the REPL was launched with
+  # --model baked in).
   if [[ -z $chosen ]]; then
     for n in "${NATO[@]}"; do
       window_exists "pi-$n" || continue
-      [[ $(worker_state "$n") == idle ]] && { chosen=$n; routed=idle; break; }
+      [[ $(worker_state "$n") == idle ]] || continue
+      if [[ -n $req_tier ]]; then
+        local nt; nt=$(current_tier "$n")
+        [[ $nt == "$req_tier" ]] || continue
+      fi
+      chosen=$n; routed=idle; break
     done
   fi
   # None idle but room under the cap → spawn the next free callsign.
   if [[ -z $chosen ]] && (( $(count_workers) < $(pi_cap) )); then
     for n in "${NATO[@]}"; do
-      window_exists "pi-$n" || { chosen=$n; spawn_pi_window "$n"; routed=spawn; break; }
+      window_exists "pi-$n" || { chosen=$n;
+        printf '%s' "${req_tier:-$PI_DEFAULT_TIER}" > "$(state_dir)/$n.tier"
+        spawn_pi_window "$n"; routed=spawn; break; }
     done
   fi
 
   if [[ -n $chosen ]]; then
-    local cur_tier; cur_tier=$(current_tier "$chosen")
-    local tier="${req_tier:-$cur_tier}"
+    # (The tier file was set before spawn above; no need to write again.)
+    local tier; tier=$(current_tier "$chosen")
     ensure_repl_ready "$chosen"
-    [[ -n $req_tier && $req_tier != "$cur_tier" ]] && \
-      printf '%s' "$tier" > "$(state_dir)/$chosen.tier"
     local tid; tid=$(enqueue_to_worker "$chosen" "$tier" "$src" "$notify")
     if (( json )); then emit_auto_json "$chosen" "$tid" "$routed"
     else note "using pi-$chosen"; printf '%s\n' "$tid"; fi
     return 0
+  fi
+
+  # No compatible worker is free. If --tier was set, refuse — a pool
+  # task can only be claimed by whichever worker frees next, and that
+  # worker might not be on the requested tier. The user can free a
+  # worker or use `tt pi send <cs> --tier NAME` to force a fresh worker
+  # (refused at cap, so under-cap dispatch is the safe path).
+  if [[ -n $req_tier ]]; then
+    die "auto --tier $req_tier: no compatible worker (all on different tiers or busy at cap); free a worker (\`tt pi rm <cs>\`) or use \`tt pi send <cs> --tier $req_tier\` to force a fresh worker"
   fi
 
   # Everyone exists and is busy at the cap → shared pool queue.
@@ -2238,8 +2283,14 @@ PI WORKER VERBS
 
       Pick a tier per dispatch with --tier NAME on `send`/`auto`. Omit
       --tier to keep the worker's current tier. A fresh worker starts on
-      the default (deepseek). See references/prompting-deepseek.md and
-      references/prompting-minimax.md for per-tier prompting guidance.
+      the default (deepseek). Tier change on a running worker is
+      REFUSED (the model is baked into the REPL's --model at launch) —
+      the error points at `tt pi clear <cs>`, which respawns the REPL
+      on the new tier (loses context, like a normal clear). For
+      `auto --tier NAME`, a non-matching idle worker is skipped and a
+      fresh worker is spawned (under cap) instead. See
+      references/prompting-deepseek.md and references/prompting-minimax.md
+      for per-tier prompting guidance.
 
   --notify (on send / auto)
       Fire-and-forget completion ping: when the task finishes, the worker

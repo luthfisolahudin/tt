@@ -29,9 +29,14 @@ effort is fixed per tier, not independently settable. Pick a model preset with
   effort, because the model's higher base capability earns its way.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
-`deepseek`). The tier name persists on the worker; successive sends to the same
-worker keep the tier until you pass a different `--tier NAME`. See the per-tier
-prompting guides for how to structure prompts for each.
+`deepseek`). `--tier NAME` is refused on a worker already running on a
+different tier (the REPL's `--model` is baked into the launch command) —
+the error points at `tt pi clear <cs>`, which respawns the REPL on a
+fresh session-dir (context is lost, like a normal `clear`). For
+`auto --tier NAME`, a non-matching idle worker is skipped and a fresh
+worker is spawned (under cap) instead, so dispatch always lands on the
+requested tier. See the per-tier prompting guides for how to structure
+prompts.
 
 ## Send + wait
 

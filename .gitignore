@@ -8,3 +8,6 @@ pi-worker/auth.json
 
 # skill eval scratch — transient runs, snapshots, logs
 skills/*-workspace/
+
+# pi runtime cache (auth, tasks, session state)
+.pi/
