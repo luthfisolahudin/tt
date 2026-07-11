@@ -4,6 +4,12 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.13.2] — 2026-07-11
+
+- Fixed `tt pi auto` and `tt pi auto --rm` aborting under `set -u` when no
+  `--tier` was supplied. Five auto-dispatch paths still referenced the removed
+  `PI_DEFAULT_TIER` name instead of the canonical `PI_TIER_DEFAULT`.
+
 ## [0.13.1] — 2026-06-28
 
 Tier-change fix found in live testing. PATCH bump: same logical change

@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.13.1"
+VERSION="0.13.2"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -1003,9 +1003,9 @@ pi_auto_cmd() {
     # Write the requested tier (or default) before spawn so the REPL
     # launches with the right model. spawn_pi_window's own tier write
     # is skipped because the file is already correct.
-    printf '%s' "${req_tier:-$PI_DEFAULT_TIER}" > "$(state_dir)/$chosen.tier"
+    printf '%s' "${req_tier:-$PI_TIER_DEFAULT}" > "$(state_dir)/$chosen.tier"
     spawn_pi_window "$chosen"
-    local tier="${req_tier:-$PI_DEFAULT_TIER}"
+    local tier="${req_tier:-$PI_TIER_DEFAULT}"
     ensure_repl_ready "$chosen"
     local tid; tid=$(enqueue_to_worker "$chosen" "$tier" "$src" "$notify")
     if (( json )); then emit_auto_json "$chosen" "$tid" ephemeral
@@ -1023,7 +1023,7 @@ pi_auto_cmd() {
       window_exists "pi-$n" || { chosen=$n; 
         # Apply tier (or default) before spawn so the REPL launches on
         # the right model.
-        printf '%s' "${req_tier:-$PI_DEFAULT_TIER}" > "$(state_dir)/$n.tier"
+        printf '%s' "${req_tier:-$PI_TIER_DEFAULT}" > "$(state_dir)/$n.tier"
         spawn_pi_window "$n"; routed=spawn; break; }
     done
   fi
@@ -1046,7 +1046,7 @@ pi_auto_cmd() {
   if [[ -z $chosen ]] && (( $(count_workers) < $(pi_cap) )); then
     for n in "${NATO[@]}"; do
       window_exists "pi-$n" || { chosen=$n;
-        printf '%s' "${req_tier:-$PI_DEFAULT_TIER}" > "$(state_dir)/$n.tier"
+        printf '%s' "${req_tier:-$PI_TIER_DEFAULT}" > "$(state_dir)/$n.tier"
         spawn_pi_window "$n"; routed=spawn; break; }
     done
   fi
@@ -1071,7 +1071,7 @@ pi_auto_cmd() {
   fi
 
   # Everyone exists and is busy at the cap → shared pool queue.
-  local tier="${req_tier:-$PI_DEFAULT_TIER}"
+  local tier="${req_tier:-$PI_TIER_DEFAULT}"
   local pooldir="$(state_dir)/queue"; mkdir -p "$pooldir"
   local seqf="$(state_dir)/pool.seq" seq=1
   [[ -f $seqf ]] && seq=$(($(cat "$seqf") + 1))
