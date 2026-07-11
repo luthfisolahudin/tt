@@ -53,12 +53,14 @@ MUST give the worker a concrete way to falsify their own work.
 
 ```text
 TASK: <one imperative sentence>
-FILES: <exact/path.ts>          # or "dir/* read+write" for multi-file scope
+CONTEXT / SOURCES: <why this exists; relevant source docs/snippets>
+TARGET STATE: <expected product/technical end-state>
+FILES / SCOPE: <exact/path.ts or bounded area; use SCOPE/SOURCES if files are unknown>
 CHANGE: <specific change; avoid "improve/fix/clean up/better">
-CONTEXT: <optional surgical snippet or constraint>
-SUCCESS: <one-line check that the worker can verify themselves>
+DO NOT: <explicit exclusions and boundaries>
+SUCCESS: <one-line pass/fail check the worker can verify themselves>
 VERIFY: <recommended self-check the worker runs to prove correctness>
-OUTPUT: <optional cap, e.g. "Terminal block only; notes only for risks/checks">
+OUTPUT: <optional report/artifact format cap>
 ```
 
 ### Field guide
@@ -67,25 +69,35 @@ OUTPUT: <optional cap, e.g. "Terminal block only; notes only for risks/checks">
 independent goals, split into separate dispatches. If you find yourself writing
 "and also", it is two tasks.
 
-**FILES** — Every file the worker may touch. Use `dir/*` only when the worker
-can safely touch ANY file in that directory. If the change affects callers or
-importers, list them too — the worker stops at the listed files.
+**CONTEXT / SOURCES** — Why this task exists, the user/product rule behind it,
+and the source docs/snippets the worker should trust. Keep it surgical; do not paste
+long background when a file path or quoted rule is enough.
 
-**CHANGE** — What to do, be concrete enough that a wrong implementation is
-detectable. Avoid weasel words like "improve", "fix", "clean up", "better",
-"optimize". Prefer "rename X to Y", "add Z parameter to function A", "remove B
-and update all callers".
+**TARGET STATE** — The expected end-state from the product/technical point of view.
+This is where user-story acceptance criteria belong. Do not hide the desired result
+inside `OUTPUT`; `OUTPUT` only shapes the worker's report.
+
+**FILES / SCOPE** — Every file the worker may touch, or a bounded area/source set
+when the exact files are not known yet. Use `dir/*` only when the worker can safely
+touch ANY file in that directory. If the change affects callers or importers, list
+them too — the worker stops at the listed files. If discovery is still needed, make
+that the task and do not authorize implementation yet.
+
+**CHANGE** — What to do, concrete enough that a wrong implementation is detectable.
+Avoid weasel words like "improve", "fix", "clean up", "better", "optimize".
+Prefer "rename X to Y", "add Z parameter to function A", "remove B and update all
+callers".
 
   ✗ Bad: "Fix the error handling in the payment module"
   ✓ Good: "Add a try-catch around the Stripe API call in pay.ts, log the error,
     and return a 500 response with {error: message}"
 
-**CONTEXT** — Only include what the worker needs to understand the task that is
-not already in the files. Prefer surgical snippets over long explanations.
+**DO NOT** — Explicit boundaries: files/behaviour not to touch, scope that is deferred,
+and product choices the worker must not reinterpret.
 
 **SUCCESS** (required) — A falsifiable check the worker can run against their
-**own diff** before reporting done. If the worker cannot self-verify without
-outside help, it is too vague.
+**own work** before reporting done (and its own diff for code changes). If the
+worker cannot self-verify without outside help, it is too vague.
 
   ✓ "No remaining references to the old function name"
   ✓ "Build passes with no new warnings"
@@ -112,21 +124,23 @@ terminal-block verbosity is more than you need.
 Read your prompt one more time and check each:
 
 1. **TASK: is it one thing?** If you have "and also", split.
-2. **FILES: did you miss any?** Callers, importers, test files — the worker
+2. **TARGET STATE: is the expected result explicit?** If not, the worker will infer taste.
+3. **FILES / SCOPE: did you miss any?** Callers, importers, test files — the worker
    stops at the listed files.
-3. **CHANGE: can it be interpreted narrowly?** Assume the most literal reading.
+4. **CHANGE: can it be interpreted narrowly?** Assume the most literal reading.
    If you mean "every location" and you wrote "the location", you will get one.
-4. **SUCCESS: can the worker check this against their own diff?** If they need
+5. **DO NOT: did you block likely drift?** Name deferred scope and things not to redesign.
+6. **SUCCESS: can the worker check this against its own work?** If they need
    a human reviewer, it is too vague.
-5. **VERIFY: is there a shell command or review step you can add?** Type-check,
+7. **VERIFY: is there a shell command or review step you can add?** Type-check,
    grep for stale refs, re-read the diff — include it.
-6. **Would you send a follow-up to fix this?** If yes, fix the prompt instead.
+8. **Would you send a follow-up to fix this?** If yes, fix the prompt instead.
 
 ### Output caps
 
 - Implementation: `OUTPUT: Terminal block only; notes only for risks, failed checks, dependent changes, or artifact paths.`
 - Audit: `OUTPUT: Top 5 findings only, with file paths; no exhaustive narrative.`
-- Long handoff: if `FILES` allows `.tt/`, ask the worker to write a handoff file and return only its path plus key risks.
+- Long handoff: if `FILES / SCOPE` allows `.tt/`, ask the worker to write a handoff file and return only its path plus key risks.
 
 ## Good fits
 

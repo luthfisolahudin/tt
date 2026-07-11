@@ -5,7 +5,7 @@ effort — the cost-efficient default for high-volume, structured work
 (bounded refactors, audits, codegen from a spec, mechanical sweeps).
 
 For the tier overview see [prompting-and-tiers.md](prompting-and-tiers.md).
-For the general prompt contract (TASK / FILES / CHANGE / SUCCESS / VERIFY)
+For the general prompt contract (`TASK` / `TARGET STATE` / `FILES / SCOPE` / `CHANGE` / `DO NOT` / `SUCCESS` / `VERIFY`)
 see [prompting-and-tiers.md#prompt-contract](prompting-and-tiers.md#prompt-contract);
 this file only covers what `deepseek` specifically needs.
 
@@ -30,10 +30,11 @@ this file only covers what `deepseek` specifically needs.
 
 ```text
 TASK: Rename the `parseArgs` helper to `parseCliArgs` across the codebase.
-FILES: src/cli/parse.ts, src/commands/*.ts, tests/cli/*.test.ts
+TARGET STATE: The helper and every importer use `parseCliArgs`; runtime behavior is unchanged.
+FILES / SCOPE: src/cli/parse.ts, src/commands/*.ts, tests/cli/*.test.ts
 CHANGE: Rename `parseArgs` to `parseCliArgs` in src/cli/parse.ts and update
-  every importer to use the new name. Do not change the function signature
-  or its behavior. Do not rename unrelated `parse*` helpers.
+  every importer to use the new name.
+DO NOT: Do not change the function signature or behavior. Do not rename unrelated `parse*` helpers.
 SUCCESS: `grep -r "parseArgs" src/ tests/` returns zero matches.
 VERIFY: Run `pnpm typecheck` and `pnpm test src/cli/`. Both must pass.
 OUTPUT: Terminal block only; notes only for any renames you skipped and why.
@@ -44,11 +45,13 @@ OUTPUT: Terminal block only; notes only for any renames you skipped and why.
 ```text
 TASK: Identify dead code in src/legacy/ that has no remaining importers
   in src/, tests/, or scripts/.
-FILES: src/legacy/**, src/**, tests/**, scripts/**
+TARGET STATE: A deletion candidate report only; no code is changed.
+FILES / SCOPE: src/legacy/**, src/**, tests/**, scripts/**
 CHANGE: For each function or export in src/legacy/ that has zero
   importers outside src/legacy/, list it with its file:line and a
-  one-line reason. Do not delete anything. Do not flag symbols that
-  are still imported by tests, scripts, or any package.json entry point.
+  one-line reason.
+DO NOT: Do not delete anything. Do not flag symbols that are still imported by tests,
+  scripts, or any package.json entry point.
 SUCCESS: Every entry in your report includes file:line and at least one
   grep command that returned zero matches outside src/legacy/.
 VERIFY: Re-run the greps yourself before reporting. If a flag turns out

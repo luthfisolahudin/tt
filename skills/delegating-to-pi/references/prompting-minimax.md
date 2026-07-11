@@ -7,7 +7,7 @@ thinking effort (high vs xhigh) and past `deepseek` for the same
 work.
 
 For the tier overview see [prompting-and-tiers.md](prompting-and-tiers.md).
-For the general prompt contract (TASK / FILES / CHANGE / SUCCESS / VERIFY)
+For the general prompt contract (`TASK` / `TARGET STATE` / `FILES / SCOPE` / `CHANGE` / `DO NOT` / `SUCCESS` / `VERIFY`)
 see [prompting-and-tiers.md#prompt-contract](prompting-and-tiers.md#prompt-contract);
 this file only covers what `minimax` specifically needs.
 
@@ -91,66 +91,70 @@ and the work is genuinely beyond `deepseek`'s class, retry on
 ### Architecture migration (premium for design)
 
 ```text
-Task: Migrate the auth flow from library A to library B without
+TASK: Migrate the auth flow from library A to library B without
 breaking the existing session, OAuth, and CSRF semantics.
 
-Context: Library B uses a different session model (signed cookies vs
+CONTEXT / SOURCES: Library B uses a different session model (signed cookies vs
   server-side stores) and a different CSRF story. The migration must
   preserve: existing session cookies across rolling deploys, OAuth
   callback behavior, and the CSRF protection on POSTs. Cost of getting
-  this wrong = real user logouts and possible CSRF regression.
-
-Role: senior backend engineer focused on correctness and
-  backward-compatible rollout.
-
-Source:
+  this wrong = real user logouts and possible CSRF regression. Sources:
 - `src/auth/**` — current implementation
 - `src/middleware/session.ts` — session lifecycle
 - `src/middleware/csrf.ts` — CSRF check
 - `docs/auth.md` — current documented behavior
 - `tests/auth/**` — current test coverage (must all pass)
 
-Constraints:
+TARGET STATE: Library B serves the auth flow without changing public APIs,
+  invalidating active sessions, or weakening OAuth/CSRF behavior.
+FILES / SCOPE: src/auth/**, src/middleware/session.ts,
+  src/middleware/csrf.ts, docs/auth.md, tests/auth/**
+CHANGE: Implement the migration with a one-release compatibility flag and
+  update the existing tests and documentation.
+DO NOT:
 - Do not change the public API of the auth module.
 - Do not break rolling deploys: any active session at deploy time
   must still resolve.
 - Do not delete the old library yet; leave it behind a flag for
   one release.
-
-Output format:
+SUCCESS: Existing auth tests pass and a pre-migration session resolves after
+  restart on the migrated implementation.
+VERIFY: Run the existing auth test suite, then a manual session
+  round-trip check (`login` → restart server → `me`).
+OUTPUT:
 1. Migration plan — 5 bullets maximum, ordered by risk.
 2. Files to change — table with File, Change, Risk.
 3. Verification steps — shell commands the worker can run.
 4. Open questions — only items that need an orchestrator decision.
-
-VERIFY: Run the existing auth test suite, then a manual session
-  round-trip check (`login` → restart server → `me`).
 ```
 
 ### Ambiguous-spec synthesis (premium for framing)
 
 ```text
-Task: We have three candidate designs for the new event-sourcing
+TASK: Recommend one of three candidate designs for the new event-sourcing
   layer. Read the linked discussions, identify the deciding
   tradeoff for each, and recommend one.
 
-Context: The deciding factor is operator cognitive load over the
+CONTEXT / SOURCES: The deciding factor is operator cognitive load over the
   next 18 months, not peak throughput. Cost of getting this wrong
-  = six months of an unmaintainable system.
-
-Source:
+  = six months of an unmaintainable system. Sources:
 - `docs/design-a.md` (2026-04-12)
 - `docs/design-b.md` (2026-04-15)
 - `docs/design-c.md` (2026-04-19)
 
-If sources conflict, prefer the newest dated source and call out
-the conflict in the Open questions section.
-
-Output format:
+TARGET STATE: One recommendation grounded in operator cognitive load, with
+  the deciding tradeoff and source conflicts made explicit.
+FILES / SCOPE: docs/design-a.md, docs/design-b.md, docs/design-c.md
+CHANGE: Compare the three designs and recommend one; prefer the newest dated
+  source when sources conflict.
+DO NOT: Do not optimize for peak throughput or implement any design.
+SUCCESS: Every design has a cited deciding tradeoff and the recommendation
+  follows the stated operator-cognitive-load criterion.
+VERIFY: Re-read all three sources and check every claim in the recommendation
+  against a cited source.
+OUTPUT:
 - Recommendation — 1 sentence, with the deciding tradeoff named.
 - For each design — 3 bullets: deciding tradeoff, what it costs,
   what it buys.
 - Open questions — items that need an orchestrator decision.
-
-Keep the reasoning visible but concise.
 ```
