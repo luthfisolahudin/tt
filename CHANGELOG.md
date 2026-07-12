@@ -4,6 +4,22 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.14.0] — 2026-07-12
+
+- Added seven opt-in CosmosHub benchmark tiers for DeepSeek V4 Flash/Pro,
+  GLM-5.2, Kimi K2.7 Code, MiMo V2.5/Pro, and Qwen 3.7 Max.
+- Preserved `deepseek` as the default and `minimax` as the existing escalation;
+  benchmark candidates do not become routing defaults before scoring.
+- Added `max` to the worker extension's supported thinking levels and reject
+  standalone `--max` consistently with the other tier-owned effort flags.
+- Requires the custom `cosmoshub` provider in `~/.pi/agent/models.json` with
+  `COSMOSHUB_API_KEY` available to worker processes.
+- Added `TT_PI_ENV_VARS`, a space-separated allowlist of credentials copied
+  from the calling shell into the tmux session on `tt up` and worker spawn. It
+  defaults to `COSMOSHUB_API_KEY` and does not write values to tt state files.
+- Documented that worker runtimes using `pi-multi-auth` must hide `cosmoshub`
+  from rotation so its environment-authenticated custom provider passes through.
+
 ## [0.13.2] — 2026-07-11
 
 - Fixed `tt pi auto` and `tt pi auto --rm` aborting under `set -u` when no

@@ -267,12 +267,24 @@ mapping. Add a tier in both places.
 |------|-------|--------|------|
 | `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
 | `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder / longer-horizon work. Positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
+| `cosmos-deepseek-flash` | `cosmoshub/deepseek-v4-flash` | `max` | Opt-in benchmark candidate. |
+| `cosmos-deepseek-pro` | `cosmoshub/deepseek-v4-pro` | `max` | Opt-in benchmark candidate. |
+| `cosmos-glm` | `cosmoshub/glm-5.2` | `max` | Opt-in benchmark candidate. |
+| `cosmos-kimi` | `cosmoshub/kimi-k2.7-code` | `high` | Always-thinking opt-in benchmark candidate. |
+| `cosmos-mimo` | `cosmoshub/mimo-v2.5` | `xhigh` | Opt-in benchmark candidate. |
+| `cosmos-mimo-pro` | `cosmoshub/mimo-v2.5-pro` | `xhigh` | Opt-in benchmark candidate. |
+| `cosmos-qwen` | `cosmoshub/qwen-3.7-max` | `xhigh` | Opt-in benchmark candidate. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
 `--model $provider:$effort` from it; the extension maps tier →
 effort for `setThinkingLevel` at task claim. Legacy `.tier` files
 containing a raw effort (`xhigh` etc.) are normalized to the
 default on read by `current_tier()` — no manual migration.
+
+Before worker spawn, `sync_pi_env` copies only names listed in
+`TT_PI_ENV_VARS` from the calling shell into the tmux session environment. The
+default allowlist is `COSMOSHUB_API_KEY`. This handles tmux servers whose global
+environment predates the credential without persisting credentials in tt state.
 
 **Tier change on a running worker is refused.** The model is
 baked into the REPL's `--model` at launch. `tt pi send` / `auto`
@@ -327,7 +339,8 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
 - Model tier is selectable via `--tier NAME` on `tt pi send` / `auto`;
-  thinking effort is fixed per tier and the legacy `--low`/`--medium`/`--high`/`--xhigh` flags are rejected.
+  thinking effort is fixed per tier and the legacy
+  `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected.
 - The `tt pi send` / `wait` interface — same verbs, same task-ids.
 
 ## Cross-session messaging — `tt x send`

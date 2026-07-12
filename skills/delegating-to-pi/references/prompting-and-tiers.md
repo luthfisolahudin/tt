@@ -6,8 +6,8 @@ Use this after `SKILL.md` says to delegate. Keep prompts narrow: pi performs bes
 
 A **tier** is a named preset that bundles (model, thinking effort). The
 effort is fixed per tier and cannot be set independently — the legacy
-`--low`/`--medium`/`--high`/`--xhigh` flags are rejected with a pointer
-to `--tier`. Two tiers ship, both via the `opencode-go` provider:
+`--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with a pointer
+to `--tier`. Stable tiers:
 
 - **`deepseek`** (default) — `opencode-go/deepseek-v4-flash` at `xhigh`
   effort. Cost-efficient default for high-volume, structured work. See
@@ -17,6 +17,19 @@ to `--tier`. Two tiers ship, both via the `opencode-go` provider:
   even at lower effort, because the model's higher base capability
   earns its way. See [prompting-minimax.md](prompting-minimax.md) for
   how to prompt it.
+
+Opt-in CosmosHub benchmark tiers have no routing recommendation yet:
+
+- `cosmos-deepseek-flash` — `cosmoshub/deepseek-v4-flash` at `max`
+- `cosmos-deepseek-pro` — `cosmoshub/deepseek-v4-pro` at `max`
+- `cosmos-glm` — `cosmoshub/glm-5.2` at `max`
+- `cosmos-kimi` — `cosmoshub/kimi-k2.7-code` at `high` (always-thinking)
+- `cosmos-mimo` — `cosmoshub/mimo-v2.5` at `xhigh`
+- `cosmos-mimo-pro` — `cosmoshub/mimo-v2.5-pro` at `xhigh`
+- `cosmos-qwen` — `cosmoshub/qwen-3.7-max` at `xhigh`
+
+Use the general prompt contract below for benchmark tiers. Keep default/escalation
+decisions on `deepseek`/`minimax` until benchmark evidence is accepted.
 
 Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
 auto`. Omit `--tier` to keep the worker's current tier (a fresh worker

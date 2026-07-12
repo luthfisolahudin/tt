@@ -26,10 +26,10 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- Model tier is selectable: `tt pi send` / `tt pi auto` accept `--tier
-  deepseek|minimax`. `deepseek` (default) = `opencode-go/deepseek-v4-flash`
-  at `xhigh` effort; `minimax` = `opencode-go/minimax-m3` at `high` effort.
-  The legacy `--low`/`--medium`/`--high`/`--xhigh` flags are **rejected**
+- Model tier is selectable with `--tier NAME`. `deepseek` and `minimax` remain
+  the stable tiers; seven opt-in `cosmos-*` tiers expose the CosmosHub benchmark
+  candidates without changing the default. The legacy
+  `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
   (thinking effort is fixed per tier, not independently settable). See
   the "Model tier" section below and the per-tier prompting guides.
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
@@ -62,6 +62,14 @@ history in `CHANGELOG.md`.
 - **Default auto tier regression fixed (0.13.2).** `tt pi auto` and `auto --rm`
   again use `PI_TIER_DEFAULT` when `--tier` is omitted instead of aborting on the
   stale, unset `PI_DEFAULT_TIER` name.
+- **CosmosHub benchmark tiers (0.14.0).** Seven opt-in tiers map the benchmark
+  candidates to the custom pi `cosmoshub` provider at each model's highest
+  configured thinking level. Existing defaults are unchanged. `tt up` and
+  worker spawn synchronize the `TT_PI_ENV_VARS` allowlist (default:
+  `COSMOSHUB_API_KEY`) into the tmux session so custom-provider auth reaches
+  worker REPLs without being stored in tt state. The current private
+  `pi-multi-auth` config hides `cosmoshub`, which makes the extension pass this
+  environment-authenticated provider through instead of attempting rotation.
 
 ## Verified (manual)
 

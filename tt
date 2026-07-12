@@ -3,28 +3,41 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.13.2"
+VERSION="0.14.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
 PI_HISTORY_LIMIT=50000
 # Tier registry: each tier bundles (model, thinking effort) into a named
-# preset. Add a tier by adding a branch to tier_model()/tier_effort() and
-# listing the name in PI_TIER_NAMES — nothing else needs to change. The
+# preset. Add a tier here and mirror its effort in the worker extension. The
 # default tier preserves prior behavior (deepseek-v4-flash at xhigh). Note
 # that thinking effort is *fixed per tier* and cannot be set independently
 # (`--low`/`--high`/`--xhigh` are rejected on `send`/`auto`).
 PI_TIER_DEFAULT=deepseek
-PI_TIER_NAMES="deepseek minimax"
+PI_TIER_NAMES="deepseek minimax cosmos-deepseek-flash cosmos-deepseek-pro cosmos-glm cosmos-kimi cosmos-mimo cosmos-mimo-pro cosmos-qwen"
 PI_TIER_DEEPSEEK_MODEL="opencode-go/deepseek-v4-flash"
 PI_TIER_DEEPSEEK_EFFORT=xhigh
 PI_TIER_MINIMAX_MODEL="opencode-go/minimax-m3"
 PI_TIER_MINIMAX_EFFORT=high
+PI_TIER_COSMOS_DEEPSEEK_FLASH_MODEL="cosmoshub/deepseek-v4-flash"
+PI_TIER_COSMOS_DEEPSEEK_FLASH_EFFORT=max
+PI_TIER_COSMOS_DEEPSEEK_PRO_MODEL="cosmoshub/deepseek-v4-pro"
+PI_TIER_COSMOS_DEEPSEEK_PRO_EFFORT=max
+PI_TIER_COSMOS_GLM_MODEL="cosmoshub/glm-5.2"
+PI_TIER_COSMOS_GLM_EFFORT=max
+PI_TIER_COSMOS_KIMI_MODEL="cosmoshub/kimi-k2.7-code"
+PI_TIER_COSMOS_KIMI_EFFORT=high
+PI_TIER_COSMOS_MIMO_MODEL="cosmoshub/mimo-v2.5"
+PI_TIER_COSMOS_MIMO_EFFORT=xhigh
+PI_TIER_COSMOS_MIMO_PRO_MODEL="cosmoshub/mimo-v2.5-pro"
+PI_TIER_COSMOS_MIMO_PRO_EFFORT=xhigh
+PI_TIER_COSMOS_QWEN_MODEL="cosmoshub/qwen-3.7-max"
+PI_TIER_COSMOS_QWEN_EFFORT=xhigh
 
 # Validate a tier name. Returns 0 for known tiers, 1 otherwise.
 tier_is_known() {
   case $1 in
-    deepseek|minimax) return 0 ;;
+    deepseek|minimax|cosmos-deepseek-flash|cosmos-deepseek-pro|cosmos-glm|cosmos-kimi|cosmos-mimo|cosmos-mimo-pro|cosmos-qwen) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -37,6 +50,13 @@ tier_model() {
   case ${1:-$PI_TIER_DEFAULT} in
     deepseek) printf '%s' "$PI_TIER_DEEPSEEK_MODEL" ;;
     minimax)  printf '%s' "$PI_TIER_MINIMAX_MODEL"  ;;
+    cosmos-deepseek-flash) printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_FLASH_MODEL" ;;
+    cosmos-deepseek-pro)   printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_PRO_MODEL" ;;
+    cosmos-glm)            printf '%s' "$PI_TIER_COSMOS_GLM_MODEL" ;;
+    cosmos-kimi)           printf '%s' "$PI_TIER_COSMOS_KIMI_MODEL" ;;
+    cosmos-mimo)           printf '%s' "$PI_TIER_COSMOS_MIMO_MODEL" ;;
+    cosmos-mimo-pro)       printf '%s' "$PI_TIER_COSMOS_MIMO_PRO_MODEL" ;;
+    cosmos-qwen)           printf '%s' "$PI_TIER_COSMOS_QWEN_MODEL" ;;
     *)        printf '%s' "$PI_TIER_DEEPSEEK_MODEL" ;;
   esac
 }
@@ -47,6 +67,13 @@ tier_effort() {
   case ${1:-$PI_TIER_DEFAULT} in
     deepseek) printf '%s' "$PI_TIER_DEEPSEEK_EFFORT" ;;
     minimax)  printf '%s' "$PI_TIER_MINIMAX_EFFORT"  ;;
+    cosmos-deepseek-flash) printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_FLASH_EFFORT" ;;
+    cosmos-deepseek-pro)   printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_PRO_EFFORT" ;;
+    cosmos-glm)            printf '%s' "$PI_TIER_COSMOS_GLM_EFFORT" ;;
+    cosmos-kimi)           printf '%s' "$PI_TIER_COSMOS_KIMI_EFFORT" ;;
+    cosmos-mimo)           printf '%s' "$PI_TIER_COSMOS_MIMO_EFFORT" ;;
+    cosmos-mimo-pro)       printf '%s' "$PI_TIER_COSMOS_MIMO_PRO_EFFORT" ;;
+    cosmos-qwen)           printf '%s' "$PI_TIER_COSMOS_QWEN_EFFORT" ;;
     *)        printf '%s' "$PI_TIER_DEEPSEEK_EFFORT" ;;
   esac
 }
@@ -133,9 +160,22 @@ require_session() {
   session_exists || die "no session for $PWD; run \`tt up\` first"
 }
 
+sync_pi_env() {
+  local s key
+  local -a keys
+  s=$(session_name)
+  read -r -a keys <<< "${TT_PI_ENV_VARS:-COSMOSHUB_API_KEY}"
+  for key in "${keys[@]}"; do
+    [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "invalid TT_PI_ENV_VARS entry: $key"
+    [[ -v $key ]] || continue
+    tmux set-environment -t "=$s" "$key" "${!key}"
+  done
+}
+
 set_session_version() {
   local s; s=$(session_name)
   tmux set-environment -t "=$s" TT_VERSION "$VERSION"
+  sync_pi_env
   printf '%s\n' "$VERSION" > "$(state_dir)/version"
 }
 
@@ -307,6 +347,7 @@ ensure_standard_windows() {
 spawn_pi_window() {
   local name=$1
   local s; s=$(session_name)
+  sync_pi_env
   tmux new-window -t "=$s:" -n "pi-$name" -c "$PWD"
   tmux set-window-option -t "=$s:pi-$name" automatic-rename off
   # Caller is responsible for writing the tier to <cs>.tier before
@@ -820,7 +861,7 @@ pi_send_cmd() {
     case $1 in
       # Thinking effort is fixed per tier — the legacy effort flags are
       # rejected. Users who want a different model pick --tier=<name> instead.
-      --low|--medium|--high|--xhigh) die "thinking effort is fixed per tier — use --tier=<name> (one of: $PI_TIER_NAMES) instead of the $1 flag" ;;
+      --low|--medium|--high|--xhigh|--max) die "thinking effort is fixed per tier — use --tier=<name> (one of: $PI_TIER_NAMES) instead of the $1 flag" ;;
       --tier)   shift; req_tier=$1; shift ;;
       --tier=*) req_tier=${1#--tier=}; shift ;;
       --notify) notify=1;        shift ;;
@@ -964,7 +1005,7 @@ pi_auto_cmd() {
   local req_tier="" src="" rm_flag=0 notify=0 json=0 prefer_fresh=0
   while (( $# )); do
     case $1 in
-      --low|--medium|--high|--xhigh) die "thinking effort is fixed per tier — use --tier=<name> (one of: $PI_TIER_NAMES) instead of the $1 flag" ;;
+      --low|--medium|--high|--xhigh|--max) die "thinking effort is fixed per tier — use --tier=<name> (one of: $PI_TIER_NAMES) instead of the $1 flag" ;;
       --tier)   shift; req_tier=$1; shift ;;
       --tier=*) req_tier=${1#--tier=}; shift ;;
       --rm)           rm_flag=1;       shift ;;
@@ -2271,8 +2312,8 @@ PI WORKER VERBS
   Thinking tier
       A "tier" is a named preset that bundles (model, thinking effort).
       The effort is fixed per tier and cannot be set independently — the
-      legacy --low/--medium/--high/--xhigh flags are rejected. Two tiers
-      are defined (both via the opencode-go provider):
+       legacy --low/--medium/--high/--xhigh/--max flags are rejected.
+       Stable tiers:
 
         deepseek  default. opencode-go/deepseek-v4-flash at xhigh effort.
                   Cost-efficient default for high-volume, structured work.
@@ -2280,6 +2321,16 @@ PI WORKER VERBS
                   pick for harder, longer-horizon, or more judgment-heavy
                   work where the model's higher base capability earns
                   its way past the lower thinking effort.
+
+       CosmosHub benchmark tiers (opt-in; no default recommendation yet):
+
+         cosmos-deepseek-flash  cosmoshub/deepseek-v4-flash at max
+         cosmos-deepseek-pro    cosmoshub/deepseek-v4-pro at max
+         cosmos-glm             cosmoshub/glm-5.2 at max
+         cosmos-kimi            cosmoshub/kimi-k2.7-code at high
+         cosmos-mimo            cosmoshub/mimo-v2.5 at xhigh
+         cosmos-mimo-pro        cosmoshub/mimo-v2.5-pro at xhigh
+         cosmos-qwen            cosmoshub/qwen-3.7-max at xhigh
 
       Pick a tier per dispatch with --tier NAME on `send`/`auto`. Omit
       --tier to keep the worker's current tier. A fresh worker starts on

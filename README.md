@@ -129,19 +129,33 @@ Workers are lazy: callsigns `alfa` through `zulu` (NATO) are spawned on demand
 by `send`/`auto` and torn down by `rm`/`popidle` (or `--rm`). None is special or
 pre-spawned. Hard cap `min(cores-2, 26)`.
 
-Thinking effort is **fixed per tier** and cannot be set independently. Two
-tiers ship, both via the `opencode-go` provider. Pass `--tier NAME` on
-`tt pi send` / `tt pi auto` to pick one; omit `--tier` to keep the
+Thinking effort is **fixed per tier** and cannot be set independently. Pass
+`--tier NAME` on `tt pi send` / `tt pi auto` to pick one; omit `--tier` to keep the
 worker's current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | When to pick |
 |------|-------|-----------------|--------------|
 | `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
 | `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder or longer-horizon work; positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
+| `cosmos-deepseek-flash` | `cosmoshub/deepseek-v4-flash` | `max` | Benchmark candidate; opt-in until the benchmark selects defaults. |
+| `cosmos-deepseek-pro` | `cosmoshub/deepseek-v4-pro` | `max` | Benchmark candidate; opt-in until the benchmark selects defaults. |
+| `cosmos-glm` | `cosmoshub/glm-5.2` | `max` | Benchmark candidate; opt-in until the benchmark selects defaults. |
+| `cosmos-kimi` | `cosmoshub/kimi-k2.7-code` | `high` | Always-thinking benchmark candidate; highest pi level currently exposed by its model metadata. |
+| `cosmos-mimo` | `cosmoshub/mimo-v2.5` | `xhigh` | Benchmark candidate; opt-in until the benchmark selects defaults. |
+| `cosmos-mimo-pro` | `cosmoshub/mimo-v2.5-pro` | `xhigh` | Benchmark candidate; opt-in until the benchmark selects defaults. |
+| `cosmos-qwen` | `cosmoshub/qwen-3.7-max` | `xhigh` | Benchmark candidate; opt-in until the benchmark selects defaults. |
 
-The legacy `--low`/`--medium`/`--high`/`--xhigh` flags are rejected with
+The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with
 a pointer to `--tier`. See per-tier prompting guides in
 `skills/delegating-to-pi/references/`.
+
+Custom-provider credentials needed inside worker REPLs are synchronized from
+the current shell into the tmux session on `tt up` and before worker spawn.
+`TT_PI_ENV_VARS` is a space-separated allowlist and defaults to
+`COSMOSHUB_API_KEY`; values are not written to tt state files.
+If the private worker runtime uses `pi-multi-auth`, add `cosmoshub` to that
+extension's `hiddenProviders` so custom-provider environment auth passes through
+instead of entering credential rotation.
 
 ## Checking a session's tt version
 

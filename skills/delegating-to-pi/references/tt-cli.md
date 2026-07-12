@@ -18,7 +18,7 @@ removed, and are capped at `min(cores-2, 26)`.
   queues behind that worker's current turn.
 - **Inspect pool:** `tt pi status`.
 
-Tier flags (`--low`/`--medium`/`--high`/`--xhigh`) are **rejected** — thinking
+Tier flags (`--low`/`--medium`/`--high`/`--xhigh`/`--max`) are **rejected** — thinking
 effort is fixed per tier, not independently settable. Pick a model preset with
 `--tier NAME` on `send`/`auto`:
 
@@ -27,6 +27,8 @@ effort is fixed per tier, not independently settable. Pick a model preset with
 - `--tier minimax` — `opencode-go/minimax-m3` at high effort. Premium tier for
   harder or longer-horizon work; positioned above `deepseek` even at lower
   effort, because the model's higher base capability earns its way.
+- Seven opt-in `cosmos-*` candidate tiers are listed in
+  `prompting-and-tiers.md`; none is a default before benchmark acceptance.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
 `deepseek`). `--tier NAME` is refused on a worker already running on a

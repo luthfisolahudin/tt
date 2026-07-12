@@ -297,18 +297,47 @@ export default function (pi: ExtensionAPI) {
 	// effort is what pi.setThinkingLevel expects, so we map tier name → effort
 	// here and apply the effort (not the name) at runtime. Thinking effort
 	// cannot be set independently; it's fixed per tier by `tt`.
-	type Tier = "deepseek" | "minimax";
-	type Effort = "low" | "medium" | "high" | "xhigh";
+	type Tier =
+		| "deepseek"
+		| "minimax"
+		| "cosmos-deepseek-flash"
+		| "cosmos-deepseek-pro"
+		| "cosmos-glm"
+		| "cosmos-kimi"
+		| "cosmos-mimo"
+		| "cosmos-mimo-pro"
+		| "cosmos-qwen";
+	type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 	function isManagedTier(tier: string | undefined): tier is Tier {
-		return tier === "deepseek" || tier === "minimax";
+		switch (tier) {
+			case "deepseek":
+			case "minimax":
+			case "cosmos-deepseek-flash":
+			case "cosmos-deepseek-pro":
+			case "cosmos-glm":
+			case "cosmos-kimi":
+			case "cosmos-mimo":
+			case "cosmos-mimo-pro":
+			case "cosmos-qwen":
+				return true;
+			default:
+				return false;
+		}
 	}
 
 	function tierEffort(tier: Tier): Effort {
-		// Mirrors tt's tier_effort(): deepseek → xhigh, minimax → high.
+		// Mirrors tt's tier_effort().
 		// Add a branch here when adding a tier in `tt`.
 		if (tier === "deepseek") return "xhigh";
-		return "high";
+		if (tier === "minimax" || tier === "cosmos-kimi") return "high";
+		if (
+			tier === "cosmos-deepseek-flash" ||
+			tier === "cosmos-deepseek-pro" ||
+			tier === "cosmos-glm"
+		)
+			return "max";
+		return "xhigh";
 	}
 
 	// Claim and run the next queued task — only when idle. Synchronous up to
