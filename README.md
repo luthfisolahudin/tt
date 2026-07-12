@@ -4,10 +4,11 @@ A single-file bash tool that gives every project **one tmux session** hosting
 the dev server, the orchestrator (Claude Code), and a pool of **pi** code
 workers — so there is one place to attach and watch everything.
 
-`tt` is the substrate for delegating work to **pi** (a live REPL worker
-wired to OpenAI Codex). Each worker runs a persistent, interactive pi REPL
-in a visible tmux window — the orchestrator drives it via a per-worker task
-queue and control files rather than one-shot `pi -p` calls.
+`tt` is the substrate for delegating work to **pi** code workers. Each worker
+runs a persistent, interactive pi REPL in a visible tmux window — the
+orchestrator drives it via a per-worker task queue and control files rather
+than one-shot `pi -p` calls. The model comes from the dispatched **tier**
+(see [Model tier](#model-tier)).
 
 - **Tool:** `~/code/tt/tt` (this repo) — symlinked from `~/.local/bin/tt`.
 - **Design & rationale:** `docs/DESIGN.md`.
@@ -20,8 +21,10 @@ queue and control files rather than one-shot `pi -p` calls.
 ln -s ~/code/tt/tt ~/.local/bin/tt
 ```
 
-Dependencies: `tmux`, `sha1sum`/`sha256sum` (coreutils), `sed`, `awk`, `bash`.
-`pi` must be on `PATH` for the worker verbs.
+Dependencies: `tmux`, `bash`, coreutils (`sha1sum`/`sha256sum`, `stat`, `date`),
+`sed`, `awk`, `perl`. `pi` must be on `PATH` for the worker verbs. Also:
+`jq` for `.tt/windows.json` (without it tt falls back to the built-in layout),
+`sqlite3` for `tt x observe`.
 
 ## Quick start
 
@@ -103,23 +106,26 @@ Run `tt --help` for the full block. Summary:
 
 | Verb | Effect |
 |------|--------|
-| `tt` / `tt up` | Create (if missing) + attach the project session. Idempotent. Attaches at once; pi REPLs boot in the background. |
+| `tt` / `tt up` | Create (if missing) + attach the project session. Idempotent. No pi workers are pre-spawned — the pool is lazy. |
 | `tt a` / `tt attach` | Attach without creating. |
 | `tt name` | Print the computed session name. |
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
+| `tt --help`, `tt -h` | Full reference block. |
 | `tt down` | Kill the project session (with confirmation). |
-| `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses unless idle/blocked. |
+| `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses while the worker is `busy`. |
 | `tt pi resume <cs>` | Recover an **interrupted** worker without a context wipe: re-drive its task to completion (`interrupted → busy → done`). Needs the REPL alive. In the worker's own pane, `/tt-resume` does the same. |
-| `tt pi send [--tier NAME] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--tier NAME`: pick a model preset (see "Model tier" below). `--notify`: ping the orchestrator on completion. |
-| `tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--tier NAME`: pick a model preset. `--prefer-fresh`: spawn a new worker before reusing an idle one (parallelism + clean context), under the cap. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. `--json`: emit `{worker,task_id,routed}` (routed = `idle\|spawn\|pool\|ephemeral`). |
+| `tt pi send [--tier NAME] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--tier NAME`: pick a model preset (see [Model tier](#model-tier)) — **refused** if the worker already runs a different tier. `--notify`: ping the orchestrator on completion. |
+| `tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--tier NAME`: pick a model preset; an idle worker on another tier is skipped in favour of a fresh spawn. `--prefer-fresh`: spawn a new worker before reusing an idle one (parallelism + clean context), under the cap. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. `--json`: emit `{worker,task_id,routed}` (routed = `idle\|spawn\|pool\|ephemeral`). |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |
+| `tt pi steer-all (FILE\|-)` | Steer every live worker. Same as `tt pi steer all`. |
 | `tt pi wait [--timeout N] [--json] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id (any id resolves, even an old one), a pool id, or `all` (join all busy). `--json`: result envelope(s). `all` prints a one-line tally on stderr and exits non-zero if any worker ended error/other/down/timeout. |
+| `tt pi wait-all [--timeout N] [--json] [<cs>...]` | Join a specific set of workers (`tt pi wait all` can only join *every* busy worker). No callsigns → all currently-busy workers. |
 | `tt pi collect [--timeout N] [--json] [all\|<cs>]` | Cursor-based fan-out join: every result with turn past the per-worker cursor, blocking on in-flight ones, then advances the cursor. Never drops a task that finished before you asked (vs `wait all`, busy-now only). |
 | `tt pi results [--json] [<cs>\|<task-id>]` | Read durable outcomes from the per-id store: list all (newest first), filter to a worker, or re-read one by id. Recovers an id you no longer have. |
 | `tt pi logs [--lines N] <cs>` | Dump a worker's pi REPL pane scrollback (read-only; default 200 lines) — tell an in-flight turn from a wedged one without attaching. |
 | `tt pi status [--json]` | One row per worker: state, **elapsed** (in-flight turn time when busy), **queue depth** (`+N` pinned tasks waiting), last task, tier, generation; interrupted/blocked rows carry a reason hint. `--json` adds `elapsed_s`/`queued`. |
 | `tt pi rm [--force] <cs>`, `tt pi remove [--force] <cs>` | Remove a worker (kill REPL + window, wipe state incl. its durable results). |
-| `tt pi popidle` | Remove the highest-NATO idle worker. |
+| `tt pi popidle` | Remove the highest-NATO worker that is not `busy`. |
 | `tt pi update [<args>...]` | Run `pi update` against the worker's private `PI_CODING_AGENT_DIR` (the worker pool's installed extensions get updated, not the orchestrator's pi config). Forwards all args and exit code. No `tt` session required. |
 | `tt x send [--timeout N] <session-id> (FILE\|-)` | Wait for another session's orchestrator to safely accept input, then send + submit a message. Waits forever by default. |
 | `tt x ls [--all]`, `tt x list [--all]` | List tt sessions available to message. Default: only sessions with a live orchestrator. `--all`: show all with status. |
@@ -127,35 +133,40 @@ Run `tt --help` for the full block. Summary:
 
 Workers are lazy: callsigns `alfa` through `zulu` (NATO) are spawned on demand
 by `send`/`auto` and torn down by `rm`/`popidle` (or `--rm`). None is special or
-pre-spawned. Hard cap `min(cores-2, 26)`.
+pre-spawned. Hard cap `min(cores-2, 26)`, floored at 1.
 
-Thinking effort is **fixed per tier** and cannot be set independently. Pass
-`--tier NAME` on `tt pi send` / `tt pi auto` to pick one; omit `--tier` to keep the
-worker's current tier (a fresh worker starts on the default):
+Worker states: `idle` · `busy` · `blocked` · `interrupted` · `starting` · `down` · `missing`.
+
+### Model tier
+
+A **tier** is a named preset bundling *(model, thinking effort)*. Thinking effort
+is **fixed per tier** and cannot be set independently. Pass `--tier NAME` on
+`tt pi send` / `tt pi auto` to pick one; omit `--tier` to keep the worker's
+current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | When to pick |
 |------|-------|-----------------|--------------|
 | `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
 | `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder or longer-horizon work; positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
-| `cosmos-deepseek-flash` | `cosmoshub/deepseek-v4-flash` | `max` | Benchmark candidate; opt-in until the benchmark selects defaults. |
-| `cosmos-deepseek-pro` | `cosmoshub/deepseek-v4-pro` | `max` | Benchmark candidate; opt-in until the benchmark selects defaults. |
-| `cosmos-glm` | `cosmoshub/glm-5.2` | `max` | Benchmark candidate; opt-in until the benchmark selects defaults. |
-| `cosmos-kimi` | `cosmoshub/kimi-k2.7-code` | `high` | Always-thinking benchmark candidate; highest pi level currently exposed by its model metadata. |
-| `cosmos-mimo` | `cosmoshub/mimo-v2.5` | `xhigh` | Benchmark candidate; opt-in until the benchmark selects defaults. |
-| `cosmos-mimo-pro` | `cosmoshub/mimo-v2.5-pro` | `xhigh` | Benchmark candidate; opt-in until the benchmark selects defaults. |
-| `cosmos-qwen` | `cosmoshub/qwen-3.7-max` | `xhigh` | Benchmark candidate; opt-in until the benchmark selects defaults. |
+
+`tt --help` also lists a set of opt-in `cosmos-*` benchmark tiers. They exist to
+compare candidate models and are not a supported choice — stick to the two above.
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with
 a pointer to `--tier`. See per-tier prompting guides in
 `skills/delegating-to-pi/references/`.
 
+**A tier cannot be changed on a running worker.** The model is baked into the
+REPL's `--model` at launch, so `tt pi send --tier NAME <cs>` against a worker
+already on another tier is *refused* rather than silently dispatched to the
+wrong model. Respawn on the new tier with `tt pi clear <cs>` (loses context).
+`tt pi auto --tier NAME` sidesteps this by skipping non-matching idle workers
+and spawning fresh; at the cap, with no compatible worker free, it refuses too.
+
 Custom-provider credentials needed inside worker REPLs are synchronized from
 the current shell into the tmux session on `tt up` and before worker spawn.
-`TT_PI_ENV_VARS` is a space-separated allowlist and defaults to
-`COSMOSHUB_API_KEY`; values are not written to tt state files.
-If the private worker runtime uses `pi-multi-auth`, add `cosmoshub` to that
-extension's `hiddenProviders` so custom-provider environment auth passes through
-instead of entering credential rotation.
+`TT_PI_ENV_VARS` is a space-separated allowlist; values are not written to tt
+state files.
 
 ## Checking a session's tt version
 
