@@ -12,12 +12,12 @@
  *
  *   <cs>.queue/    a per-worker task queue (directory). Each `<turn>.task`
  *                  file is line 1 = `<task id> <tier> <nonce> [notify]`
- *                  (all after the id optional; `notify` → ping the orchestrator
+ *                  (`notify` is optional and pings the orchestrator
  *                  via `tt x send` on completion), rest = prompt text. The
  *                  extension claims the lowest-numbered task when the REPL is
  *                  idle by renaming it to `<file>.claiming`, then reads and
- *                  deletes that private path, applies the tier via
- *                  setThinkingLevel, and sends the text as a fresh user turn.
+ *                  deletes that private path, and sends the text as a fresh
+ *                  user turn.
  *                  agent_end validates nonce + terminal-position. A busy
  *                  worker leaves later tasks queued until its turn ends
  *                  (send = run next; see <cs>.steer for run-now).
@@ -292,54 +292,6 @@ export default function (pi: ExtensionAPI) {
 		} catch {}
 	}
 
-	// The tier registry must match `tt` (PI_TIER_* in the bash source). A
-	// tier is a named preset that bundles (model, thinking effort) — the
-	// effort is what pi.setThinkingLevel expects, so we map tier name → effort
-	// here and apply the effort (not the name) at runtime. Thinking effort
-	// cannot be set independently; it's fixed per tier by `tt`.
-	type Tier =
-		| "deepseek"
-		| "minimax"
-		| "cosmos-deepseek-flash"
-		| "cosmos-deepseek-pro"
-		| "cosmos-glm"
-		| "cosmos-kimi"
-		| "cosmos-mimo"
-		| "cosmos-mimo-pro"
-		| "cosmos-qwen";
-	type Effort = "low" | "medium" | "high" | "xhigh" | "max";
-
-	function isManagedTier(tier: string | undefined): tier is Tier {
-		switch (tier) {
-			case "deepseek":
-			case "minimax":
-			case "cosmos-deepseek-flash":
-			case "cosmos-deepseek-pro":
-			case "cosmos-glm":
-			case "cosmos-kimi":
-			case "cosmos-mimo":
-			case "cosmos-mimo-pro":
-			case "cosmos-qwen":
-				return true;
-			default:
-				return false;
-		}
-	}
-
-	function tierEffort(tier: Tier): Effort {
-		// Mirrors tt's tier_effort().
-		// Add a branch here when adding a tier in `tt`.
-		if (tier === "deepseek") return "xhigh";
-		if (tier === "minimax" || tier === "cosmos-kimi") return "high";
-		if (
-			tier === "cosmos-deepseek-flash" ||
-			tier === "cosmos-deepseek-pro" ||
-			tier === "cosmos-glm"
-		)
-			return "max";
-		return "xhigh";
-	}
-
 	// Claim and run the next queued task — only when idle. Synchronous up to
 	// sendUserMessage, so the interval poll and agent_end can never interleave
 	// mid-claim. Claiming is an atomic rename, so it is safe even when several
@@ -396,10 +348,9 @@ export default function (pi: ExtensionAPI) {
 		if (raw === null || !raw.trim()) return;
 		const nl = raw.indexOf("\n");
 		if (nl < 0) return; // need an id line + body
-		// line 1 = `<id> <tier> <nonce>`; tier and nonce are optional.
+		// line 1 = `<id> <tier> <nonce> [notify]`.
 		const head = raw.slice(0, nl).trim().split(/\s+/);
 		const id = head[0] || "-";
-		const tier = head[1];
 		const nonce = head[2] || "";
 		const notify = head[3] === "notify";
 		const text = raw.slice(nl + 1).trim();
@@ -417,17 +368,6 @@ export default function (pi: ExtensionAPI) {
 				pendingStartedAt +
 				"\n---\n",
 		);
-		// Reasoning effort is a runtime knob — no REPL respawn. Persist here too,
-		// because pool tasks are claimed by an unknown worker after bash dispatch.
-		if (isManagedTier(tier)) {
-			atomicWrite(path.join(stateDir, `${cs}.tier`), tier);
-			try {
-				// Map tier name → its baked-in effort; effort is what
-				// setThinkingLevel takes. Tier name is persisted in <cs>.tier
-				// so `tt pi status` can display the right preset.
-				pi.setThinkingLevel(tierEffort(tier));
-			} catch {}
-		}
 		pi.sendUserMessage(text);
 	}
 

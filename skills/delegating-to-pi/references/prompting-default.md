@@ -1,17 +1,16 @@
-# Prompting the `deepseek` tier (default)
+# Prompting the default worker
 
-`--tier deepseek` runs `opencode-go/deepseek-v4-flash` at **xhigh**
-effort — the cost-efficient default for high-volume, structured work
-(bounded refactors, audits, codegen from a spec, mechanical sweeps).
+The default worker runs `cosmoshub/qwen-3.7-max` at **max** effort for all
+delegated work. Normal dispatches omit `--tier`.
 
 For the tier overview see [prompting-and-tiers.md](prompting-and-tiers.md).
 For the general prompt contract (`TASK` / `TARGET STATE` / `FILES / SCOPE` / `CHANGE` / `DO NOT` / `SUCCESS` / `VERIFY`)
 see [prompting-and-tiers.md#prompt-contract](prompting-and-tiers.md#prompt-contract);
-this file only covers what `deepseek` specifically needs.
+this file only covers what the current default specifically needs.
 
-## Tier-specific
+## Model-specific
 
-- **xhigh effort already plans and self-checks.** Do not ask the model
+- **Max effort already plans and self-checks.** Do not ask the model
   to "think step by step" or "show your reasoning" — the runtime is
   doing that. Redundant instruction degrades output. Spend your
   prompt budget on **scope precision** and **verifiability** instead.
@@ -19,7 +18,7 @@ this file only covers what `deepseek` specifically needs.
   mechanical checks when told exactly what to run. A concrete
   `VERIFY:` line (`pnpm tsc --noEmit`, `grep -r OLD_NAME src/`,
   re-read your diff for stale imports) is the single highest-leverage
-  thing you can add to a `deepseek` prompt.
+  thing you can add to a worker prompt.
 - **Strong on structure.** Labeled fields, explicit scope, and
   concrete CHANGE clauses work better than prose. The prompt contract
   in the overview doc is the floor; lean into it.

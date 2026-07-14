@@ -90,12 +90,13 @@ format so the bash side needs no JSON parser:
 
 - **`<cs>.queue/`** — a per-worker task queue (directory). `tt pi send`
   always **appends** a `<turn>.task` file (atomic `mv`): line 1 is
-  `<task id> <tier> <nonce>`, the rest is the prompt body. The extension
+  `<task id> <tier> <nonce> [notify]`, the rest is the prompt body. The extension
   **claims** the lowest-numbered task — but only when the REPL is genuinely
   idle (`ctx.isIdle()`) — by renaming it to `<file>.claiming`, reading that
   private path, and deleting it (so a concurrent tt write is never clobbered).
-  It then writes a `running` result, applies the tier (`pi.setThinkingLevel`),
-  and sends the body as a fresh user turn (`pi.sendUserMessage`). Claiming is
+  It then writes a `running` result and sends the body as a fresh user turn
+  (`pi.sendUserMessage`). The REPL's model and effort were fixed at launch.
+  Claiming is
   driven by a 200 ms poll plus a claim at `session_start`; it is **never** done
   from inside `agent_end` (the agent is still "processing" there, so a send
   would be rejected — the bug that the idle-gated poll avoids). A busy worker
@@ -202,7 +203,7 @@ tt-worker.ts  (inside the pi REPL)
   200ms poll / session_start — pump(), only when ctx.isIdle():
     → claims lowest <turn>.task by rename → reads → deletes
     → writes <cs>.result  (status: running)
-    → applies tier via pi.setThinkingLevel; stores nonce
+    → stores nonce; model + effort remain those fixed at REPL launch
     → sends body as a fresh user turn (pi.sendUserMessage)
 
   on agent_end:
@@ -256,30 +257,28 @@ State is derived from the window plus the control files:
 A "tier" is a named preset that bundles (model provider, thinking
 effort). The effort is **fixed per tier** and cannot be set
 independently — `tt pi send` / `tt pi auto` reject
-`--low`/`--medium`/`--high`/`--xhigh` with a pointer to
-`--tier=<name>`. The registry lives at the top of `tt`
-(`PI_TIER_DEFAULT`, `PI_TIER_NAMES`, per-tier `PI_TIER_<NAME>_MODEL` /
-`_EFFORT` constants, with `tier_is_known` / `tier_model` /
-`tier_effort` helpers); the `tt-worker` extension mirrors the
-mapping. Add a tier in both places.
+`--low`/`--medium`/`--high`/`--xhigh`/`--max` with a pointer to
+`--tier=<name>`. The data-driven registry lives at the top of `tt`
+(`PI_TIER_DEFAULT`, `PI_TIER_REGISTRY`, and the generic `tier_field` /
+`tier_is_known` / `tier_model` / `tier_effort` helpers). Each row is
+`name|provider/model|effort`. The `tt-worker` extension treats the tier as
+opaque dispatch metadata, so changing or adding a model does not require an
+extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
-| `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder / longer-horizon work. Positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
-| `cosmos-deepseek-flash` | `cosmoshub/deepseek-v4-flash` | `max` | Opt-in benchmark candidate. |
-| `cosmos-deepseek-pro` | `cosmoshub/deepseek-v4-pro` | `max` | Opt-in benchmark candidate. |
-| `cosmos-glm` | `cosmoshub/glm-5.2` | `max` | Opt-in benchmark candidate. |
-| `cosmos-kimi` | `cosmoshub/kimi-k2.7-code` | `high` | Always-thinking opt-in benchmark candidate. |
-| `cosmos-mimo` | `cosmoshub/mimo-v2.5` | `xhigh` | Opt-in benchmark candidate. |
-| `cosmos-mimo-pro` | `cosmoshub/mimo-v2.5-pro` | `xhigh` | Opt-in benchmark candidate. |
-| `cosmos-qwen` | `cosmoshub/qwen-3.7-max` | `xhigh` | Opt-in benchmark candidate. |
+| `default` | `cosmoshub/qwen-3.7-max` | `max` | All delegated worker tasks. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
-`--model $provider:$effort` from it; the extension maps tier →
-effort for `setThinkingLevel` at task claim. Legacy `.tier` files
-containing a raw effort (`xhigh` etc.) are normalized to the
-default on read by `current_tier()` — no manual migration.
+`--model $provider_model:$effort` from it. The extension never changes the model,
+effort, or worker tier at task claim. Legacy or removed tier names are
+normalized to the default on read by `current_tier()`.
+
+The custom `cosmoshub` provider is defined in Pi's `models.json` with the
+`anthropic-messages` API and `https://api.cosmoshub.tech` base URL (Pi appends
+`/v1/messages`). The worker model is intentionally text-only: live image probes
+against the CosmosHub endpoint did not identify image content reliably. Model
+selection evidence and re-evaluation rules live in `docs/MODEL_DECISION.md`.
 
 Before worker spawn, `sync_pi_env` copies only names listed in
 `TT_PI_ENV_VARS` from the calling shell into the tmux session environment. The
@@ -297,6 +296,13 @@ the requested tier. Pre-spawn tier write lives in `pi_send_cmd`
 and `pi_auto_cmd`; `spawn_pi_window` no longer owns the tier
 file.
 
+Persisted tiers removed from the registry are not silently treated as the
+default on a still-running REPL: `tier_label` displays `stale:<old-name>`, named
+dispatch refuses with a `tt pi clear <cs>` instruction, auto-reuse skips the
+worker, and shared-pool enqueue refuses while any stale worker could steal the
+task. `start_repl` normalizes the tier file when that worker is actually
+respawned on the current default model.
+
 ## Context reset
 
 `tt pi clear` bumps `<callsign>.gen` and respawns the REPL on a new
@@ -313,7 +319,7 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | File | Contents |
 |------|----------|
 | `<cs>.tasks.jsonl` | One JSON line per turn: `{turn,id,sent_at,tier,nonce,notify}`; plus a `{"clear":<gen>}` marker line per `clear`. |
-| `<cs>.tier` | Current model-tier name (e.g. `deepseek`, `minimax`). |
+| `<cs>.tier` | Current model-tier name (`default`). |
 | `<cs>.gen` | Current context generation (bumped by `clear`). |
 | `<cs>.in.<N>.txt` | Prompt body for turn N. |
 | `<cs>.queue/<turn>.task` | Queued task handed to the REPL (id line + body); claimed by the extension when idle. `<turn>.task.claiming.<cs>` is the transient mid-claim rename. |

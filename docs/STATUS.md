@@ -26,12 +26,13 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- Model tier is selectable with `--tier NAME`. `deepseek` and `minimax` remain
-  the stable tiers; seven opt-in `cosmos-*` tiers expose the CosmosHub benchmark
-  candidates without changing the default. The legacy
+- The single `default` tier routes all workers to CosmosHub Qwen 3.7 Max at max
+  effort through Pi's Anthropic Messages-compatible custom provider. Normal
+  dispatches omit `--tier`; the registry remains data-driven so a future model
+  decision changes one row. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
   (thinking effort is fixed per tier, not independently settable). See
-  the "Model tier" section below and the per-tier prompting guides.
+  the "Model tier" section and `docs/MODEL_DECISION.md`.
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
 - **Results are durable and id-addressable.** Every task — named and pool
@@ -62,14 +63,18 @@ history in `CHANGELOG.md`.
 - **Default auto tier regression fixed (0.13.2).** `tt pi auto` and `auto --rm`
   again use `PI_TIER_DEFAULT` when `--tier` is omitted instead of aborting on the
   stale, unset `PI_DEFAULT_TIER` name.
-- **CosmosHub benchmark tiers (0.14.0).** Seven opt-in tiers map the benchmark
-  candidates to the custom pi `cosmoshub` provider at each model's highest
-  configured thinking level. Existing defaults are unchanged. `tt up` and
+- **CosmosHub default tier (0.14.1).** The former provider/model-named tiers are
+  replaced by one model-agnostic `default` tier. The registry is now one
+  data-driven list in `tt`; the worker extension no longer mirrors tier names or
+  changes thinking effort at task claim. The selection evidence and future
+  decision procedure live in `docs/MODEL_DECISION.md`. `tt up` and
   worker spawn synchronize the `TT_PI_ENV_VARS` allowlist (default:
   `COSMOSHUB_API_KEY`) into the tmux session so custom-provider auth reaches
   worker REPLs without being stored in tt state. The current private
   `pi-multi-auth` config hides `cosmoshub`, which makes the extension pass this
   environment-authenticated provider through instead of attempting rotation.
+  Existing workers from an older tier registry are labeled `stale:<name>` and
+  blocked from new work until `tt pi clear <cs>` respawns them on `default`.
 
 ## Verified (manual)
 
@@ -122,6 +127,23 @@ session — what a handoff can trust without retesting:
   column (an older pre-timestamp record read `-`/`null`). `tt pi logs --lines N`
   dumped the worker's scrollback (TASK/nonce/WORKER_DONE present); its error
   paths (no callsign / unknown worker / bad `--lines`) all rejected correctly.
+- **CosmosHub Anthropic routing (0.14.1), verified live 2026-07-14** against this
+  repo's session: a fresh no-`--tier` worker launched
+  `cosmoshub/qwen-3.7-max:max`, completed a tracked turn through `/v1/messages`,
+  and reported tier `default`; process command and Pi footer verified routing.
+  Removed-tier workers displayed `stale:<name>`, named dispatch refused them,
+  and auto dispatch skipped them for the default worker. Testing also caught that Pi's
+  Anthropic client appends `/v1/messages`, so its custom-provider base URL must
+  be `https://api.cosmoshub.tech` rather than the OpenCode-style `/v1` base.
+  Red/blue image probes showed Gemini 3.1 Pro and 3.5 Flash identify image
+  content, while DeepSeek V4 Flash and Qwen 3.7 Max do not do so reliably;
+  both Gemini models then returned `red` end-to-end through OpenCode, normal Pi,
+  and Pi's private worker config. Capability declarations match those observed
+  boundaries. A four-task, five-model worker benchmark selected Qwen 3.7 Max as
+  the single default: 4/4 usable answers, approximately 280k Pi-reported tokens,
+  and the best balance of source accuracy, pool reasoning, planning, edit
+  quality, latency, and effective cost. Full evidence is in
+  `docs/MODEL_DECISION.md`.
 
 ## Known limitations / not yet tested
 
@@ -133,24 +155,11 @@ session — what a handoff can trust without retesting:
   windows, revives dead REPLs), but keep `pi`/`claude` out of
   `@resurrect-processes` in `~/.tmux.conf` so stale REPL command lines are never
   resurrected.
-- **Verified live (2026-06-28) — tier-change fix.** Live testing
-  caught the bug: `--tier NAME` on a fresh worker (or after a
-  `tt pi clear`) silently left the REPL on the default model
-  while only swapping the thinking effort. Fixed in 0.13.1:
-  `pi_send_cmd` / `pi_auto_cmd` write the requested tier to
-  `<cs>.tier` BEFORE any spawn work so `start_repl` launches the
-  REPL with the right `--model`; `spawn_pi_window` no longer
-  overwrites the tier. Tier change on a running worker is now
-  REFUSED with a clear error pointing at `tt pi clear <cs>`.
-  For `auto --tier NAME`, a non-matching idle worker is skipped
-  and a fresh worker spawned under cap. End-to-end test pass
-  (minimax-m3:high REPL, response self-identifies as MiniMax-M3;
-  tier-flip on running worker refused; `auto --tier` skipped
-  mismatched idle worker and spawned fresh).
 - The `pi-worker:exclude-*` context filter is syntax/transpile-checked and
-  exercised through a fake `before_agent_start` hook only; no live pi turn was
-  run to confirm the provider payload because that spends pi quota. Existing
-  worker REPLs must be respawned to load it.
+  exercised through a fake `before_agent_start` hook. Live turns have run with
+  the extension loaded, but the final provider payload has not been inspected
+  specifically to prove marked context was absent. Existing worker REPLs must
+  be respawned to load extension changes.
 
 ## How to test
 

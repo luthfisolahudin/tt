@@ -85,7 +85,6 @@ P
                                # dispatch; prints task-id like "alfa-3"
                                # (queues behind a busy worker; lazy-spawns absent)
 tt pi wait alfa                # block on alfa's latest task (task-id optional)
-tt pi send --tier minimax alfa - <<<'...'   # opt into the premium tier (deepseek is default)
 TID=$(tt pi auto - <<<'...')   # let tt pick a worker (idle→spawn→pool); echoes "using pi-X"
 TID=$(tt pi auto --rm - <<<'...')  # fresh ephemeral worker, reaped after
 tt pi send --notify alfa - <<<'...'  # fire-and-forget; pings orchestrator on done
@@ -133,5 +132,5 @@ current state, never history.
 | worker states | `docs/DESIGN.md` worker state detection section |
 | install layout (`~/.local/share/tt/`, symlinks) | `docs/STATUS.md` current state |
 | completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-worker/APPEND_SYSTEM.md` |
-| model tiers or provider | `docs/DESIGN.md` model tier · `README.md` model tier table · consumer skill `references/prompting-and-tiers.md` + `references/prompting-<tier>.md` |
+| model tiers or provider | `docs/DESIGN.md` model tier · `docs/MODEL_DECISION.md` · `README.md` model tier table · consumer skill `references/prompting-and-tiers.md` + `references/prompting-<tier>.md` |
 | `VERSION` bump | `CHANGELOG.md` entry · `git tag -a v<x.y.z>` (see Versioning) |

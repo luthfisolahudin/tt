@@ -4,6 +4,24 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.14.1] — 2026-07-14
+
+- Replaced provider/model-named tiers with one model-agnostic `default` tier,
+  backed by CosmosHub Qwen 3.7 Max at max effort. Removed `minimax` and every
+  `cosmos-*`, `fast`, and `deep` tier.
+- Replaced the duplicated Bash/TypeScript tier mappings with one data-driven
+  registry in `tt`. The worker extension now treats a task's tier as opaque
+  metadata; model and effort remain fixed at REPL launch.
+- Removed-tier workers are labeled `stale:<name>` and cannot receive named,
+  auto-reused, or shared-pool work until `tt pi clear` respawns them on the
+  current default; this prevents old live REPLs from masquerading as Qwen.
+- Switched the required custom Pi `cosmoshub` provider from OpenAI Chat
+  Completions compatibility to Anthropic Messages compatibility.
+- Added `docs/MODEL_DECISION.md`: a dated five-model coding-agent benchmark,
+  price snapshot, weighted decision rubric, and re-evaluation procedure. Qwen
+  won the balanced default; image-capable Gemini models remain available
+  directly through Pi/OpenCode rather than as worker tiers.
+
 ## [0.14.0] — 2026-07-12
 
 - Added seven opt-in CosmosHub benchmark tiers for DeepSeek V4 Flash/Pro,

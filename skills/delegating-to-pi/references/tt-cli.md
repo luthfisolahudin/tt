@@ -19,31 +19,26 @@ removed, and are capped at `min(cores-2, 26)`.
 - **Inspect pool:** `tt pi status`.
 
 Tier flags (`--low`/`--medium`/`--high`/`--xhigh`/`--max`) are **rejected** — thinking
-effort is fixed per tier, not independently settable. Pick a model preset with
-`--tier NAME` on `send`/`auto`:
+effort is fixed by the registry, not independently settable. The only accepted
+explicit preset is:
 
-- `--tier deepseek` (default) — `opencode-go/deepseek-v4-flash` at xhigh effort.
-  Cost-efficient default for high-volume, structured work.
-- `--tier minimax` — `opencode-go/minimax-m3` at high effort. Premium tier for
-  harder or longer-horizon work; positioned above `deepseek` even at lower
-  effort, because the model's higher base capability earns its way.
-- Seven opt-in `cosmos-*` candidate tiers are listed in
-  `prompting-and-tiers.md`; none is a default before benchmark acceptance.
+- `--tier default` — `cosmoshub/qwen-3.7-max` at max effort. This is the only
+  active tier, so normal dispatches should omit the flag.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
-`deepseek`). `--tier NAME` is refused on a worker already running on a
+`default`). `--tier NAME` is refused on a worker already running on a
 different tier (the REPL's `--model` is baked into the launch command) —
 the error points at `tt pi clear <cs>`, which respawns the REPL on a
 fresh session-dir (context is lost, like a normal `clear`). For
 `auto --tier NAME`, a non-matching idle worker is skipped and a fresh
 worker is spawned (under cap) instead, so dispatch always lands on the
-requested tier. See the per-tier prompting guides for how to structure
-prompts.
+requested tier. See [prompting-default.md](prompting-default.md) for how to
+structure prompts.
 
 ## Send + wait
 
 ```sh
-# Named continuation (default tier: deepseek)
+# Named continuation (default model)
 TID=$(tt pi send alfa [--tier NAME] [--notify] - <<'PROMPT'
 TASK: ...
 TARGET STATE: ...
@@ -55,9 +50,6 @@ VERIFY: ...
 PROMPT
 )
 tt pi wait "$TID"        # or: tt pi wait alfa  # latest task for that worker
-
-# Premium tier for harder work
-TID=$(tt pi send alfa --tier minimax - <<<'TASK: ...')
 
 # Let tt choose the worker
 TID=$(tt pi auto [--tier NAME] [--rm|--prefer-fresh] - <<<'TASK: ...')

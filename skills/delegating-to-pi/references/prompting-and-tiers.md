@@ -9,45 +9,18 @@ effort is fixed per tier and cannot be set independently — the legacy
 `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with a pointer
 to `--tier`. Stable tiers:
 
-- **`deepseek`** (default) — `opencode-go/deepseek-v4-flash` at `xhigh`
-  effort. Cost-efficient default for high-volume, structured work. See
-  [prompting-deepseek.md](prompting-deepseek.md) for how to prompt it.
-- **`minimax`** — `opencode-go/minimax-m3` at `high` effort. Premium
-  tier for harder or longer-horizon work; positioned above `deepseek`
-  even at lower effort, because the model's higher base capability
-  earns its way. See [prompting-minimax.md](prompting-minimax.md) for
-  how to prompt it.
-
-Opt-in CosmosHub benchmark tiers have no routing recommendation yet:
-
-- `cosmos-deepseek-flash` — `cosmoshub/deepseek-v4-flash` at `max`
-- `cosmos-deepseek-pro` — `cosmoshub/deepseek-v4-pro` at `max`
-- `cosmos-glm` — `cosmoshub/glm-5.2` at `max`
-- `cosmos-kimi` — `cosmoshub/kimi-k2.7-code` at `high` (always-thinking)
-- `cosmos-mimo` — `cosmoshub/mimo-v2.5` at `xhigh`
-- `cosmos-mimo-pro` — `cosmoshub/mimo-v2.5-pro` at `xhigh`
-- `cosmos-qwen` — `cosmoshub/qwen-3.7-max` at `xhigh`
-
-Use the general prompt contract below for benchmark tiers. Keep default/escalation
-decisions on `deepseek`/`minimax` until benchmark evidence is accepted.
+- **`default`** — `cosmoshub/qwen-3.7-max` at `max` effort. It handles all
+  delegated worker tasks. See [prompting-default.md](prompting-default.md).
 
 Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
 auto`. Omit `--tier` to keep the worker's current tier (a fresh worker
-starts on `deepseek`).
+starts on `default`).
 
-### When to switch
-
-- Default to `deepseek` for high-volume, structured work — bounded
-  refactors, audits, codegen from a clear spec, dead-code sweeps, focused
-  debugs across a handful of files.
-- Switch to `minimax` for harder or longer-horizon work where the
-  model's higher base capability earns its way past its own lower
-  thinking effort (high vs xhigh) — multi-file architecture changes,
-  ambiguous specs, work that needs more judgment, or anything where
-  you've seen `deepseek` miss the right framing.
-- Do not switch tiers to compensate for a bad prompt. If a worker
-  returns `BLOCKED:` or drift, fix the prompt first; only escalate the
-  tier if the same well-written prompt genuinely underperforms.
+There is no escalation tier. Do not compensate for a bad prompt by inventing a
+model override: sharpen the prompt, retry fresh when needed, and keep product or
+architecture judgment with the orchestrator. The
+[model decision](../../../docs/MODEL_DECISION.md) owns the periodic choice of
+default model.
 
 ### Safety-critical prompting
 

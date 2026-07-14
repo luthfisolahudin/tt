@@ -3,43 +3,48 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.14.0"
+VERSION="0.14.1"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
 PI_HISTORY_LIMIT=50000
-# Tier registry: each tier bundles (model, thinking effort) into a named
-# preset. Add a tier here and mirror its effort in the worker extension. The
-# default tier preserves prior behavior (deepseek-v4-flash at xhigh). Note
-# that thinking effort is *fixed per tier* and cannot be set independently
-# (`--low`/`--high`/`--xhigh` are rejected on `send`/`auto`).
-PI_TIER_DEFAULT=deepseek
-PI_TIER_NAMES="deepseek minimax cosmos-deepseek-flash cosmos-deepseek-pro cosmos-glm cosmos-kimi cosmos-mimo cosmos-mimo-pro cosmos-qwen"
-PI_TIER_DEEPSEEK_MODEL="opencode-go/deepseek-v4-flash"
-PI_TIER_DEEPSEEK_EFFORT=xhigh
-PI_TIER_MINIMAX_MODEL="opencode-go/minimax-m3"
-PI_TIER_MINIMAX_EFFORT=high
-PI_TIER_COSMOS_DEEPSEEK_FLASH_MODEL="cosmoshub/deepseek-v4-flash"
-PI_TIER_COSMOS_DEEPSEEK_FLASH_EFFORT=max
-PI_TIER_COSMOS_DEEPSEEK_PRO_MODEL="cosmoshub/deepseek-v4-pro"
-PI_TIER_COSMOS_DEEPSEEK_PRO_EFFORT=max
-PI_TIER_COSMOS_GLM_MODEL="cosmoshub/glm-5.2"
-PI_TIER_COSMOS_GLM_EFFORT=max
-PI_TIER_COSMOS_KIMI_MODEL="cosmoshub/kimi-k2.7-code"
-PI_TIER_COSMOS_KIMI_EFFORT=high
-PI_TIER_COSMOS_MIMO_MODEL="cosmoshub/mimo-v2.5"
-PI_TIER_COSMOS_MIMO_EFFORT=xhigh
-PI_TIER_COSMOS_MIMO_PRO_MODEL="cosmoshub/mimo-v2.5-pro"
-PI_TIER_COSMOS_MIMO_PRO_EFFORT=xhigh
-PI_TIER_COSMOS_QWEN_MODEL="cosmoshub/qwen-3.7-max"
-PI_TIER_COSMOS_QWEN_EFFORT=xhigh
+# Tier registry: name|provider/model|thinking effort. This is the only runtime
+# mapping; the worker extension treats tier names as opaque metadata. Thinking
+# effort is fixed per tier and cannot be set independently.
+PI_TIER_DEFAULT=default
+PI_TIER_REGISTRY=(
+  "default|cosmoshub/qwen-3.7-max|max"
+)
+
+tier_field() {
+  local wanted=$1 field=$2 row name model effort
+  for row in "${PI_TIER_REGISTRY[@]}"; do
+    IFS='|' read -r name model effort <<< "$row"
+    [[ $name == "$wanted" ]] || continue
+    case $field in
+      model)  printf '%s' "$model" ;;
+      effort) printf '%s' "$effort" ;;
+      *) return 1 ;;
+    esac
+    return 0
+  done
+  return 1
+}
+
+tier_names() {
+  local row name rest out=""
+  for row in "${PI_TIER_REGISTRY[@]}"; do
+    IFS='|' read -r name rest <<< "$row"
+    out+="${out:+ }$name"
+  done
+  printf '%s' "$out"
+}
+
+PI_TIER_NAMES=$(tier_names)
 
 # Validate a tier name. Returns 0 for known tiers, 1 otherwise.
 tier_is_known() {
-  case $1 in
-    deepseek|minimax|cosmos-deepseek-flash|cosmos-deepseek-pro|cosmos-glm|cosmos-kimi|cosmos-mimo|cosmos-mimo-pro|cosmos-qwen) return 0 ;;
-    *) return 1 ;;
-  esac
+  tier_field "$1" model >/dev/null
 }
 
 # Resolve a tier name to its model provider (the `--model` value on the pi
@@ -47,35 +52,13 @@ tier_is_known() {
 # empty/unknown input so legacy `<cs>.tier` files and external state keep
 # working.
 tier_model() {
-  case ${1:-$PI_TIER_DEFAULT} in
-    deepseek) printf '%s' "$PI_TIER_DEEPSEEK_MODEL" ;;
-    minimax)  printf '%s' "$PI_TIER_MINIMAX_MODEL"  ;;
-    cosmos-deepseek-flash) printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_FLASH_MODEL" ;;
-    cosmos-deepseek-pro)   printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_PRO_MODEL" ;;
-    cosmos-glm)            printf '%s' "$PI_TIER_COSMOS_GLM_MODEL" ;;
-    cosmos-kimi)           printf '%s' "$PI_TIER_COSMOS_KIMI_MODEL" ;;
-    cosmos-mimo)           printf '%s' "$PI_TIER_COSMOS_MIMO_MODEL" ;;
-    cosmos-mimo-pro)       printf '%s' "$PI_TIER_COSMOS_MIMO_PRO_MODEL" ;;
-    cosmos-qwen)           printf '%s' "$PI_TIER_COSMOS_QWEN_MODEL" ;;
-    *)        printf '%s' "$PI_TIER_DEEPSEEK_MODEL" ;;
-  esac
+  tier_field "${1:-$PI_TIER_DEFAULT}" model || tier_field "$PI_TIER_DEFAULT" model
 }
 
 # Resolve a tier name to its thinking effort (the `:effort` suffix and the
-# value passed to pi.setThinkingLevel). Same fallback rules.
+# value baked into the REPL's `--model` argument). Same fallback rules.
 tier_effort() {
-  case ${1:-$PI_TIER_DEFAULT} in
-    deepseek) printf '%s' "$PI_TIER_DEEPSEEK_EFFORT" ;;
-    minimax)  printf '%s' "$PI_TIER_MINIMAX_EFFORT"  ;;
-    cosmos-deepseek-flash) printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_FLASH_EFFORT" ;;
-    cosmos-deepseek-pro)   printf '%s' "$PI_TIER_COSMOS_DEEPSEEK_PRO_EFFORT" ;;
-    cosmos-glm)            printf '%s' "$PI_TIER_COSMOS_GLM_EFFORT" ;;
-    cosmos-kimi)           printf '%s' "$PI_TIER_COSMOS_KIMI_EFFORT" ;;
-    cosmos-mimo)           printf '%s' "$PI_TIER_COSMOS_MIMO_EFFORT" ;;
-    cosmos-mimo-pro)       printf '%s' "$PI_TIER_COSMOS_MIMO_PRO_EFFORT" ;;
-    cosmos-qwen)           printf '%s' "$PI_TIER_COSMOS_QWEN_EFFORT" ;;
-    *)        printf '%s' "$PI_TIER_DEEPSEEK_EFFORT" ;;
-  esac
+  tier_field "${1:-$PI_TIER_DEFAULT}" effort || tier_field "$PI_TIER_DEFAULT" effort
 }
 TT_STATE_DIR_BASE="${TT_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/tt}"
 TT_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/tt"
@@ -418,15 +401,33 @@ down_cmd() {
 # ---------- pi state ----------
 
 current_tier() {
-  # Returns the worker's tier NAME (not the thinking effort). Normalizes
-  # legacy `xhigh`/empty values to the default tier so state dirs from
-  # before the tier-preset era keep working without manual cleanup.
+  # Returns the worker's tier NAME (not the thinking effort). Missing or
+  # removed values resolve to the default for a fresh/restarted REPL; live
+  # workers with removed values are separately blocked as stale until clear.
   local t
   t=$(cat "$(state_dir)/$1.tier" 2>/dev/null || true)
   if tier_is_known "$t"; then
     printf '%s' "$t"
   else
     printf '%s' "$PI_TIER_DEFAULT"
+  fi
+}
+
+stored_tier() {
+  cat "$(state_dir)/$1.tier" 2>/dev/null || true
+}
+
+worker_has_stale_tier() {
+  local t; t=$(stored_tier "$1")
+  [[ -n $t ]] && ! tier_is_known "$t"
+}
+
+tier_label() {
+  local t; t=$(stored_tier "$1")
+  if [[ -n $t ]] && ! tier_is_known "$t"; then
+    printf 'stale:%s' "$t"
+  else
+    printf '%s' "${t:-$PI_TIER_DEFAULT}"
   fi
 }
 current_gen()  { cat "$(state_dir)/$1.gen"  2>/dev/null || printf '0'; }
@@ -542,6 +543,7 @@ start_repl() {
   s=$(session_name)
   ensure_pi_worker_dir
   tier=$(current_tier "$name")
+  printf '%s' "$tier" > "$(state_dir)/$name.tier"
   sdir=$(pi_session_dir "$name"); mkdir -p "$sdir"
   # Reset the control channel for the fresh REPL: drop any pending queue
   # (a respawn means fresh context, so queued work is abandoned), the steer
@@ -888,10 +890,13 @@ pi_send_cmd() {
   fi
   valid_callsign "$name" || die "invalid callsign: $name"
   require_session
+  if window_exists "pi-$name" && worker_has_stale_tier "$name"; then
+    die "pi-$name uses removed tier '$(stored_tier "$name")'; run \`tt pi clear $name\` before dispatching new work"
+  fi
   # Tier-change guard: refuse if the worker already exists on a different
   # tier. The REPL is launched with --model baked into the command line,
-  # so changing the tier on a running worker would silently swap the
-  # thinking effort via setThinkingLevel while leaving the model stale.
+  # so changing the tier on a running worker cannot change its model or
+  # thinking effort.
   # Use `tt pi clear <cs>` to respawn on the new tier (loses context).
   if [[ -n $req_tier ]] && window_exists "pi-$name"; then
     local cur_tier; cur_tier=$(current_tier "$name")
@@ -900,8 +905,9 @@ pi_send_cmd() {
     fi
   fi
   # Write the requested tier to <cs>.tier BEFORE any spawn work, so a
-  # fresh REPL launches with the right model. (Empty req_tier = no-op;
-  # the worker keeps its current tier, written by spawn_pi_window.)
+  # fresh REPL launches with the right model. Empty req_tier is a no-op:
+  # an existing worker keeps its tier, while a missing tier file resolves to
+  # the default in current_tier().
   if [[ -n $req_tier ]]; then
     printf '%s' "$req_tier" > "$(state_dir)/$name.tier"
   fi
@@ -914,12 +920,11 @@ pi_send_cmd() {
     spawn_pi_window "$name"
   fi
 
-  # Reasoning effort is a runtime knob: the tier travels in the queued task
-  # and the tt-worker extension applies it via setThinkingLevel — no
-  # respawn, pi context is preserved. ensure_repl_ready waits for the
-  # REPL to be ready (relaunching only one that has actually died), so a
-  # send issued while `tt up`'s background boot is still in flight just
-  # blocks here until the worker is up.
+  # The model and effort are fixed when the REPL launches. The tier still
+  # travels with the task as dispatch metadata. ensure_repl_ready waits for
+  # the REPL to be ready (relaunching only one that has actually died), so a
+  # send issued while `tt up`'s background boot is still in flight blocks
+  # here until the worker is up.
   local cur_tier; cur_tier=$(current_tier "$name")
   local tier="${req_tier:-$cur_tier}"
   ensure_repl_ready "$name"
@@ -937,7 +942,7 @@ pi_send_cmd() {
 # Assign id `<name>-<turn>`, persist the prompt (+nonce), log the task, and
 # append it to the worker's own queue dir; echo the id. Assumes pi-<name> is
 # ready. Shared by `send` and the worker-assigned path of `auto`. Each queue
-# file is line 1 = `<task id> <tier> <nonce>`, remainder = prompt body; the
+# file is line 1 = `<task id> <tier> <nonce> [notify]`, remainder = prompt body; the
 # extension validates nonce + terminal-position on agent_end.
 enqueue_to_worker() {
   local name=$1 tier=$2 src=$3 notify=${4:-0}
@@ -1076,6 +1081,7 @@ pi_auto_cmd() {
     for n in "${NATO[@]}"; do
       window_exists "pi-$n" || continue
       [[ $(worker_state "$n") == idle ]] || continue
+      worker_has_stale_tier "$n" && continue
       if [[ -n $req_tier ]]; then
         local nt; nt=$(current_tier "$n")
         [[ $nt == "$req_tier" ]] || continue
@@ -1110,6 +1116,15 @@ pi_auto_cmd() {
   if [[ -n $req_tier ]]; then
     die "auto --tier $req_tier: no compatible worker (all on different tiers or busy at cap); free a worker (\`tt pi rm <cs>\`) or use \`tt pi send <cs> --tier $req_tier\` to force a fresh worker"
   fi
+
+  # A pooled task can be stolen by any worker. Refuse while a worker still runs
+  # a removed tier, otherwise a nominally-default task could execute on its old
+  # launch model. Clearing that worker respawns it on the current default.
+  for n in "${NATO[@]}"; do
+    window_exists "pi-$n" || continue
+    worker_has_stale_tier "$n" || continue
+    die "auto: pi-$n uses removed tier '$(stored_tier "$n")'; run \`tt pi clear $n\` before queueing shared-pool work"
+  done
 
   # Everyone exists and is busy at the cap → shared pool queue.
   local tier="${req_tier:-$PI_TIER_DEFAULT}"
@@ -1642,7 +1657,7 @@ pi_status_cmd() {
     for n in "${NATO[@]}"; do
       window_exists "pi-$n" || continue
       local s tier gen last_id reason="" q el="null"
-      s=$(worker_state "$n"); tier=$(current_tier "$n"); gen=$(current_gen "$n")
+      s=$(worker_state "$n"); tier=$(tier_label "$n"); gen=$(current_gen "$n")
       last_id=$(last_task_id "$n" 2>/dev/null || true)
       q=$(queue_depth "$n")
       [[ $s == busy ]] && el=$(secs_since_file "$(state_dir)/$n.busy") || el="null"
@@ -1664,7 +1679,7 @@ pi_status_cmd() {
     window_exists "pi-$n" || continue
     local s tier gen last_id="-" reason="" q el_disp="-" q_disp="-"
     s=$(worker_state "$n")
-    tier=$(current_tier "$n")
+    tier=$(tier_label "$n")
     gen=$(current_gen "$n")
     local lt
     if lt=$(last_task_id "$n"); then
@@ -2315,33 +2330,19 @@ PI WORKER VERBS
        legacy --low/--medium/--high/--xhigh/--max flags are rejected.
        Stable tiers:
 
-        deepseek  default. opencode-go/deepseek-v4-flash at xhigh effort.
-                  Cost-efficient default for high-volume, structured work.
-        minimax   opencode-go/minimax-m3 at high effort. Premium tier —
-                  pick for harder, longer-horizon, or more judgment-heavy
-                  work where the model's higher base capability earns
-                  its way past the lower thinking effort.
-
-       CosmosHub benchmark tiers (opt-in; no default recommendation yet):
-
-         cosmos-deepseek-flash  cosmoshub/deepseek-v4-flash at max
-         cosmos-deepseek-pro    cosmoshub/deepseek-v4-pro at max
-         cosmos-glm             cosmoshub/glm-5.2 at max
-         cosmos-kimi            cosmoshub/kimi-k2.7-code at high
-         cosmos-mimo            cosmoshub/mimo-v2.5 at xhigh
-         cosmos-mimo-pro        cosmoshub/mimo-v2.5-pro at xhigh
-         cosmos-qwen            cosmoshub/qwen-3.7-max at xhigh
+        default  cosmoshub/qwen-3.7-max at max effort. Selected for all
+                 delegated work; see docs/MODEL_DECISION.md.
 
       Pick a tier per dispatch with --tier NAME on `send`/`auto`. Omit
       --tier to keep the worker's current tier. A fresh worker starts on
-      the default (deepseek). Tier change on a running worker is
+      the default. Tier change on a running worker is
       REFUSED (the model is baked into the REPL's --model at launch) —
       the error points at `tt pi clear <cs>`, which respawns the REPL
       on the new tier (loses context, like a normal clear). For
       `auto --tier NAME`, a non-matching idle worker is skipped and a
       fresh worker is spawned (under cap) instead. See
-      references/prompting-deepseek.md and references/prompting-minimax.md
-      for per-tier prompting guidance.
+      references/prompting-default.md for prompting guidance and
+      docs/MODEL_DECISION.md for the model-selection record.
 
   --notify (on send / auto)
       Fire-and-forget completion ping: when the task finishes, the worker

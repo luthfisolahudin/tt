@@ -115,7 +115,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses while the worker is `busy`. |
 | `tt pi resume <cs>` | Recover an **interrupted** worker without a context wipe: re-drive its task to completion (`interrupted → busy → done`). Needs the REPL alive. In the worker's own pane, `/tt-resume` does the same. |
 | `tt pi send [--tier NAME] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--tier NAME`: pick a model preset (see [Model tier](#model-tier)) — **refused** if the worker already runs a different tier. `--notify`: ping the orchestrator on completion. |
-| `tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. `--tier NAME`: pick a model preset; an idle worker on another tier is skipped in favour of a fresh spawn. `--prefer-fresh`: spawn a new worker before reusing an idle one (parallelism + clean context), under the cap. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. `--json`: emit `{worker,task_id,routed}` (routed = `idle\|spawn\|pool\|ephemeral`). |
+| `tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. The only accepted tier is `default`, so normally omit `--tier`. `--prefer-fresh`: spawn a new worker before reusing an idle one (parallelism + clean context), under the cap. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. `--json`: emit `{worker,task_id,routed}` (routed = `idle\|spawn\|pool\|ephemeral`). |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |
 | `tt pi steer-all (FILE\|-)` | Steer every live worker. Same as `tt pi steer all`. |
 | `tt pi wait [--timeout N] [--json] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id (any id resolves, even an old one), a pool id, or `all` (join all busy). `--json`: result envelope(s). `all` prints a one-line tally on stderr and exits non-zero if any worker ended error/other/down/timeout. |
@@ -144,24 +144,28 @@ is **fixed per tier** and cannot be set independently. Pass `--tier NAME` on
 `tt pi send` / `tt pi auto` to pick one; omit `--tier` to keep the worker's
 current tier (a fresh worker starts on the default):
 
-| Tier | Model | Thinking effort | When to pick |
-|------|-------|-----------------|--------------|
-| `deepseek` (default) | `opencode-go/deepseek-v4-flash` | `xhigh` | Cost-efficient default for high-volume, structured work. |
-| `minimax` | `opencode-go/minimax-m3` | `high` | Premium tier for harder or longer-horizon work; positioned above `deepseek` even at lower effort, because the model's higher base capability earns its way. |
+| Tier | Model | Thinking effort | Role |
+|------|-------|-----------------|------|
+| `default` | `cosmoshub/qwen-3.7-max` | `max` | All delegated worker tasks. |
 
-`tt --help` also lists a set of opt-in `cosmos-*` benchmark tiers. They exist to
-compare candidate models and are not a supported choice — stick to the two above.
+The worker model is text-only. Pi's shared CosmosHub model registry exposes
+image-capable Gemini models, but `tt` does not route workers to them. The dated
+benchmark, price snapshot, and re-evaluation rules live in
+[`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with
-a pointer to `--tier`. See per-tier prompting guides in
+a pointer to `--tier`. See the prompting guide in
 `skills/delegating-to-pi/references/`.
 
 **A tier cannot be changed on a running worker.** The model is baked into the
 REPL's `--model` at launch, so `tt pi send --tier NAME <cs>` against a worker
-already on another tier is *refused* rather than silently dispatched to the
+already on a different tier (if the registry later gains one) is *refused*
+rather than silently dispatched to the
 wrong model. Respawn on the new tier with `tt pi clear <cs>` (loses context).
 `tt pi auto --tier NAME` sidesteps this by skipping non-matching idle workers
 and spawning fresh; at the cap, with no compatible worker free, it refuses too.
+After a tier is removed, existing workers on it show `stale:<name>` and reject
+new work until `tt pi clear <cs>` respawns them on the current default.
 
 Custom-provider credentials needed inside worker REPLs are synchronized from
 the current shell into the tmux session on `tt up` and before worker spawn.
