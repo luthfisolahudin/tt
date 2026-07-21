@@ -70,9 +70,9 @@ history in `CHANGELOG.md`.
   decision procedure live in `docs/MODEL_DECISION.md`. `tt up` and
   worker spawn synchronize the `TT_PI_ENV_VARS` allowlist (default:
   `COSMOSHUB_API_KEY`) into the tmux session so custom-provider auth reaches
-  worker REPLs without being stored in tt state. The current private
-  `pi-multi-auth` config hides `cosmoshub`, which makes the extension pass this
-  environment-authenticated provider through instead of attempting rotation.
+  worker REPLs without being stored in tt state. `pi-multi-auth` is not
+  installed in the private worker runtime, so the environment-authenticated
+  `cosmoshub` provider is passed through directly.
   Existing workers from an older tier registry are labeled `stale:<name>` and
   blocked from new work until `tt pi clear <cs>` respawns them on `default`.
 
