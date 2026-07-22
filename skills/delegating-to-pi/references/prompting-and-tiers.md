@@ -9,8 +9,9 @@ effort is fixed per tier and cannot be set independently — the legacy
 `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with a pointer
 to `--tier`. Stable tiers:
 
-- **`default`** — `cosmoshub/qwen-3.7-max` at `max` effort. It handles all
-  delegated worker tasks. See [prompting-default.md](prompting-default.md).
+- **`default`** — `cliproxy/gemini-3.6-flash-high` at `high` effort. It handles
+  all delegated worker tasks and accepts text/image input. See
+  [prompting-default.md](prompting-default.md).
 
 Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
 auto`. Omit `--tier` to keep the worker's current tier (a fresh worker
@@ -44,8 +45,8 @@ TARGET STATE: <expected product/technical end-state>
 FILES / SCOPE: <exact/path.ts or bounded area; use SCOPE/SOURCES if files are unknown>
 CHANGE: <specific change; avoid "improve/fix/clean up/better">
 DO NOT: <explicit exclusions and boundaries>
-SUCCESS: <one-line pass/fail check the worker can verify themselves>
-VERIFY: <recommended self-check the worker runs to prove correctness>
+SUCCESS: <enumerated acceptance requirements: R1, R2, ...>
+VERIFY: <required for code changes: one check per requirement, scoped diff inspection, and relevant tests>
 OUTPUT: <optional report/artifact format cap>
 ```
 
@@ -85,22 +86,39 @@ and product choices the worker must not reinterpret.
 **own work** before reporting done (and its own diff for code changes). If the
 worker cannot self-verify without outside help, it is too vague.
 
+When a requirement has independent dimensions or cases, enumerate each one in
+`SUCCESS` or `VERIFY`. Do not expect a generic phrase such as "conflicting
+inputs are rejected" to prove that source, target, and amount conflicts were
+all exercised; a worker may correctly implement all three while testing only a
+representative subset.
+
   ✓ "No remaining references to the old function name"
   ✓ "Build passes with no new warnings"
   ✓ "Every renamed export has exactly one call-site updated"
   ✗ "Code is cleaner" (not falsifiable)
   ✗ "User should have a better experience" (not checkable by the worker)
 
-**VERIFY** (recommended — include it) — A self-check the worker runs to confirm
-correctness before reporting `WORKER_DONE`. Can be:
+**VERIFY** — Required for code changes and recommended for read-only tasks. It
+is the self-check the worker runs to confirm correctness before reporting
+`WORKER_DONE`. It MUST:
+
+- map each `SUCCESS` item to a targeted test or review check;
+- inspect the scoped diff, or re-read every changed file when no diff tool is available;
+- run the relevant behavioral and static checks;
+- treat a requested command that cannot be invoked as a failed check.
+
+It can use:
 
 - A **shell command**: `pnpm tsc --noEmit`, `cargo check`, `grep -r OLD_NAME src/`
 - A **prompted review step**: "Re-read your diff and check for any stale
     imports" or "Search all files for remaining references to the old name"
 
-  Include VERIFY whenever there is something the worker can mechanically or
-  analytically check. If you skip it, you accept that the worker will not
-  self-correct.
+  Every requested check must pass. If one fails, cannot run, or is skipped, fix
+  and rerun it when the task permits; otherwise report the check and cause in
+  `notes`. Do not silently replace a requested check with a weaker substitute.
+  `notes: none` is valid only when every requested check passed and every
+  requested fact was established. A later green check does not erase an
+  earlier failure.
 
 **OUTPUT** (optional) — Caps what the worker returns. Use when the default
 terminal-block verbosity is more than you need.
@@ -117,10 +135,25 @@ Read your prompt one more time and check each:
    If you mean "every location" and you wrote "the location", you will get one.
 5. **DO NOT: did you block likely drift?** Name deferred scope and things not to redesign.
 6. **SUCCESS: can the worker check this against its own work?** If they need
-   a human reviewer, it is too vague.
+   a human reviewer, it is too vague. Does every distinct required case map to
+   an explicit assertion or check?
 7. **VERIFY: is there a shell command or review step you can add?** Type-check,
    grep for stale refs, re-read the diff — include it.
 8. **Would you send a follow-up to fix this?** If yes, fix the prompt instead.
+
+### Follow-ups
+
+Reuse the full prompt contract for corrective work. Reference the prior task as
+evidence, not as unstated context:
+
+```text
+CONTEXT / SOURCES: Review of alfa-3 found R1 source-conflict coverage missing;
+R2 target and R3 amount already pass.
+```
+
+Authorize only the unresolved delta and give it its own `SUCCESS` and `VERIFY`.
+Persistent REPL context helps continuity, but it does not replace a
+self-contained prompt.
 
 ### Output caps
 
@@ -148,4 +181,9 @@ Search/exploration split:
 - `BLOCKED: <reason>` — ambiguous/impossible; rewrite the task.
 - `WORKER_DONE\nfiles_changed: ...\nsummary: ...\nnotes: ...` — completed; extract the facts, verify as needed, then report concisely.
 
-Do not accept a worker result just because it says `WORKER_DONE`. For code changes, inspect `git diff` or targeted reads; for risky behavior, run checks or reproduce the relevant scenario when practical.
+Do not accept a worker result just because it says `WORKER_DONE`. For code
+changes, acceptance requires both implementation coverage and test/assertion
+coverage for every `SUCCESS` item. Inspect the actual diff or targeted files,
+then run the relevant checks independently. If a required command failed, was
+omitted, or the terminal report conflicts with observed execution, inspect
+`tt pi logs <cs>` before acceptance. Never infer success from `notes: none`.

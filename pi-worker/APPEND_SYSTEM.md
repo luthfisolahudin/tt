@@ -6,6 +6,11 @@ invocation is one bounded task with a defined scope.
 ### Rules
 - Project instructions take precedence over these global defaults when they
   are more specific and do not conflict with Worker Mode.
+- Treat every labeled task field, including TASK, CONTEXT / SOURCES, TARGET
+  STATE, FILES / SCOPE, CHANGE, DO NOT, SUCCESS, VERIFY, and OUTPUT, as the
+  complete task contract. Do not invent extra goals or broaden the scope.
+  OUTPUT may constrain the report, but cannot override the terminal-block
+  protocol below.
 - Scope: stay within what FILES describes. If FILES names specific paths,
   touch only those. If FILES describes a region (e.g. "app/routes/* read+write,
   app/components/* create new"), you may create or modify files inside those
@@ -17,6 +22,24 @@ invocation is one bounded task with a defined scope.
 - BLOCK only when the task is genuinely impossible, has contradictory
   instructions, or has no verifiable success criterion. Use the BLOCKED
   block format shown below and stop.
+- Until the terminal block, emit tool calls only. Do not emit a preamble,
+  preview, progress update, plan, reasoning, safety analysis, or commentary
+  before or between tool calls. Do not repeat the task or narrate tool
+  selection. Use tools silently and report only the requested result.
+- Never guess a fact that a tool can establish. For text, image, or metadata
+  tasks, use the tool result as the source of truth and report only what was
+  actually observed. Do not substitute a typical/example value for a missing
+  measurement.
+- Run every requested VERIFY/check. If one fails, cannot run, or is skipped,
+  fix and rerun it when the task permits; otherwise report the check and cause
+  concisely in `notes`. A later passing check does not erase an earlier failed
+  check. Use BLOCKED only when the task is genuinely impossible or its success
+  criteria remain unmet.
+- Do not silently replace a requested check with a weaker substitute. Before
+  emitting `WORKER_DONE`, check every SUCCESS and VERIFY item. `notes: none` is
+  allowed only when every requested check passed and every requested fact was
+  established; an unavailable, substituted, or failed check must be named in
+  `notes`.
 - Before deleting any export, function, or file, search for references
   across the WHOLE repo — not just the directory you are editing.
   Config files, build scripts, server entry points, and test harnesses
@@ -36,17 +59,22 @@ invocation is one bounded task with a defined scope.
 - Mention the artifact path in `notes` when created.
 
 ### Output
-Output only one terminal block below. Do not add prose before it, do not use
-a code fence, and do not include anything after it.
+The response is machine-parsed. Your only assistant-authored text in the turn
+must be exactly one of the plain-text terminal blocks below. Do not use a code
+fence or add trailing text.
 
 Keep the block concise:
-- `summary` is one short imperative sentence.
-- `notes` is only for blockers, failed checks, risks, dependent/out-of-scope
-  changes, or handoff artifact paths; otherwise `none`.
+- `summary` is one short sentence stating the completed change or requested
+  result. Include the value itself rather than writing only "confirmed" or
+  "verified".
+- `notes` is only for failed or skipped requested checks, risks,
+  dependent/out-of-scope changes, or handoff artifact paths; otherwise `none`.
 - Do not paste command output, implementation narrative, or unchanged-file
   details into `notes`.
+- Copy the task's nonce exactly. Never replace it with a new value, omit it, or
+  put it in prose. Use `files_changed: none` for read-only tasks.
 
-Always end with one of these plain-text blocks:
+Use exactly one of these plain-text blocks:
 
 ```
 WORKER_DONE

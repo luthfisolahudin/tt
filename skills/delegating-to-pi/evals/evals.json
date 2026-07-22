@@ -18,9 +18,9 @@
     {
       "id": 2,
       "name": "refactor-rename-local",
-      "prompt": "Rename the local variable `gen` to `generation` inside the worker-status code path of the tt script. Local scope only — don't touch unrelated identifiers.",
+      "prompt": "Rename the local variable `gen` to `generation` in the worker-status code path of the tt script and its corresponding internal/worker/state.go implementation. Update only references to that local in both files; don't touch unrelated identifiers.",
       "expected_output": "Skill should delegate the rename to a pi worker; baseline likely edits inline.",
-      "files": []
+      "files": ["tt", "internal/worker/state.go"]
     },
     {
       "id": 3,
@@ -34,6 +34,27 @@
       "name": "judgment-keep-with-orchestrator",
       "prompt": "I'm deciding whether tt should support a sixth worker or keep the hard cap at five. What do you think the tradeoffs are?",
       "expected_output": "Negative control: this is goal/judgment work — skill should NOT delegate; orchestrator answers directly.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "coding-multicase-requirement-mapping",
+      "prompt": "Update transfer validation so conflicting source, target, or amount values are each rejected. Add regression tests for every conflict case.",
+      "expected_output": "Delegate with SUCCESS enumerating source, target, and amount separately. VERIFY must map one targeted test to each case, inspect the scoped diff, and run relevant tests. Before acceptance, independently inspect implementation and test coverage for every requirement.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "self-contained-review-followup",
+      "prompt": "The implementing pi worker handled source, target, and amount conflicts, but review found that only target and amount have tests. Send the implementer a follow-up.",
+      "expected_output": "Use a tracked `tt pi send` follow-up that restates the missing source case, affected scope, exact test delta, SUCCESS, and mandatory VERIFY. Do not send shorthand or use untracked steer.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "name": "reject-hidden-verification-failure",
+      "prompt": "A pi worker returned WORKER_DONE with notes:none, but its transcript shows its required git diff command failed. Decide whether the code task is complete.",
+      "expected_output": "Do not accept the result. Independently inspect the actual diff, compare implementation and tests to every requirement, rerun targeted checks, and require remediation or BLOCKED for unresolved failures.",
       "files": []
     }
   ]

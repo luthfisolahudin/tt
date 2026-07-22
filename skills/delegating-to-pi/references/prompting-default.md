@@ -1,7 +1,11 @@
 # Prompting the default worker
 
-The default worker runs `cosmoshub/qwen-3.7-max` at **max** effort for all
-delegated work. Normal dispatches omit `--tier`.
+The default worker runs `cliproxy/gemini-3.6-flash-high` at **high** effort for
+all delegated work. Normal dispatches omit `--tier`.
+
+The worker accepts text and image input. For an image on disk, put its path in
+`FILES / SCOPE` and explicitly ask the worker to read it. Audio, video, and
+native document attachments are not part of the Pi worker input contract.
 
 For the tier overview see [prompting-and-tiers.md](prompting-and-tiers.md).
 For the general prompt contract (`TASK` / `TARGET STATE` / `FILES / SCOPE` / `CHANGE` / `DO NOT` / `SUCCESS` / `VERIFY`)
@@ -10,10 +14,9 @@ this file only covers what the current default specifically needs.
 
 ## Model-specific
 
-- **Max effort already plans and self-checks.** Do not ask the model
-  to "think step by step" or "show your reasoning" — the runtime is
-  doing that. Redundant instruction degrades output. Spend your
-  prompt budget on **scope precision** and **verifiability** instead.
+- **High effort is already configured.** Do not ask the model to "think step
+  by step", "show your reasoning", or provide chain-of-thought. Spend prompt
+  space on **scope precision** and **verifiability** instead.
 - **VERIFY is high-leverage here.** The model is good at executing
   mechanical checks when told exactly what to run. A concrete
   `VERIFY:` line (`pnpm tsc --noEmit`, `grep -r OLD_NAME src/`,
@@ -35,7 +38,8 @@ CHANGE: Rename `parseArgs` to `parseCliArgs` in src/cli/parse.ts and update
   every importer to use the new name.
 DO NOT: Do not change the function signature or behavior. Do not rename unrelated `parse*` helpers.
 SUCCESS: `grep -r "parseArgs" src/ tests/` returns zero matches.
-VERIFY: Run `pnpm typecheck` and `pnpm test src/cli/`. Both must pass.
+VERIFY: Re-read the scoped diff, then run `pnpm typecheck` and `pnpm test src/cli/`.
+  All checks must pass.
 OUTPUT: Terminal block only; notes only for any renames you skipped and why.
 ```
 

@@ -15,15 +15,17 @@ removed, and are capped at `min(cores-2, 26)`.
 - **Fresh persistent worker:** `tt pi auto --prefer-fresh -` — useful for fan-out
   or when old context could bias results, but you want the worker to remain.
 - **Continue a specific context:** `tt pi send <cs> -` — lazy-spawns if absent and
-  queues behind that worker's current turn.
+  queues behind that worker's current turn. Use a full, self-contained prompt
+  contract for corrective follow-ups; persistent context is not a substitute.
 - **Inspect pool:** `tt pi status`.
 
 Tier flags (`--low`/`--medium`/`--high`/`--xhigh`/`--max`) are **rejected** — thinking
 effort is fixed by the registry, not independently settable. The only accepted
 explicit preset is:
 
-- `--tier default` — `cosmoshub/qwen-3.7-max` at max effort. This is the only
-  active tier, so normal dispatches should omit the flag.
+- `--tier default` — `cliproxy/gemini-3.6-flash-high` at high effort. This is
+  the only active tier, so normal dispatches should omit the flag. Provider
+  catalogs are discovered dynamically, but the default model is pinned.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
 `default`). `--tier NAME` is refused on a worker already running on a
@@ -68,7 +70,8 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
 - `tt pi collect` — join uncollected results across a fan-out, including tasks
   that may have finished before you waited. Add `--json` if needed.
 - `tt pi steer <cs> - <<<'...'` — inject a correction into the current turn
-  (run-now). `send` queues for the next turn instead.
+  (run-now). `send` queues for the next turn instead; use `send` for review
+  remediation that needs its own tracked result and acceptance checks.
 - `tt pi logs <cs>` — read-only REPL scrollback for a slow/wedged-looking worker.
 - `tt pi resume <cs>` — re-drive an `interrupted` task with context intact, then
   `tt pi wait <cs>`.
