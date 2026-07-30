@@ -11,8 +11,8 @@ type Tier struct {
 var TierRegistry = map[string]Tier{
 	"default": {
 		Name:   "default",
-		Model:  "cosmoshub/qwen-3.7-max",
-		Effort: "max",
+		Model:  "cliproxy/gemini-3.6-flash-high",
+		Effort: "high",
 	},
 }
 

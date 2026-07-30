@@ -7,20 +7,21 @@ this is the evidence and decision record, not a second configuration surface.
 ## Current decision
 
 - Tier: `default`
-- Provider/model: `cosmoshub/qwen-3.7-max`
+- Provider/model: `cliproxy/gemini-3.6-flash-high`
 - API: Anthropic Messages
-- Thinking effort: `max`
-- Decided: 2026-07-14
+- Thinking effort: `high`
+- Input: text and image
+- Decided: 2026-07-22
 
-Qwen 3.7 Max is the best current balance for delegated coding work. It completed
-all four benchmark tasks, gave the most accurate shared-pool analysis, remained
-competitive on planning and editing, and used almost the same measured tokens
-as DeepSeek V4 Pro while finishing faster. The small unit-price differences are
-not large enough to outweigh correctness, tool reliability, or retries.
+This switch is operator-directed rather than the result of a new comparative
+benchmark. The local CLIProxyAPI catalog is discovered dynamically, but the
+default model is pinned so a changing upstream catalog cannot silently change
+worker behavior. The prior CosmosHub benchmark remains below as historical
+selection evidence.
 
-The worker remains text-only. Use Gemini directly through Pi or OpenCode when a
-task genuinely requires image input; do not add a permanent vision tier without
-a recurring worker use case and benchmark evidence.
+Pi's model contract supports text and image input only. Audio, video, and native
+document inputs remain outside the worker path even when an upstream model
+advertises them.
 
 ## Decision rule
 

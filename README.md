@@ -146,11 +146,14 @@ current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
-| `default` | `cosmoshub/qwen-3.7-max` | `max` | All delegated worker tasks. |
+| `default` | `cliproxy/gemini-3.6-flash-high` | `high` | All delegated worker tasks. |
 
-The worker model is text-only. Pi's shared CosmosHub model registry exposes
-image-capable Gemini models, but `tt` does not route workers to them. The dated
-benchmark, price snapshot, and re-evaluation rules live in
+The default worker accepts text and images. Pi auto-discovers the current
+catalogs from the local CLIProxyAPI and CosmosHub Anthropic-compatible
+endpoints, with cached/static fallbacks when discovery is unavailable. Pi's
+message model currently supports only text and image inputs; audio, video, and
+native document inputs are not exposed by `tt`. The dated benchmark, price
+snapshot, and re-evaluation rules live in
 [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with
@@ -167,10 +170,11 @@ and spawning fresh; at the cap, with no compatible worker free, it refuses too.
 After a tier is removed, existing workers on it show `stale:<name>` and reject
 new work until `tt pi clear <cs>` respawns them on the current default.
 
-Custom-provider credentials needed inside worker REPLs are synchronized from
-the current shell into the tmux session on `tt up` and before worker spawn.
-`TT_PI_ENV_VARS` is a space-separated allowlist; values are not written to tt
-state files.
+CosmosHub credentials needed inside worker REPLs are synchronized from the
+current shell into the tmux session on `tt up` and before worker spawn.
+CLIProxyAPI credentials are stored by Pi in `~/.pi/agent/auth.json` under the
+`cliproxy` provider. `TT_PI_ENV_VARS` remains a space-separated allowlist for
+environment-authenticated providers; values are not written to tt state files.
 
 ## Checking a session's tt version
 

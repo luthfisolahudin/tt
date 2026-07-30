@@ -26,10 +26,10 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- The single `default` tier routes all workers to CosmosHub Qwen 3.7 Max at max
-  effort through Pi's Anthropic Messages-compatible custom provider. Normal
-  dispatches omit `--tier`; the registry remains data-driven so a future model
-  decision changes one row. The legacy
+- The single `default` tier routes all workers to CLIProxyAPI Gemini 3.6 Flash
+  High at high effort through Pi's dynamic Anthropic Messages-compatible
+  provider. Normal dispatches omit `--tier`; the registry remains data-driven so
+  a future model decision changes one row. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
   (thinking effort is fixed per tier, not independently settable). See
   the "Model tier" section and `docs/MODEL_DECISION.md`.
@@ -75,6 +75,13 @@ history in `CHANGELOG.md`.
   `cosmoshub` provider is passed through directly.
   Existing workers from an older tier registry are labeled `stale:<name>` and
   blocked from new work until `tt pi clear <cs>` respawns them on `default`.
+
+- **Dynamic Anthropic catalogs (0.15.0).** The private worker runtime registers
+  `cliproxy` and `cosmoshub` through
+  `pi-worker/extensions/anthropic-compatible-providers.ts`. Each provider
+  refreshes `/v1/models` and retains a cached/static fallback when discovery is
+  unavailable. The pinned local model accepts text and images; Pi does not
+  expose audio, video, or native document inputs.
 
 ## Verified (manual)
 
@@ -144,6 +151,14 @@ session — what a handoff can trust without retesting:
   and the best balance of source accuracy, pool reasoning, planning, edit
   quality, latency, and effective cost. Full evidence is in
   `docs/MODEL_DECISION.md`.
+- **CLIProxyAPI Gemini routing (0.15.0), verified live 2026-07-22** against this
+  repo's session: a fresh worker launched
+  `cliproxy/gemini-3.6-flash-high:high`, completed tracked text/tool turns, and
+  read a generated PNG containing `TT IMAGE TEST: HELLO` through Pi's image
+  attachment path. After tightening Worker Mode, the fresh worker returned the
+  exact visual text and a valid nonce footer with no reasoning preamble; a
+  separate registry probe returned the actual provider/model and effort in its
+  completion summary.
 
 ## Known limitations / not yet tested
 

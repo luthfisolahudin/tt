@@ -9,7 +9,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:           "tt",
 	Short:         "tmux team: per-project tmux session with a pi worker pool",
-	Version:       "0.14.1",
+	Version:       "0.15.0",
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }

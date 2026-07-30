@@ -4,6 +4,21 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.15.0] — 2026-07-22
+
+- Added dynamic Anthropic Messages provider discovery for local CLIProxyAPI and
+  CosmosHub, with cached catalogs and static startup fallbacks.
+- Switched the default worker to `cliproxy/gemini-3.6-flash-high` at high
+  effort. The verified default accepts text and image input through Pi; audio,
+  video, and native document inputs remain outside the worker contract.
+- Added Pi auth-backed `cliproxy` provider support without storing its key in
+  tt state or tracked files.
+- Tightened Worker Mode output instructions to suppress reasoning narration,
+  forbid guessed tool facts, and require the actual requested result in the
+  machine-parsed completion summary.
+- Fixed the Go worker state scaffold's missing result-header parser so the
+  package builds alongside the Bash runtime.
+
 ## [0.14.1] — 2026-07-14
 
 - Replaced provider/model-named tiers with one model-agnostic `default` tier,

@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.14.1"
+VERSION="0.15.0"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -13,7 +13,7 @@ PI_HISTORY_LIMIT=50000
 # effort is fixed per tier and cannot be set independently.
 PI_TIER_DEFAULT=default
 PI_TIER_REGISTRY=(
-  "default|cosmoshub/qwen-3.7-max|max"
+  "default|cliproxy/gemini-3.6-flash-high|high"
 )
 
 tier_field() {
@@ -460,9 +460,10 @@ ensure_pi_worker_dir() {
   mkdir -p "$TT_PI_WORKER_DIR/extensions"
 
   local meta="$TT_PI_WORKER_DIR/.tt-version"
-  local prev_app_sha prev_ext_sha prev_settings_sha
+  local prev_app_sha prev_ext_sha prev_provider_sha prev_settings_sha
   prev_app_sha=$(awk -F= '$1=="file.APPEND_SYSTEM.md.sha"{print $2}' "$meta" 2>/dev/null || true)
   prev_ext_sha=$(awk -F= '$1=="file.extensions/tt-worker.ts.sha"{print $2}' "$meta" 2>/dev/null || true)
+  prev_provider_sha=$(awk -F= '$1=="file.extensions/anthropic-compatible-providers.ts.sha"{print $2}' "$meta" 2>/dev/null || true)
   prev_settings_sha=$(awk -F= '$1=="file.settings.json.sha"{print $2}' "$meta" 2>/dev/null || true)
 
   local app_src="$TT_REPO_DIR/pi-worker/APPEND_SYSTEM.md"
@@ -485,6 +486,17 @@ ensure_pi_worker_dir() {
     ln -sfn "$ext_src" "$ext_dst"
   elif [[ -n $prev_ext_sha && $prev_ext_sha != "$ext_sha" ]]; then
     note "pi-worker tt-worker.ts template changed; keeping customized $ext_dst (remove it to regenerate)"
+  fi
+
+  local provider_src="$TT_REPO_DIR/pi-worker/extensions/anthropic-compatible-providers.ts"
+  local provider_dst="$TT_PI_WORKER_DIR/extensions/anthropic-compatible-providers.ts"
+  local provider_sha; provider_sha=$(sha256sum "$provider_src" | awk '{print $1}')
+  if [[ ! -e $provider_dst || ( -L $provider_dst && ! -e $provider_dst ) ]]; then
+    ln -sfn "$provider_src" "$provider_dst"
+  elif [[ -L $provider_dst && $(readlink -f "$provider_dst" 2>/dev/null) == "$provider_src" ]]; then
+    ln -sfn "$provider_src" "$provider_dst"
+  elif [[ -n $prev_provider_sha && $prev_provider_sha != "$provider_sha" ]]; then
+    note "pi-worker provider extension changed; keeping customized $provider_dst (remove it to regenerate)"
   fi
 
   local settings_src="$TT_REPO_DIR/pi-worker/settings.json"
@@ -524,6 +536,7 @@ version=$VERSION
 repo=$TT_REPO_DIR
 file.APPEND_SYSTEM.md.sha=$app_sha
 file.extensions/tt-worker.ts.sha=$ext_sha
+file.extensions/anthropic-compatible-providers.ts.sha=$provider_sha
 file.settings.json.sha=$settings_sha
 updated_at=$updated_at
 EOF
@@ -2330,7 +2343,7 @@ PI WORKER VERBS
        legacy --low/--medium/--high/--xhigh/--max flags are rejected.
        Stable tiers:
 
-        default  cosmoshub/qwen-3.7-max at max effort. Selected for all
+        default  cliproxy/gemini-3.6-flash-high at high effort. Selected for all
                  delegated work; see docs/MODEL_DECISION.md.
 
       Pick a tier per dispatch with --tier NAME on `send`/`auto`. Omit

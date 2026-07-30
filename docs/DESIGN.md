@@ -267,18 +267,25 @@ extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `default` | `cosmoshub/qwen-3.7-max` | `max` | All delegated worker tasks. |
+| `default` | `cliproxy/gemini-3.6-flash-high` | `high` | All delegated worker tasks. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
 `--model $provider_model:$effort` from it. The extension never changes the model,
 effort, or worker tier at task claim. Legacy or removed tier names are
 normalized to the default on read by `current_tier()`.
 
-The custom `cosmoshub` provider is defined in Pi's `models.json` with the
-`anthropic-messages` API and `https://api.cosmoshub.tech` base URL (Pi appends
-`/v1/messages`). The worker model is intentionally text-only: live image probes
-against the CosmosHub endpoint did not identify image content reliably. Model
-selection evidence and re-evaluation rules live in `docs/MODEL_DECISION.md`.
+The worker runtime auto-registers `cliproxy` and `cosmoshub` as dynamic
+Anthropic Messages providers through
+`pi-worker/extensions/anthropic-compatible-providers.ts`. Each provider fetches
+`/v1/models`, restores the last successful catalog from Pi's model store, and
+retains a static fallback if discovery fails. Pi appends `/v1/messages` to both
+base URLs. The pinned local default accepts text and images; Pi's message model
+does not expose audio, video, or native document input to workers.
+
+The local CLIProxyAPI credential is stored in Pi's `auth.json` under
+`cliproxy`. CosmosHub continues to use `COSMOSHUB_API_KEY` through the existing
+environment allowlist. Model selection evidence and re-evaluation rules live in
+`docs/MODEL_DECISION.md`.
 
 Before worker spawn, `sync_pi_env` copies only names listed in
 `TT_PI_ENV_VARS` from the calling shell into the tmux session environment. The
