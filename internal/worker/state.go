@@ -25,6 +25,35 @@ func CurrentGen(name string) int {
 	return g
 }
 
+func ResultHead(name string) string {
+	sdir, _ := session.StateDir()
+	f := filepath.Join(sdir, name+".result")
+	file, err := os.Open(f)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	id, status := "", ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, "id: "):
+			id = strings.TrimPrefix(line, "id: ")
+		case strings.HasPrefix(line, "status: "):
+			status = strings.TrimPrefix(line, "status: ")
+		}
+		if id != "" && status != "" {
+			break
+		}
+	}
+	if id == "" {
+		id = "-"
+	}
+	return id + " " + status
+}
+
 func BumpGen(name string) {
 	sdir, _ := session.StateDir()
 	g := CurrentGen(name) + 1
