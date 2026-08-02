@@ -460,10 +460,11 @@ ensure_pi_worker_dir() {
   mkdir -p "$TT_PI_WORKER_DIR/extensions"
 
   local meta="$TT_PI_WORKER_DIR/.tt-version"
-  local prev_app_sha prev_ext_sha prev_provider_sha prev_settings_sha
+  local prev_app_sha prev_ext_sha prev_provider_sha prev_package_sha prev_settings_sha
   prev_app_sha=$(awk -F= '$1=="file.APPEND_SYSTEM.md.sha"{print $2}' "$meta" 2>/dev/null || true)
   prev_ext_sha=$(awk -F= '$1=="file.extensions/tt-worker.ts.sha"{print $2}' "$meta" 2>/dev/null || true)
   prev_provider_sha=$(awk -F= '$1=="file.extensions/anthropic-compatible-providers.ts.sha"{print $2}' "$meta" 2>/dev/null || true)
+  prev_package_sha=$(awk -F= '$1=="file.package.json.sha"{print $2}' "$meta" 2>/dev/null || true)
   prev_settings_sha=$(awk -F= '$1=="file.settings.json.sha"{print $2}' "$meta" 2>/dev/null || true)
 
   local app_src="$TT_REPO_DIR/pi-worker/APPEND_SYSTEM.md"
@@ -488,13 +489,28 @@ ensure_pi_worker_dir() {
     note "pi-worker tt-worker.ts template changed; keeping customized $ext_dst (remove it to regenerate)"
   fi
 
+  local package_src="$TT_REPO_DIR/pi-worker/package.json"
+  local package_dst="$TT_PI_WORKER_DIR/package.json"
+  local package_sha; package_sha=$(sha256sum "$package_src" | awk '{print $1}')
+  local package_needs_install=0
+  if [[ ! -e $package_dst || -L $package_dst ]]; then
+    cp --remove-destination "$package_src" "$package_dst"
+    package_needs_install=1
+  elif [[ -n $prev_package_sha && $prev_package_sha != "$package_sha" ]]; then
+    note "pi-worker package.json changed; keeping customized $package_dst (remove it to regenerate)"
+    package_needs_install=1
+  fi
+  [[ -e "$TT_PI_WORKER_DIR/node_modules/@luthfisolahudin/9router-integrations/extensions/pi.ts" ]] || package_needs_install=1
+  if (( package_needs_install )); then
+    command -v pnpm >/dev/null 2>&1 || die "pnpm is required to install the tt Pi worker integrations"
+    pnpm --dir "$TT_PI_WORKER_DIR" install --prod --no-lockfile --ignore-scripts
+  fi
+
   local provider_src="$TT_REPO_DIR/pi-worker/extensions/anthropic-compatible-providers.ts"
   local provider_dst="$TT_PI_WORKER_DIR/extensions/anthropic-compatible-providers.ts"
   local provider_sha; provider_sha=$(sha256sum "$provider_src" | awk '{print $1}')
-  if [[ ! -e $provider_dst || ( -L $provider_dst && ! -e $provider_dst ) ]]; then
-    ln -sfn "$provider_src" "$provider_dst"
-  elif [[ -L $provider_dst && $(readlink -f "$provider_dst" 2>/dev/null) == "$provider_src" ]]; then
-    ln -sfn "$provider_src" "$provider_dst"
+  if [[ ! -e $provider_dst || -L $provider_dst ]]; then
+    cp --remove-destination "$provider_src" "$provider_dst"
   elif [[ -n $prev_provider_sha && $prev_provider_sha != "$provider_sha" ]]; then
     note "pi-worker provider extension changed; keeping customized $provider_dst (remove it to regenerate)"
   fi
@@ -537,6 +553,7 @@ repo=$TT_REPO_DIR
 file.APPEND_SYSTEM.md.sha=$app_sha
 file.extensions/tt-worker.ts.sha=$ext_sha
 file.extensions/anthropic-compatible-providers.ts.sha=$provider_sha
+file.package.json.sha=$package_sha
 file.settings.json.sha=$settings_sha
 updated_at=$updated_at
 EOF

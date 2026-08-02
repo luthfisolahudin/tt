@@ -1,0 +1,8 @@
+{
+  "name": "tt-pi-worker",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@luthfisolahudin/9router-integrations": "github:luthfisolahudin/9router-integrations#faf41720ecafd884bf64b4bb8fa55e55fe120e11"
+  }
+}

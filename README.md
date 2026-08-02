@@ -150,12 +150,13 @@ current tier (a fresh worker starts on the default):
 
 The default worker accepts text and images. Pi auto-discovers the models owned
 by active connections from the local 9Router Anthropic-compatible endpoint,
-with only the pinned default as its startup fallback. The canonical provider and
-effort policy live in the sibling `9router-integrations` repository; client
-`max` maps to the measured wire `xhigh`. Pi's message model can support text and
-image inputs, and the pinned CodeBuddy model advertises both. Audio, video, and
-native document inputs are not exposed by `tt`. The dated benchmark, price
-snapshot, and re-evaluation rules live in
+with only the pinned default as its startup fallback. The private worker
+installs the canonical provider and effort policy from the pinned GitHub
+`@luthfisolahudin/9router-integrations` revision; client `max` maps to the measured wire
+`xhigh`. Pi's message model can support text and image inputs, and the pinned
+CodeBuddy model advertises both. Audio, video, and native document inputs are
+not exposed by `tt`. The dated benchmark, price snapshot, and re-evaluation
+rules live in
 [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with

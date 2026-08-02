@@ -74,10 +74,11 @@ history in `CHANGELOG.md`.
   Existing workers from an older tier registry are labeled `stale:<name>` and
   blocked from new work until `tt pi clear <cs>` respawns them on `default`.
 
-- **Dynamic 9Router catalog (0.15.1).** The private worker runtime's compatibility
-  shim loads the canonical provider from the sibling `9router-integrations`
-  repository. A successful `/v1/models` refresh replaces the pinned startup
-  fallback with exactly the active catalog. Once 9Router has an active
+- **Dynamic 9Router catalog (0.15.1).** The private worker runtime installs the
+  canonical provider from the pinned GitHub
+  `@luthfisolahudin/9router-integrations` revision in its worker manifest. A
+  successful `/v1/models` refresh replaces the pinned
+  startup fallback with exactly the active catalog. Once 9Router has an active
   connection, its endpoint returns only models owned by active providers. The
   pinned local model accepts text and images; Pi does not expose audio, video,
   or native document inputs.
