@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/luthfisolahudin/tt/internal/session"
 	"github.com/luthfisolahudin/tt/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,12 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	rootCmd.AddCommand(piCmd)
 	rootCmd.AddCommand(daemonCmd)
+	// bare `tt` aliases `tt up` (bash dispatch: ""|up -> up_cmd)
+	rootCmd.Run = func(cmd *cobra.Command, args []string) {
+		if err := session.Up(false); err != nil {
+			die(err.Error())
+		}
+	}
 }
 
 func Execute() {

@@ -18,12 +18,15 @@ import (
 
 // Session carries the per-request session context. The daemon holds no
 // authoritative state in memory — disk is the source of truth; Session is
-// just the resolved request context.
+// just the resolved request context. Cancel fires when the requesting client
+// disconnects, so long-running ops (x send's safe-input wait, x observe's
+// sampling loop) can stop promptly on Ctrl-C.
 type Session struct {
 	Name    string
 	Dir     string // per-session state dir
 	Cwd     string
 	SyncEnv map[string]string
+	Cancel  <-chan struct{}
 }
 
 // writeMu serializes file-mutating ops (turn assignment, spawns, wipes) so
@@ -116,23 +119,49 @@ func handleConn(conn net.Conn) {
 		json.NewEncoder(conn).Encode(client.Response{OK: false, Error: "bad request"})
 		return
 	}
-	resp := dispatch(req)
+	// Watch for the client going away so long-running ops can stop on Ctrl-C
+	// (the CLI dies, the socket closes, the read below returns EOF).
+	cancel := make(chan struct{})
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			if _, err := conn.Read(buf); err != nil {
+				close(cancel)
+				return
+			}
+		}
+	}()
+	resp := dispatch(req, cancel)
 	json.NewEncoder(conn).Encode(resp)
 }
 
-func dispatch(req client.Request) client.Response {
-	s := &Session{
-		Name:    req.Session,
-		Dir:     session.SessionStateDir(req.Session),
-		Cwd:     req.Cwd,
-		SyncEnv: req.SyncEnv,
-	}
+func dispatch(req client.Request, cancel <-chan struct{}) client.Response {
+	create := true
 	switch req.Op {
 	case "ping":
 		return client.Response{OK: true}
+	case "x-list", "x-observe", "x-send":
+		// Cross-session ops touch other sessions' state, never the caller's
+		// worker files — and creating the caller's dir here would invent a
+		// session row for `x list`. No write mutex: x-send serializes via its
+		// own per-target x-send.lock, and x-send/x-observe may block forever.
+		create = false
 	case "send", "auto", "clear", "rm", "popidle", "steer", "resume", "status":
 		writeMu.Lock()
 		defer writeMu.Unlock()
+	}
+	var dir string
+	if create {
+		dir = session.SessionStateDir(req.Session)
+	} else {
+		dir = filepath.Join(session.StateBase(), req.Session)
+	}
+	s := &Session{
+		Name:    req.Session,
+		Dir:     dir,
+		Cwd:     req.Cwd,
+		SyncEnv: req.SyncEnv,
+		Cancel:  cancel,
 	}
 	return dispatchOp(s, req)
 }

@@ -114,6 +114,18 @@ func dispatchOp(s *Session, req client.Request) client.Response {
 		var a PipelineArgs
 		decodeArgs(req.Args, &a)
 		return pipelineOp(s, a)
+	case "x-send":
+		var a XSendArgs
+		decodeArgs(req.Args, &a)
+		return xSendOp(s, a)
+	case "x-list":
+		var a XListArgs
+		decodeArgs(req.Args, &a)
+		return xListOp(s, a)
+	case "x-observe":
+		var a XObserveArgs
+		decodeArgs(req.Args, &a)
+		return xObserveOp(s, a)
 	}
 	return client.Response{OK: false, Error: "unknown op: " + req.Op}
 }

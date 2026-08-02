@@ -214,14 +214,23 @@ bug in the discovery path.
 - Gate: `tt pi --help`, `tt pi wait --help`, `tt x send --help` each print
   scoped help and exit 0; `tt verbs --json` round-trips every registered verb.
 
-### Phase 4 — retire bash
-- `tt` (the symlink target) becomes a shim that execs the Go CLI; the bash body
-  is deleted. `tt x send` / `tt x observe` fold into the daemon.
-- Update: README command table, `tt --help`, `skills/delegating-to-pi/SKILL.md`
-  + `references/tt-cli.md`, DESIGN (daemon + pipeline sections), STATUS (current
-  state), AGENTS.md (no longer "single-file bash tool"), CHANGELOG + version
-  bump (this is a MINOR — cross-cutting runtime shift).
-- Gate: bash body gone; every verb served by the Go CLI against the daemon.
+### Phase 4 — retire bash  (in progress)
+- Session lifecycle ported: `up` / `attach` (`a`) / `down` in Go
+  (`internal/session/up.go`, `cmd/up.go`) — windows.json jq normalization
+  (byte-faithful NORMALIZE_JQ), bare-shell-guarded pane commands, cold-start
+  prefill semantics, window-granularity heal, dedup, version/project stamping.
+- Cross-session `x` ported into the daemon: `x send` / `x list`/`ls` /
+  `x observe` (`internal/daemon/x.go`, `cmd/x.go`).
+- **Window-theft fix:** `tt up` inside tmux no longer `switch-client`s by
+  default (an unsolicited switch replaced the caller's window — and a stray
+  second session made the client toggle to the most-recent *other* session).
+  New policy: in-tmux `up` builds/heals and stays put (a stderr note says how
+  to enter); `--attach` switches deliberately; outside tmux `up` attaches as
+  before. Verified live: in-tmux `up` against a different session keeps the
+  caller on their session. This is a deliberate behavior CHANGE vs bash (which
+  always switched) — the one intentional divergence in the port.
+- Remaining: fold any last `x observe` fidelity checks, retire the bash body
+  (`tt` → shim that execs the Go CLI), docs + version bump.
 
 ## Explicitly out of scope (this round)
 
