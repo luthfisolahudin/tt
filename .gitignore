@@ -1,5 +1,13 @@
 *.swp
 
+# Local secrets and credentials
+.env
+.env.*
+*.key
+*.p12
+*.pfx
+*.pem
+
 # Local tt handoff artifacts
 .tt/
 
