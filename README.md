@@ -146,12 +146,14 @@ current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
-| `default` | `cliproxy/gemini-3.6-flash-high` | `high` | All delegated worker tasks. |
+| `default` | `9router/cbcn/deepseek-v4-flash` | `max` | All delegated worker tasks. |
 
-The default worker accepts text and images. Pi auto-discovers the current
-catalogs from the local CLIProxyAPI and CosmosHub Anthropic-compatible
-endpoints, with cached/static fallbacks when discovery is unavailable. Pi's
-message model currently supports only text and image inputs; audio, video, and
+The default worker accepts text and images. Pi auto-discovers the models owned
+by active connections from the local 9Router Anthropic-compatible endpoint,
+with only the pinned default as its startup fallback. The canonical provider and
+effort policy live in the sibling `9router-integrations` repository; client
+`max` maps to the measured wire `xhigh`. Pi's message model can support text and
+image inputs, and the pinned CodeBuddy model advertises both. Audio, video, and
 native document inputs are not exposed by `tt`. The dated benchmark, price
 snapshot, and re-evaluation rules live in
 [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
@@ -170,11 +172,10 @@ and spawning fresh; at the cap, with no compatible worker free, it refuses too.
 After a tier is removed, existing workers on it show `stale:<name>` and reject
 new work until `tt pi clear <cs>` respawns them on the current default.
 
-CosmosHub credentials needed inside worker REPLs are synchronized from the
-current shell into the tmux session on `tt up` and before worker spawn.
-CLIProxyAPI credentials are stored by Pi in `~/.pi/agent/auth.json` under the
-`cliproxy` provider. `TT_PI_ENV_VARS` remains a space-separated allowlist for
-environment-authenticated providers; values are not written to tt state files.
+9Router keeps upstream credentials behind its loopback-only compatibility key;
+worker processes receive no upstream provider credential. `TT_PI_ENV_VARS`
+remains an opt-in, space-separated allowlist for environment-authenticated
+custom providers; values are not written to tt state files.
 
 ## Checking a session's tt version
 

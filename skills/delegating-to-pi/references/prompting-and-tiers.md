@@ -9,7 +9,7 @@ effort is fixed per tier and cannot be set independently — the legacy
 `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with a pointer
 to `--tier`. Stable tiers:
 
-- **`default`** — `cliproxy/gemini-3.6-flash-high` at `high` effort. It handles
+- **`default`** — `9router/cbcn/deepseek-v4-flash` at `max` effort. It handles
   all delegated worker tasks and accepts text/image input. See
   [prompting-default.md](prompting-default.md).
 

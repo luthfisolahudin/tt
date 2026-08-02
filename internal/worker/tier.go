@@ -11,8 +11,8 @@ type Tier struct {
 var TierRegistry = map[string]Tier{
 	"default": {
 		Name:   "default",
-		Model:  "cliproxy/gemini-3.6-flash-high",
-		Effort: "high",
+		Model:  "9router/cbcn/deepseek-v4-flash",
+		Effort: "max",
 	},
 }
 

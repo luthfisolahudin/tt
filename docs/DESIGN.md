@@ -267,30 +267,34 @@ extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `default` | `cliproxy/gemini-3.6-flash-high` | `high` | All delegated worker tasks. |
+| `default` | `9router/cbcn/deepseek-v4-flash` | `max` | All delegated worker tasks. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
 `--model $provider_model:$effort` from it. The extension never changes the model,
 effort, or worker tier at task claim. Legacy or removed tier names are
 normalized to the default on read by `current_tier()`.
 
-The worker runtime auto-registers `cliproxy` and `cosmoshub` as dynamic
-Anthropic Messages providers through
-`pi-worker/extensions/anthropic-compatible-providers.ts`. Each provider fetches
-`/v1/models`, restores the last successful catalog from Pi's model store, and
-retains a static fallback if discovery fails. Pi appends `/v1/messages` to both
-base URLs. The pinned local default accepts text and images; Pi's message model
-does not expose audio, video, or native document input to workers.
+The worker runtime auto-registers `9router` as a dynamic Anthropic Messages
+provider through the compatibility shim at
+`pi-worker/extensions/anthropic-compatible-providers.ts`. The canonical provider
+and measured effort resolver live in the sibling `9router-integrations`
+repository. Successful `/v1/models` discovery replaces the pinned startup
+fallback with exactly the live catalog. Once at least one connection exists,
+9Router filters that catalog to models owned by active connections. Pi appends
+`/v1/messages` to the base URL. The tier remains client-facing `max`; the shared
+resolver maps it to the measured wire `xhigh`. The pinned CodeBuddy default
+accepts text and images; Pi's message model does not expose audio, video, or
+native document input to workers.
 
-The local CLIProxyAPI credential is stored in Pi's `auth.json` under
-`cliproxy`. CosmosHub continues to use `COSMOSHUB_API_KEY` through the existing
-environment allowlist. Model selection evidence and re-evaluation rules live in
-`docs/MODEL_DECISION.md`.
+9Router keeps upstream provider credentials behind a loopback-only compatibility
+key, so worker processes receive no upstream credential. Model selection
+evidence and re-evaluation rules live in `docs/MODEL_DECISION.md`.
 
-Before worker spawn, `sync_pi_env` copies only names listed in
+Before worker spawn, `sync_pi_env` copies only names explicitly listed in
 `TT_PI_ENV_VARS` from the calling shell into the tmux session environment. The
-default allowlist is `COSMOSHUB_API_KEY`. This handles tmux servers whose global
-environment predates the credential without persisting credentials in tt state.
+default allowlist is empty. This handles tmux servers whose global environment
+predates a custom-provider credential without persisting credentials in tt
+state.
 
 **Tier change on a running worker is refused.** The model is
 baked into the REPL's `--model` at launch. `tt pi send` / `auto`

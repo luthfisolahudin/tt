@@ -1,11 +1,11 @@
 # Prompting the default worker
 
-The default worker runs `cliproxy/gemini-3.6-flash-high` at **high** effort for
+The default worker runs `9router/cbcn/deepseek-v4-flash` at **max** effort for
 all delegated work. Normal dispatches omit `--tier`.
 
 The worker accepts text and image input. For an image on disk, put its path in
 `FILES / SCOPE` and explicitly ask the worker to read it. Audio, video, and
-native document attachments are not part of the Pi worker input contract.
+native document attachments are not part of the current default worker contract.
 
 For the tier overview see [prompting-and-tiers.md](prompting-and-tiers.md).
 For the general prompt contract (`TASK` / `TARGET STATE` / `FILES / SCOPE` / `CHANGE` / `DO NOT` / `SUCCESS` / `VERIFY`)
@@ -14,7 +14,7 @@ this file only covers what the current default specifically needs.
 
 ## Model-specific
 
-- **High effort is already configured.** Do not ask the model to "think step
+- **Max effort is already configured.** Do not ask the model to "think step
   by step", "show your reasoning", or provide chain-of-thought. Spend prompt
   space on **scope precision** and **verifiability** instead.
 - **VERIFY is high-leverage here.** The model is good at executing

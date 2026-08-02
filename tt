@@ -3,7 +3,7 @@
 # See `tt --help` for the full reference.
 set -euo pipefail
 
-VERSION="0.15.0"
+VERSION="0.15.1"
 NATO=(alfa bravo charlie delta echo foxtrot golf hotel india juliett kilo lima
       mike november oscar papa quebec romeo sierra tango uniform victor whiskey
       xray yankee zulu)
@@ -13,7 +13,7 @@ PI_HISTORY_LIMIT=50000
 # effort is fixed per tier and cannot be set independently.
 PI_TIER_DEFAULT=default
 PI_TIER_REGISTRY=(
-  "default|cliproxy/gemini-3.6-flash-high|high"
+  "default|9router/cbcn/deepseek-v4-flash|max"
 )
 
 tier_field() {
@@ -147,7 +147,7 @@ sync_pi_env() {
   local s key
   local -a keys
   s=$(session_name)
-  read -r -a keys <<< "${TT_PI_ENV_VARS:-COSMOSHUB_API_KEY}"
+  read -r -a keys <<< "${TT_PI_ENV_VARS:-}"
   for key in "${keys[@]}"; do
     [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "invalid TT_PI_ENV_VARS entry: $key"
     [[ -v $key ]] || continue
@@ -2343,7 +2343,7 @@ PI WORKER VERBS
        legacy --low/--medium/--high/--xhigh/--max flags are rejected.
        Stable tiers:
 
-        default  cliproxy/gemini-3.6-flash-high at high effort. Selected for all
+        default  9router/cbcn/deepseek-v4-flash at max effort. Selected for all
                  delegated work; see docs/MODEL_DECISION.md.
 
       Pick a tier per dispatch with --tier NAME on `send`/`auto`. Omit

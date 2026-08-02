@@ -7,17 +7,24 @@ this is the evidence and decision record, not a second configuration surface.
 ## Current decision
 
 - Tier: `default`
-- Provider/model: `cliproxy/gemini-3.6-flash-high`
+- Provider/model: `9router/cbcn/deepseek-v4-flash`
 - API: Anthropic Messages
-- Thinking effort: `high`
+- Client thinking effort: `max`
+- Measured wire effort: `xhigh`
 - Input: text and image
-- Decided: 2026-07-22
+- Decided: 2026-08-02
 
-This switch is operator-directed rather than the result of a new comparative
-benchmark. The local CLIProxyAPI catalog is discovered dynamically, but the
-default model is pinned so a changing upstream catalog cannot silently change
-worker behavior. The prior CosmosHub benchmark remains below as historical
-selection evidence.
+This switch is operator-directed as part of consolidating local AI routing on
+9Router rather than the result of a new comparative benchmark. 9Router discovers
+models from active provider connections, but the default model remains pinned so
+a changing catalog cannot silently change worker behavior. The prior CosmosHub
+benchmark remains below as historical selection evidence.
+
+The canonical measurement record lives in
+`../../9router-integrations/docs/EFFORT_MATRIX.md`. Explicit `max` requests for all
+five active CodeBuddy CN models were normalized by 9Router to `THINK:xhigh`;
+explicit `xhigh` requests were applied as `THINK:xhigh`. The clients therefore
+expose only `max` while the shared resolver transmits `xhigh`.
 
 Pi's model contract supports text and image input only. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model

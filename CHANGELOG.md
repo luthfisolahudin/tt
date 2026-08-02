@@ -4,6 +4,15 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.15.1] — 2026-08-02
+
+- Replaced CLIProxyAPI and CosmosHub routing with loopback-only 9Router and
+  switched the default worker to CodeBuddy CN DeepSeek V4 Flash at max effort.
+- Shared 9Router's active-connection model catalog with normal Pi and tt's
+  private worker runtime while keeping the worker default pinned.
+- Moved the provider and measured effort policy to the shared
+  `9router-integrations` repository; client `max` now transmits wire `xhigh`.
+
 ## [0.15.0] — 2026-07-22
 
 - Added dynamic Anthropic Messages provider discovery for local CLIProxyAPI and

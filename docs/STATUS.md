@@ -26,10 +26,11 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- The single `default` tier routes all workers to CLIProxyAPI Gemini 3.6 Flash
-  High at high effort through Pi's dynamic Anthropic Messages-compatible
-  provider. Normal dispatches omit `--tier`; the registry remains data-driven so
-  a future model decision changes one row. The legacy
+- The single `default` tier routes all workers to CodeBuddy CN DeepSeek V4 Flash
+  at client-facing max effort through local 9Router's dynamic Anthropic
+  Messages-compatible provider. The shared integration maps that to the measured
+  wire `xhigh`. Normal dispatches omit `--tier`; the registry remains data-driven
+  so a future model decision changes one row. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
   (thinking effort is fixed per tier, not independently settable). See
   the "Model tier" section and `docs/MODEL_DECISION.md`.
@@ -63,25 +64,23 @@ history in `CHANGELOG.md`.
 - **Default auto tier regression fixed (0.13.2).** `tt pi auto` and `auto --rm`
   again use `PI_TIER_DEFAULT` when `--tier` is omitted instead of aborting on the
   stale, unset `PI_DEFAULT_TIER` name.
-- **CosmosHub default tier (0.14.1).** The former provider/model-named tiers are
+- **Model-agnostic default tier (0.14.1).** The former provider/model-named tiers are
   replaced by one model-agnostic `default` tier. The registry is now one
   data-driven list in `tt`; the worker extension no longer mirrors tier names or
   changes thinking effort at task claim. The selection evidence and future
-  decision procedure live in `docs/MODEL_DECISION.md`. `tt up` and
-  worker spawn synchronize the `TT_PI_ENV_VARS` allowlist (default:
-  `COSMOSHUB_API_KEY`) into the tmux session so custom-provider auth reaches
-  worker REPLs without being stored in tt state. `pi-multi-auth` is not
-  installed in the private worker runtime, so the environment-authenticated
-  `cosmoshub` provider is passed through directly.
+  decision procedure live in `docs/MODEL_DECISION.md`. `tt up` and worker spawn
+  synchronize only names explicitly listed in `TT_PI_ENV_VARS`; the default
+  allowlist is empty.
   Existing workers from an older tier registry are labeled `stale:<name>` and
   blocked from new work until `tt pi clear <cs>` respawns them on `default`.
 
-- **Dynamic Anthropic catalogs (0.15.0).** The private worker runtime registers
-  `cliproxy` and `cosmoshub` through
-  `pi-worker/extensions/anthropic-compatible-providers.ts`. Each provider
-  refreshes `/v1/models` and retains a cached/static fallback when discovery is
-  unavailable. The pinned local model accepts text and images; Pi does not
-  expose audio, video, or native document inputs.
+- **Dynamic 9Router catalog (0.15.1).** The private worker runtime's compatibility
+  shim loads the canonical provider from the sibling `9router-integrations`
+  repository. A successful `/v1/models` refresh replaces the pinned startup
+  fallback with exactly the active catalog. Once 9Router has an active
+  connection, its endpoint returns only models owned by active providers. The
+  pinned local model accepts text and images; Pi does not expose audio, video,
+  or native document inputs.
 
 ## Verified (manual)
 
@@ -159,6 +158,16 @@ session — what a handoff can trust without retesting:
   exact visual text and a valid nonce footer with no reasoning preamble; a
   separate registry probe returned the actual provider/model and effort in its
   completion summary.
+- **9Router CodeBuddy routing (0.15.1), verified live 2026-08-02** against this
+  repo's session: normal Pi and the private worker runtime discovered only the
+  active CodeBuddy CN catalog and resolved DeepSeek V4 Flash with its advertised
+  1M context, 50K output, reasoning, and image capabilities. OpenCode and Pi
+  completed read-tool turns through 9Router. A fresh tt worker then launched
+  `9router/cbcn/deepseek-v4-flash:max`, read `tt`, and returned its exact version
+  through the nonce-validated result channel. Separate safe metadata probes for
+  every active model proved 9Router normalizes literal wire `max` to `xhigh` and
+  applies explicit `xhigh`; the shared clients therefore expose `max` and
+  transmit `xhigh`.
 
 ## Known limitations / not yet tested
 

@@ -23,7 +23,7 @@ Tier flags (`--low`/`--medium`/`--high`/`--xhigh`/`--max`) are **rejected** — 
 effort is fixed by the registry, not independently settable. The only accepted
 explicit preset is:
 
-- `--tier default` — `cliproxy/gemini-3.6-flash-high` at high effort. This is
+- `--tier default` — `9router/cbcn/deepseek-v4-flash` at max effort. This is
   the only active tier, so normal dispatches should omit the flag. Provider
   catalogs are discovered dynamically, but the default model is pinned.
 
