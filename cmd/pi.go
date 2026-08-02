@@ -452,7 +452,7 @@ var piStatusCmd = &cobra.Command{
 // --- collect ----------------------------------------------------------------
 
 var piCollectCmd = &cobra.Command{
-	Use:                "collect [--timeout SECONDS] [--json] [all | <callsign>]",
+	Use:                "collect [--timeout SECONDS] [--json] [--digest] [all | <callsign>]",
 	Short:              "Fan-out join that never drops a finished task (cursor-based)",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -460,12 +460,15 @@ var piCollectCmd = &cobra.Command{
 			showHelp(cmd)
 		}
 		jsonFlag, timeout, target := false, 0, ""
+		digest := false
 		i := 0
 		for ; i < len(args); i++ {
 			a := args[i]
 			switch {
 			case a == "--json":
 				jsonFlag = true
+			case a == "--digest":
+				digest = true
 			case a == "--timeout":
 				i++
 				if i >= len(args) {
@@ -489,7 +492,8 @@ var piCollectCmd = &cobra.Command{
 			JSON    bool   `json:"json"`
 			Timeout int    `json:"timeout"`
 			Target  string `json:"target"`
-		}{jsonFlag, timeout, target})
+			Digest  bool   `json:"digest"`
+		}{jsonFlag, timeout, target, digest})
 		if code != 0 {
 			osExit(code)
 		}

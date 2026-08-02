@@ -131,12 +131,20 @@ test tasks stay trivial.
   send/observe (still bash), `up`/`attach`/`down` (still bash), bash
   retirement.
 
-### Phase 2 — digest-collect + `tt peek`
-- `collect --digest` + `--json` digest envelope; full bodies by id on demand.
-- `tt peek <window|worker>` as a daemon state query (replaces capture-pane
-  scraping for the agent-readable cases).
-- Gate: a 3-worker fan-out joined with one digest in the orchestrator's
-  context; `peek` returns a worker's scrollback without tmux scraping.
+### Phase 2 — digest-collect + `tt peek`  ✅ DONE (live-verified 2026-08-03)
+- `collect --digest` + the digest row (`<id> <status> <dur> <one-line summary>`);
+  full bodies stay id-addressable via `tt pi results <id>`. `--json` keeps the
+  full envelope. Gate passed: a 2-worker fan-out joined as two one-line rows;
+  full body still readable on demand; collect cursor still advances
+  (re-collect = "nothing new").
+- `tt peek [--lines N] <window|callsign>` as a daemon state query (`peek` op,
+  read-only, outside the write mutex). Accepts a bare window (`dev`), a worker
+  callsign (`alfa` → `pi-alfa`), or a full `pi-<cs>`; errors cleanly on an
+  unknown target. Gate passed: reads the dev shell + a worker REPL without the
+  caller scraping tmux — the agent-readable "see window X" primitive.
+- Build+vet+test clean. Files: `internal/daemon/watch.go` (digestLine, peekOp,
+  CollectArgs.Digest), `internal/daemon/ops.go` (peek route), `cmd/peek.go`,
+  `cmd/pi.go` (--digest flag).
 
 ### Phase 3 — pipeline engine
 - Declarative spec (stages, fan-out, review gate, join, bounded retries) as

@@ -33,6 +33,14 @@ type CollectArgs struct {
 	JSON    bool   `json:"json"`
 	Timeout int    `json:"timeout"`
 	Target  string `json:"target"`
+	Digest  bool   `json:"digest"`
+}
+
+// PeekArgs is tt_peek_cmd: a read-only state query returning a window's
+// current pane content (the agent-readable "see window X" primitive).
+type PeekArgs struct {
+	Target string `json:"target"` // bare window, callsign, or pi-<cs>
+	Lines  int    `json:"lines"`
 }
 
 // ResultsArgs is pi_results_cmd: read durable outcomes from the per-id store.
@@ -590,6 +598,10 @@ func collectOp(s *Session, a CollectArgs) client.Response {
 			text := worker.ResultTextByID(s.Dir, id)
 			if a.JSON {
 				envelopes = append(envelopes, worker.EmitResultJSON(s.Dir, id, rst, text))
+			} else if a.Digest {
+				// One lean line per result; the full body stays id-addressable
+				// via `tt pi results <id>`. Kills the join's context tax.
+				fmt.Fprintf(&out, "%s\n", digestLine(s.Dir, id, rst, text))
 			} else {
 				// bash: $(result_text_by_id) strips trailing newlines; printf
 				// '%s\n\n' adds exactly two.
@@ -614,6 +626,59 @@ func collectOp(s *Session, a CollectArgs) client.Response {
 	} else if !printed {
 		note("collect: nothing new")
 	}
+	return ok(&out, &errb, 0)
+}
+
+// digestLine is one lean row for `collect --digest`:
+// "<id>  <status>  <dur>  <one-line summary/reason>". The full body is never
+// inlined — pull it with `tt pi results <id>` when the digest is not enough.
+func digestLine(sdir, id, rst, text string) string {
+	sm := worker.ResultField(text, "summary")
+	if sm == "" {
+		sm = worker.ResultField(text, "reason")
+	}
+	if sm == "" {
+		sm = worker.ResultReasonHint(text)
+	}
+	return fmt.Sprintf("%-12s  %-8s  %-6s  %s", id, rst, worker.ResultDurationFile(worker.ResultPathByID(sdir, id)), truncateRunes(sm, 80))
+}
+
+// peekOp returns a window's current pane content — read-only. Target may be a
+// bare window name (dev), a worker callsign (alfa -> pi-alfa), or a full
+// pi-<cs>. Unlike `tt pi logs` (workers only), peek sees ANY window in the
+// session, so an agent can read the dev server, the orchestrator pane, or a
+// user window as a state query instead of scraping tmux itself.
+func peekOp(s *Session, a PeekArgs) client.Response {
+	var out, errb strings.Builder
+	die := func(msg string) client.Response {
+		fmt.Fprintf(&errb, "tt: %s\n", msg)
+		return ok(&out, &errb, 1)
+	}
+	if !tmux.HasSession(s.Name) {
+		return die("no session for " + s.Cwd + "; run `tt up` first")
+	}
+	target := strings.TrimSpace(a.Target)
+	if target == "" {
+		return die("peek: target window or callsign required")
+	}
+	window := target
+	if !tmux.WindowExists(s.Name, window) {
+		// Try as a worker callsign -> its pi-<cs> window.
+		if worker.ValidCallsign(target) && tmux.WindowExists(s.Name, "pi-"+target) {
+			window = "pi-" + target
+		} else {
+			return die(fmt.Sprintf("no window '%s' (or worker pi-%s) in session %s", target, target, s.Name))
+		}
+	}
+	lines := a.Lines
+	if lines <= 0 {
+		lines = 200
+	}
+	content, err := tmux.CapturePane(s.Name, window, lines)
+	if err != nil {
+		return die(err.Error())
+	}
+	out.WriteString(content)
 	return ok(&out, &errb, 0)
 }
 

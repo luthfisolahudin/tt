@@ -106,6 +106,10 @@ func dispatchOp(s *Session, req client.Request) client.Response {
 		var a ResultsArgs
 		decodeArgs(req.Args, &a)
 		return resultsOp(s, a)
+	case "peek":
+		var a PeekArgs
+		decodeArgs(req.Args, &a)
+		return peekOp(s, a)
 	}
 	return client.Response{OK: false, Error: "unknown op: " + req.Op}
 }
