@@ -146,14 +146,26 @@ test tasks stay trivial.
   CollectArgs.Digest), `internal/daemon/ops.go` (peek route), `cmd/peek.go`,
   `cmd/pi.go` (--digest flag).
 
-### Phase 3 — pipeline engine
-- Declarative spec (stages, fan-out, review gate, join, bounded retries) as
-  data; daemon executes; completion pings the orchestrator via the existing
-  notify path.
-- Review gate = a worker verifying each result against its `SUCCESS`.
-- Gate: a two-stage pipeline (fan-out → review → join) runs end-to-end on a
-  throwaway project; a failing review re-dispatches the stage within the retry
-  bound.
+### Phase 3 — pipeline engine  ✅ DONE (live-verified 2026-08-03)
+- Declarative spec (JSON, data — no scripting): `pipeline run (FILE|-)` runs an
+  ordered list of stages in the daemon, one trigger in → one digest out. Spec:
+  `{name, retries, stages:[{fanout:[{label,task}...], join:"digest"|"full"} |
+  {review:{prompt}}]}`. Validated up front (no stages / empty fanout / both
+  kinds set / empty task / no fanout at all).
+- A `fanout` stage dispatches N tasks via the auto policy (idle→spawn→pool) and
+  joins each to a terminal status. A `review` stage hands the previous stage's
+  results to ONE worker that ends with `PIPELINE_PASS` / `PIPELINE_FAIL:
+  <reason>`; on FAIL the pipeline re-runs the preceding fanout stage, bounded
+  by `retries` (default 0; exhausted → die with the reason).
+- Review gate = a worker verifying each result against its SUCCESS — the two
+  CC-workflow quality patterns (adversarial review, check-until-green) as a
+  fixed stage, no sandbox. Dispatch critical section holds the daemon write
+  mutex (turn assignment/spawn) without blocking other ops for the pipeline's
+  lifetime.
+- Gate PASSED live: fan-out 2 → review PASS → digest; review FAIL → bounded
+  retry → PASS; FAIL with retries:0 → exit 1 with reason; spec validation
+  errors. Build+vet+test clean. Files: `internal/daemon/pipeline.go`,
+  `internal/daemon/ops.go` (route), `cmd/pipeline.go`.
 
 ## Help & discovery
 
