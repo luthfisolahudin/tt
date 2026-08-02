@@ -267,7 +267,7 @@ extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `default` | `9router/cbcn/deepseek-v4-flash` | `max` | All delegated worker tasks. |
+| `default` | `9router/cx/gpt-5.6-luna` | `max` | All delegated worker tasks. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
 `--model $provider_model:$effort` from it. The extension never changes the model,
@@ -286,8 +286,9 @@ to a sibling source directory. Successful `/v1/models` discovery replaces the
 pinned startup fallback with exactly the live catalog. Once at least one
 connection exists, 9Router filters that catalog to models owned by active
 connections. Pi appends `/v1/messages` to the base URL. The tier remains
-client-facing `max`; the shared resolver maps it to the measured wire `xhigh`.
-The pinned CodeBuddy default accepts text and images; Pi's message model does
+client-facing `max`; the shared resolver maps it to the measured wire `max` for
+the pinned OpenAI Codex model. The pinned default accepts text and images; Pi's
+message model does
 not expose audio, video, or native document input to workers.
 
 9Router keeps upstream provider credentials behind a loopback-only compatibility

@@ -146,16 +146,17 @@ current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
-| `default` | `9router/cbcn/deepseek-v4-flash` | `max` | All delegated worker tasks. |
+| `default` | `9router/cx/gpt-5.6-luna` | `max` | All delegated worker tasks. |
 
 The default worker accepts text and images. Pi auto-discovers the models owned
 by active connections from the local 9Router Anthropic-compatible endpoint,
 with only the pinned default as its startup fallback. The private worker
 installs the canonical provider and effort policy from the pinned GitHub
-`@luthfisolahudin/9router-integrations` revision; client `max` maps to the measured wire
-`xhigh`. Pi's message model can support text and image inputs, and the pinned
-CodeBuddy model advertises both. Audio, video, and native document inputs are
-not exposed by `tt`. The dated benchmark, price snapshot, and re-evaluation
+`@luthfisolahudin/9router-integrations` revision; client `max` maps to the
+measured wire `max` for the pinned OpenAI Codex model. Pi's message model can support text and
+image inputs, and the pinned model advertises both. Audio, video, and native
+document inputs are not exposed by `tt`. The dated benchmark, price snapshot,
+and re-evaluation
 rules live in
 [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 

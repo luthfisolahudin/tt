@@ -4,6 +4,16 @@ Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
 in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
 v<x.y.z>` to inspect a range.
 
+## [0.15.3] — 2026-08-03
+
+- Switched the default worker to OpenAI Codex GPT 5.6 Luna at max effort and
+  pinned the worker integration revision that supports its model mapping.
+
+## [0.15.2] — 2026-08-03
+
+- Fixed clean installation of the pinned 9Router integration by using its full
+  Git commit SHA instead of an abbreviated fragment pnpm could not resolve.
+
 ## [0.15.1] — 2026-08-02
 
 - Replaced CLIProxyAPI and CosmosHub routing with loopback-only 9Router and

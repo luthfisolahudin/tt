@@ -11,7 +11,7 @@ type Tier struct {
 var TierRegistry = map[string]Tier{
 	"default": {
 		Name:   "default",
-		Model:  "9router/cbcn/deepseek-v4-flash",
+		Model:  "9router/cx/gpt-5.6-luna",
 		Effort: "max",
 	},
 }

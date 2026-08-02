@@ -26,10 +26,10 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- The single `default` tier routes all workers to CodeBuddy CN DeepSeek V4 Flash
+- The single `default` tier routes all workers to OpenAI Codex GPT 5.6 Luna
   at client-facing max effort through local 9Router's dynamic Anthropic
   Messages-compatible provider. The shared integration maps that to the measured
-  wire `xhigh`. Normal dispatches omit `--tier`; the registry remains data-driven
+  wire `max`. Normal dispatches omit `--tier`; the registry remains data-driven
   so a future model decision changes one row. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
   (thinking effort is fixed per tier, not independently settable). See

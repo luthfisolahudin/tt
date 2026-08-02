@@ -7,24 +7,25 @@ this is the evidence and decision record, not a second configuration surface.
 ## Current decision
 
 - Tier: `default`
-- Provider/model: `9router/cbcn/deepseek-v4-flash`
+- Provider/model: `9router/cx/gpt-5.6-luna`
 - API: Anthropic Messages
 - Client thinking effort: `max`
-- Measured wire effort: `xhigh`
+- Measured wire effort: `max`
 - Input: text and image
-- Decided: 2026-08-02
+- Decided: 2026-08-03
 
 This switch is operator-directed as part of consolidating local AI routing on
-9Router rather than the result of a new comparative benchmark. 9Router discovers
-models from active provider connections, but the default model remains pinned so
-a changing catalog cannot silently change worker behavior. The prior CosmosHub
-benchmark remains below as historical selection evidence.
+9Router and selecting OpenAI Codex GPT 5.6 Luna for delegated work. It is not the
+result of a new comparative benchmark. 9Router discovers models from active
+provider connections, but the default model remains pinned so a changing catalog
+cannot silently change worker behavior. The prior benchmark remains below as
+historical selection evidence.
 
 The canonical measurement record lives in
-`../../9router-integrations/docs/EFFORT_MATRIX.md`. Explicit `max` requests for all
-five active CodeBuddy CN models were normalized by 9Router to `THINK:xhigh`;
-explicit `xhigh` requests were applied as `THINK:xhigh`. The clients therefore
-expose only `max` while the shared resolver transmits `xhigh`.
+`../../9router-integrations/docs/EFFORT_MATRIX.md`. The five CodeBuddy CN models
+were normalized by 9Router to `THINK:xhigh`, while the three active OpenAI Codex
+models accepted explicit `max` requests. The shared resolver therefore transmits
+`max` for the pinned Luna model.
 
 Pi's model contract supports text and image input only. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model

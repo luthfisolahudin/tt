@@ -1,6 +1,6 @@
 # Prompting the default worker
 
-The default worker runs `9router/cbcn/deepseek-v4-flash` at **max** effort for
+The default worker runs `9router/cx/gpt-5.6-luna` at **max** effort for
 all delegated work. Normal dispatches omit `--tier`.
 
 The worker accepts text and image input. For an image on disk, put its path in
