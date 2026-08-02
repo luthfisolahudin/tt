@@ -51,3 +51,45 @@ func SendKeys(target string, keys ...string) error {
 	}
 	return nil
 }
+
+func NewWindow(session, name, cwd string) error {
+	var stderr bytes.Buffer
+	cmd := exec.Command("tmux", "new-window", "-t", "="+session+":", "-n", name, "-c", cwd)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("new-window: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func SetWindowOption(session, window, option, value string) error {
+	cmd := exec.Command("tmux", "set-window-option", "-t", "="+session+":"+window, option, value)
+	return cmd.Run()
+}
+
+func RespawnPane(session, window, cwd, command string) error {
+	var stderr bytes.Buffer
+	cmd := exec.Command("tmux", "respawn-pane", "-k", "-t", "="+session+":"+window, "-c", cwd, command)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("respawn-pane: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func KillWindow(session, window string) {
+	exec.Command("tmux", "kill-window", "-t", "="+session+":"+window).Run()
+}
+
+func CapturePane(session, window string, lines int) (string, error) {
+	out, err := exec.Command("tmux", "capture-pane", "-p", "-J", "-S", fmt.Sprintf("-%d", lines), "-t", "="+session+":"+window).Output()
+	if err != nil {
+		return "", fmt.Errorf("capture-pane: %w", err)
+	}
+	return string(out), nil
+}
+
+func SetEnvironment(session, key, value string) error {
+	cmd := exec.Command("tmux", "set-environment", "-t", "="+session, key, value)
+	return cmd.Run()
+}

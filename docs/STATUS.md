@@ -256,6 +256,12 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Possible next steps
 
-- Optional per-project config to auto-run the dev command.
-- `tt pi logs --follow` (interval re-capture or a streamed transcript file) —
-  the one-shot dump landed in 0.10.4; follow was deferred pending a streaming hook.
+Superseded by `docs/PLAN.md` — the approved upgrade (single daemon `ttd` +
+declarative pipelines + per-verb/machine-readable help). Phase 1 (daemon
+skeleton + Go CLI parity) is in progress on the Go rewrite. The standalone
+items below remain deferred until the plan's phases absorb or re-scope them:
+
+- `tt pi logs --follow` → absorbed into the plan's `tt peek` (daemon state
+  query), Phase 2.
+- Optional per-project config to auto-run the dev command → still deferred
+  (explicitly out of scope in the plan).
