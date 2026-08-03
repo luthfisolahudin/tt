@@ -235,54 +235,70 @@ var piAutoCmd = &cobra.Command{
 
 // --- steer ------------------------------------------------------------------
 
-var piSteerCmd = &cobra.Command{
-	Use:                "steer <callsign|all> (FILE | -)",
-	Short:              "Inject a message NOW into the worker's current turn",
-	DisableFlagParsing: true,
-	Run: func(cmd *cobra.Command, args []string) {
-		if helpRequested(args) {
-			showHelp(cmd)
-		}
-		name, src := "", ""
-		i := 0
-		for ; i < len(args); i++ {
-			a := args[i]
-			switch {
-			case a == "-":
-				src = "-"
-			case strings.HasPrefix(a, "-"):
-				die("unknown flag for steer: " + a)
-			default:
+var piSteerCmd = newSteerCmd("steer", false)
+
+// newSteerCmd builds `steer` and its `steer-all` sibling. forceAll pins the
+// target to every live worker, so `steer-all <msg>` takes only a source (the
+// bash pi_steer_all_cmd shape) while `steer <cs|all> <msg>` takes both.
+func newSteerCmd(use string, forceAll bool) *cobra.Command {
+	short := "Inject a message NOW into the worker's current turn"
+	usage := use + " <callsign|all> (FILE | -)"
+	if forceAll {
+		short = "Inject a message NOW into every live worker's current turn"
+		usage = use + " (FILE | -)"
+	}
+	return &cobra.Command{
+		Use:                usage,
+		Short:              short,
+		DisableFlagParsing: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			if helpRequested(args) {
+				showHelp(cmd)
+			}
+			name, src := "", ""
+			if forceAll {
+				name = "all"
+			}
+			i := 0
+			for ; i < len(args); i++ {
+				a := args[i]
 				switch {
-				case name == "":
-					name = a
-				case src == "":
-					src = a
+				case a == "-":
+					src = "-"
+				case strings.HasPrefix(a, "-"):
+					die("unknown flag for " + use + ": " + a)
 				default:
-					die("extra arg: " + a)
+					switch {
+					case !forceAll && name == "":
+						name = a
+					case src == "":
+						src = a
+					default:
+						die("extra arg: " + a)
+					}
 				}
 			}
-		}
-		if name == "" {
-			die("steer: callsign required")
-		}
-		if src == "" {
-			die("steer: message source required (file path or -)")
-		}
-		if src != "-" {
-			if _, err := os.Open(src); err != nil {
-				die(fmt.Sprintf("steer: '%s' is not a readable file. Source must be a FILE path or '-' for stdin.", src))
+			if name == "" {
+				die(use + ": callsign required")
 			}
-		}
-		msg := trimTrailingNewlines(string(readSource(src, "steer")))
-		code := doDaemon("steer", struct {
-			Callsign   string `json:"callsign"`
-			MessageB64 string `json:"message_b64"`
-		}{name, b64([]byte(msg))})
-		if code != 0 {
-			osExit(code)
-		}
-	},
+			if src == "" {
+				die(use + ": message source required (file path or -)")
+			}
+			if src != "-" {
+				if _, err := os.Open(src); err != nil {
+					die(fmt.Sprintf("%s: '%s' is not a readable file. Source must be a FILE path or '-' for stdin.", use, src))
+				}
+			}
+			msg := trimTrailingNewlines(string(readSource(src, use)))
+			code := doDaemon("steer", struct {
+				Callsign   string `json:"callsign"`
+				MessageB64 string `json:"message_b64"`
+			}{name, b64([]byte(msg))})
+			if code != 0 {
+				osExit(code)
+			}
+		},
+	}
 }
 
 // --- resume -----------------------------------------------------------------
@@ -659,6 +675,7 @@ func init() {
 		piSendCmd,
 		piAutoCmd,
 		piSteerCmd,
+		newSteerCmd("steer-all", true),
 		newWaitCmd("wait", false),
 		newWaitCmd("wait-all", true),
 		piStatusCmd,
