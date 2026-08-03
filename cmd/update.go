@@ -15,6 +15,7 @@ import (
 var piUpdateCmd = &cobra.Command{
 	Use:                "update [<args>...]",
 	Short:              "Run `pi update` against the worker's private config dir",
+	Example:            "  tt pi update",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

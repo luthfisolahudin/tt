@@ -9,9 +9,10 @@ import (
 )
 
 var nameCmd = &cobra.Command{
-	Use:   "name",
-	Short: "Print computed session name",
-	Args:  cobra.NoArgs,
+	Use:     "name",
+	Short:   "Print computed session name",
+	Example: "  tt name",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(session.SessionName())
 	},

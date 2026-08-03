@@ -9,11 +9,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// xCmd is `tt x` — cross-session messaging, served by the daemon (the single
-// cross-session owner per the plan).
+// xCmd is `tt x` — cross-session messaging, served by the daemon, which is the
+// single process that spans sessions and so the only safe owner of delivery.
 var xCmd = &cobra.Command{
-	Use:   "x",
-	Short: "Cross-session messaging",
+	Use:     "x",
+	Short:   "Cross-session messaging",
+	Example: "  tt x ls\n  tt x send --timeout 60 \"$(tt name)\" - <<<'Please review the latest worker result.'",
 	Run: func(cmd *cobra.Command, args []string) {
 		die("x: subcommand required (try `tt --help`)")
 	},
@@ -25,6 +26,7 @@ var xCmd = &cobra.Command{
 var xSendCmd = &cobra.Command{
 	Use:                "send [--timeout SECONDS] <session-id> (FILE | -)",
 	Short:              "Send a message to another session's orchestrator",
+	Example:            "  tt x send --timeout 60 \"$(tt name)\" - <<<'Please review the latest worker result.'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -90,6 +92,7 @@ func newXListCmd(use string) *cobra.Command {
 	return &cobra.Command{
 		Use:                use + " [--all]",
 		Short:              "List tt sessions available to message",
+		Example:            "  tt x " + use + " --all",
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			if helpRequested(args) {
@@ -122,6 +125,7 @@ func newXListCmd(use string) *cobra.Command {
 var xObserveCmd = &cobra.Command{
 	Use:                "observe [run] [--interval SECONDS] [--duration SECONDS] [--all]",
 	Short:              "Sample Claude panes to tune the x send classifier (writes sqlite)",
+	Example:            "  tt x observe --interval 5 --duration 60",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

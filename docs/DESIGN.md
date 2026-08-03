@@ -14,6 +14,46 @@ code worker wired to OpenAI Codex (ChatGPT Plus, flat-rate). Running
 dev server, the orchestrator, and a pool of pi workers. One place to
 attach; one place to see everything.
 
+## Coordination tax
+
+Every delegation imposes a coordination tax on the orchestrator, even when
+worker mechanics are reliable:
+
+- **Context tax** — each `send` and `wait` round trip, and each full result
+  body, enters the orchestrator's context.
+- **Prompt tax** — prompts must be bulletproof because correcting an
+  incomplete task costs another full round trip.
+- **Visibility tax** — neither a human nor an agent has a clean way to see
+  what is running or inspect a worker without scraping ANSI pane output.
+
+The pool solves durable parallel work, but it does not by itself remove these
+costs. `tt` therefore provides:
+
+- `tt pi collect --digest` returns compact status and summary lines while full
+  results remain addressable on demand.
+- Pipelines with a review gate combine fan-out, review, and digest into one
+  orchestrator interaction. A review request is part of the pipeline rather
+  than another manually coordinated round trip.
+- `tt pi steer` keeps a corrective follow-up economical when a prompt needs
+  adjustment.
+- `tt peek` gives an agent a read-only, state-backed view of a window or worker
+  without ANSI scraping.
+
+## Help and discovery
+
+Help is the discovery surface because the primary user is an AI agent choosing
+which verb to reach for. Every verb and nested subcommand answers `--help`
+with exit 0; a subcommand that returns an error for `--help` is a bug. Help
+uses one synopsis style: flags before positionals, source last, and the short
+alias first (`tt <verb> [FLAGS] <positionals> (FILE|-)`). The Cobra command
+definitions generate this surface, so help does not drift from parsing and is
+not a hand-maintained heredoc.
+
+The design deliberately does not build a machine-readable verb tree such as
+`tt verbs --json`. The consumer skill's `references/tt-cli.md` already gives
+agents the command surface in their context, while runtime enumeration would
+cost a tool call to learn what they already know.
+
 ## Session model
 
 - **One tmux session per project**, named `<basename($PWD)>-<sha1($PWD)[:4]>`.

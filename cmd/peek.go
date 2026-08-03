@@ -10,6 +10,7 @@ import (
 var peekCmd = &cobra.Command{
 	Use:                "peek [--lines N] <window|callsign>",
 	Short:              "Read a window's current pane content (any window, read-only)",
+	Example:            "  tt peek --lines 50 dev\n  tt peek --lines 100 alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

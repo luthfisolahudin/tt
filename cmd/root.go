@@ -9,6 +9,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:           "tt",
 	Short:         "tmux team: per-project tmux session with a pi worker pool",
+	Example:       "  tt up\n  tt pi send alfa - <<<'TASK: inspect the authentication flow; SUCCESS: report findings.'",
 	Version:       version.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,

@@ -211,6 +211,8 @@ session — what a handoff can trust without retesting:
   TUI and remain code-reviewed only. `notify-drain`'s lock, discard, and
   stale-takeover paths ARE verified.
 - The Go `x observe` sqlite sampler is code-reviewed only.
+- `tt down` is code-reviewed only and has never been exercised live against a
+  throwaway session because it is destructive.
 - `tt down` reads a y/N confirmation from stdin — non-interactive callers must
   pipe `y`.
 - `tt up`'s final attach fails harmlessly off a tty (expected headless).
@@ -303,12 +305,7 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Possible next steps
 
-Superseded by `docs/PLAN.md` — the approved upgrade (single daemon `ttd` +
-declarative pipelines + per-verb/machine-readable help). Phase 1 (daemon
-skeleton + Go CLI parity) is in progress on the Go rewrite. The standalone
-items below remain deferred until the plan's phases absorb or re-scope them:
-
-- `tt pi logs --follow` → absorbed into the plan's `tt peek` (daemon state
-  query), Phase 2.
-- Optional per-project config to auto-run the dev command → still deferred
-  (explicitly out of scope in the plan).
+- Pipeline stage workers persist after a run; reclaim them with `tt pi popidle`
+  or `tt pi rm`. Auto-reaping them is unimplemented.
+- An optional per-project config to auto-run the dev command remains deliberately
+  deferred.

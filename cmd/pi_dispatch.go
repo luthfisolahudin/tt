@@ -14,6 +14,7 @@ import (
 var piSendCmd = &cobra.Command{
 	Use:                "send [--tier NAME] [--notify] <callsign> (FILE | -)",
 	Short:              "Send a prompt to a worker's live pi REPL (run-next)",
+	Example:            "  tt pi send --tier default alfa - <<<'TASK: inspect the authentication flow; FILES: internal/auth/; SUCCESS: report findings with file and line.'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -82,11 +83,19 @@ var piSendCmd = &cobra.Command{
 	},
 }
 
+func steerExample(use string, forceAll bool) string {
+	if forceAll {
+		return "  tt pi " + use + " - <<<'Pause and report the current status.'"
+	}
+	return "  tt pi " + use + " alfa - <<<'Prioritize the failing test and continue.'"
+}
+
 // --- auto -------------------------------------------------------------------
 
 var piAutoCmd = &cobra.Command{
 	Use:                "auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE | -)",
 	Short:              "Dispatch without naming a worker (idle → spawn → pool)",
+	Example:            "  tt pi auto --prefer-fresh - <<<'TASK: run the focused tests; SUCCESS: report the command and result.'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -171,6 +180,7 @@ func newSteerCmd(use string, forceAll bool) *cobra.Command {
 	return &cobra.Command{
 		Use:                usage,
 		Short:              short,
+		Example:            steerExample(use, forceAll),
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			if helpRequested(args) {

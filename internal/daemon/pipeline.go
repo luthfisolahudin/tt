@@ -11,8 +11,9 @@ import (
 )
 
 // A pipeline is a DECLARATIVE spec (data, not code) executed by the daemon:
-// an ordered list of stages. One trigger in, one digest out. See docs/PLAN.md
-// Phase 3. There is no scripting — a stage is a fixed shape:
+// an ordered list of stages. One trigger in, one digest out. See
+// docs/DESIGN.md "Declarative pipelines" and docs/pipeline.schema.json. There
+// is no scripting — a stage is a fixed shape:
 //
 //	{"fanout": [{"task": "..."}, ...], "join": "digest"|"full"}
 //	{"review": {"prompt": "...", "introduction": "..."}, "against": "previous"}

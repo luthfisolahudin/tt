@@ -6,10 +6,12 @@ import (
 
 // pipelineCmd runs a declarative pipeline spec end-to-end in the daemon: an
 // ordered list of fanout / review stages, one trigger in, one digest out. The
-// spec is JSON read from FILE or stdin. See docs/PLAN.md Phase 3.
+// spec is JSON read from FILE or stdin. See docs/DESIGN.md "Declarative pipelines"
+// and docs/pipeline.schema.json.
 var pipelineCmd = &cobra.Command{
-	Use:   "pipeline",
-	Short: "Run a declarative fan-out + review pipeline",
+	Use:     "pipeline",
+	Short:   "Run a declarative fan-out + review pipeline",
+	Example: "  tt pipeline run - <<<'{\"stages\":[{\"fanout\":[{\"task\":\"TASK: run focused tests; SUCCESS: report the result.\"}]}]}'",
 	Run: func(cmd *cobra.Command, args []string) {
 		die("pipeline: subcommand required (try `tt pipeline --help`)")
 	},
@@ -18,6 +20,7 @@ var pipelineCmd = &cobra.Command{
 var pipelineRunCmd = &cobra.Command{
 	Use:                "run [--timeout SECONDS] [--json] (FILE | -)",
 	Short:              "Run a pipeline spec (fan-out stages + review gates) to one digest",
+	Example:            "  tt pipeline run --timeout 300 --json - <<<'{\"stages\":[{\"fanout\":[{\"label\":\"tests\",\"task\":\"TASK: run focused tests; SUCCESS: report the result.\"}]}]}'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

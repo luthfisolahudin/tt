@@ -10,8 +10,7 @@ orients an AI agent working **on** `tt` itself.
    **Always read before editing.**
 2. `docs/DESIGN.md` — design and rationale (the live-REPL model and the
    `tt-worker` extension control channel).
-3. `docs/PLAN.md` — the daemon/pipeline upgrade and its phases.
-4. `README.md` — user-facing usage and command reference.
+3. `README.md` — user-facing usage and command reference.
 
 ## Layout
 
@@ -31,7 +30,7 @@ orients an AI agent working **on** `tt` itself.
   tt's private `PI_CODING_AGENT_DIR`.
 - `~/.local/bin/tt` is the **installed binary** — there IS a build step now:
   `go-task install` (builds to `bin/tt`, then installs and restarts `ttd`).
-- `docs/` — design, status, plan. `CHANGELOG.md` — version history (newest
+- `docs/` — design and status. `CHANGELOG.md` — version history (newest
   first).
 
 ## Conventions & invariants — do not regress
@@ -177,7 +176,7 @@ first), commit, then tag the commit — `git tag -a v<x.y.z> -m "tt v<x.y.z> —
 | pipeline spec shape | `docs/pipeline.schema.json` · `docs/DESIGN.md` pipeline section · consumer skill `references/tt-cli.md` |
 | trigger/result file format or nonce protocol | `docs/DESIGN.md` control channel + task IDs sections · `pi-worker/extensions/tt-worker.ts` |
 | worker states | `docs/DESIGN.md` worker state detection section |
-| daemon ops or socket protocol | `docs/DESIGN.md` · `docs/PLAN.md` |
+| daemon ops or socket protocol | `docs/DESIGN.md` |
 | install layout (`~/.local/share/tt/`, `Taskfile.yml`) | `docs/STATUS.md` current state |
 | completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-worker/APPEND_SYSTEM.md` |
 | model tiers or provider | `docs/DESIGN.md` model tier · `docs/MODEL_DECISION.md` · `README.md` model tier table · consumer skill `references/prompting-and-tiers.md` + `references/prompting-<tier>.md` |

@@ -11,6 +11,7 @@ import (
 var piResumeCmd = &cobra.Command{
 	Use:                "resume <callsign>",
 	Short:              "Recover an interrupted worker without a context wipe",
+	Example:            "  tt pi resume alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -44,6 +45,7 @@ var piResumeCmd = &cobra.Command{
 var piClearCmd = &cobra.Command{
 	Use:                "clear [--force] <callsign>",
 	Short:              "Wipe the worker's context and respawn its REPL",
+	Example:            "  tt pi clear --force alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -83,6 +85,7 @@ func newRmCmd(use string) *cobra.Command {
 	return &cobra.Command{
 		Use:                use + " [--force] <callsign>",
 		Short:              "Remove a worker (kill its REPL + window, wipe its state)",
+		Example:            "  tt pi " + use + " --force alfa",
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			if helpRequested(args) {
@@ -122,6 +125,7 @@ func newRmCmd(use string) *cobra.Command {
 var piPopidleCmd = &cobra.Command{
 	Use:                "popidle",
 	Short:              "Remove the highest-NATO idle worker",
+	Example:            "  tt pi popidle",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

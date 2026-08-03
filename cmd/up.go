@@ -13,6 +13,7 @@ import (
 var upCmd = &cobra.Command{
 	Use:                "up [--attach]",
 	Short:              "Create or heal the project's tmux session (attach outside tmux; --attach to switch in-tmux)",
+	Example:            "  tt up\n  tt up --attach",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -40,6 +41,7 @@ var upCmd = &cobra.Command{
 var attachCmd = &cobra.Command{
 	Use:                "attach",
 	Short:              "Attach to the project's tmux session (without creating)",
+	Example:            "  tt attach\n  tt a",
 	Aliases:            []string{"a"},
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -63,6 +65,7 @@ var attachCmd = &cobra.Command{
 var downCmd = &cobra.Command{
 	Use:                "down",
 	Short:              "Kill the project's tmux session (with confirmation)",
+	Example:            "  tt down",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

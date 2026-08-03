@@ -14,6 +14,7 @@ import (
 var piStatusCmd = &cobra.Command{
 	Use:                "status [--json]",
 	Short:              "One row per worker: state, elapsed, queue, last task, tier, gen",
+	Example:            "  tt pi status --json",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -44,6 +45,7 @@ var piStatusCmd = &cobra.Command{
 var piCollectCmd = &cobra.Command{
 	Use:                "collect [--timeout SECONDS] [--json] [--digest] [all | <callsign>]",
 	Short:              "Fan-out join that never drops a finished task (cursor-based)",
+	Example:            "  tt pi collect --timeout 300 --digest all",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -95,6 +97,7 @@ var piCollectCmd = &cobra.Command{
 var piResultsCmd = &cobra.Command{
 	Use:                "results [--json] [<callsign> | <task-id>]",
 	Short:              "Re-read durable task outcomes from the per-id store",
+	Example:            "  tt pi results --json alfa-3",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
@@ -135,6 +138,7 @@ func newWaitCmd(use string, forceAll bool) *cobra.Command {
 	return &cobra.Command{
 		Use:                use + " [--timeout SECONDS] [--json] <callsign|task-id|pool-id|all> [task-id]",
 		Short:              short,
+		Example:            waitExample(use, forceAll),
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
 			if helpRequested(args) {
@@ -189,11 +193,19 @@ func newWaitCmd(use string, forceAll bool) *cobra.Command {
 	}
 }
 
+func waitExample(use string, forceAll bool) string {
+	if forceAll {
+		return "  tt pi " + use + " --timeout 300"
+	}
+	return "  tt pi " + use + " --timeout 300 alfa alfa-3"
+}
+
 // --- logs (CLI-local, read-only tmux) ---------------------------------------
 
 var piLogsCmd = &cobra.Command{
 	Use:                "logs [--lines N] <callsign>",
 	Short:              "Dump a worker's pi REPL scrollback (read-only)",
+	Example:            "  tt pi logs --lines 100 alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {

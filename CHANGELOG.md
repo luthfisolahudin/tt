@@ -4,6 +4,26 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.16.2] — 2026-08-03
+
+- **Every verb's `--help` now carries a copy-pasteable example.** Help is the
+  discovery surface for an AI agent choosing a verb, and a synopsis alone does
+  not show the calling convention — notably that inline prompts use `-` with a
+  here-string, never process substitution. Examples follow the house style:
+  flags before positionals, source last.
+- **`docs/PLAN.md` retired.** The daemon/pipeline upgrade it described shipped
+  in 0.16.0-0.16.1, and a finished plan left in `docs/` becomes drift the next
+  agent has to re-verify. Its still-live rationale moved to `docs/DESIGN.md`:
+  the **coordination tax** (context, prompt, visibility) that explains why
+  `collect --digest`, `peek` and pipelines exist, and **help as a discovery
+  surface**. `docs/STATUS.md`'s "Possible next steps" no longer defers to it.
+- **Recorded a decision not to build `tt verbs --json`.** A machine-readable
+  verb tree was planned; agents get the command surface from the consumer
+  skill's `references/tt-cli.md`, already in context, so runtime enumeration
+  would cost a tool call to learn what they already know.
+- `tt down` is now documented as code-reviewed only, never exercised live —
+  it is destructive, so it was never run against a throwaway session.
+
 ## [0.16.1] — 2026-08-03
 
 - **`x send` and `--notify` work against opencode and pi orchestrators.** The

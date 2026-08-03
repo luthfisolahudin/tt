@@ -12,8 +12,9 @@ import (
 )
 
 var piCmd = &cobra.Command{
-	Use:   "pi",
-	Short: "pi worker pool",
+	Use:     "pi",
+	Short:   "pi worker pool",
+	Example: "  tt pi status\n  tt pi send alfa - <<<'TASK: inspect the latest change; SUCCESS: report findings.'",
 	Run: func(cmd *cobra.Command, args []string) {
 		die("pi: subcommand required (try `tt --help`)")
 	},

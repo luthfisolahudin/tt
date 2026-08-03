@@ -10,17 +10,19 @@ import (
 )
 
 var daemonCmd = &cobra.Command{
-	Use:   "daemon",
-	Short: "ttd daemon control (one process serving all sessions)",
+	Use:     "daemon",
+	Short:   "ttd daemon control (one process serving all sessions)",
+	Example: "  tt daemon status\n  tt daemon start",
 	Run: func(cmd *cobra.Command, args []string) {
 		die("daemon: subcommand required (start|stop|status)")
 	},
 }
 
 var daemonStartCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start the ttd daemon (no-op if already running)",
-	Args:  cobra.NoArgs,
+	Use:     "start",
+	Short:   "Start the ttd daemon (no-op if already running)",
+	Example: "  tt daemon start",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		pid, started, err := client.Start()
 		if err != nil {
@@ -35,9 +37,10 @@ var daemonStartCmd = &cobra.Command{
 }
 
 var daemonStopCmd = &cobra.Command{
-	Use:   "stop",
-	Short: "Stop the ttd daemon",
-	Args:  cobra.NoArgs,
+	Use:     "stop",
+	Short:   "Stop the ttd daemon",
+	Example: "  tt daemon stop",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if _, alive := client.Running(); !alive {
 			note("ttd not running")
@@ -51,9 +54,10 @@ var daemonStopCmd = &cobra.Command{
 }
 
 var daemonStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Report whether the ttd daemon is running",
-	Args:  cobra.NoArgs,
+	Use:     "status",
+	Short:   "Report whether the ttd daemon is running",
+	Example: "  tt daemon status",
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		pid, alive := client.Running()
 		if !alive {
@@ -67,10 +71,11 @@ var daemonStatusCmd = &cobra.Command{
 }
 
 var daemonServeCmd = &cobra.Command{
-	Use:    "serve",
-	Short:  "Run the daemon in the foreground (internal)",
-	Hidden: true,
-	Args:   cobra.NoArgs,
+	Use:     "serve",
+	Short:   "Run the daemon in the foreground (internal)",
+	Example: "  tt daemon serve",
+	Hidden:  true,
+	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := daemon.Serve(); err != nil {
 			fmt.Fprintf(os.Stderr, "tt: ttd: %s\n", err)

@@ -21,10 +21,11 @@ import (
 // pending notify/*.msg into one `[tt] …` paste delivered via the daemon's
 // deliver op, then idles out. Faithful port of the bash pi_notify_drain_cmd.
 var notifyDrainCmd = &cobra.Command{
-	Use:    "notify-drain <session>",
-	Short:  "Drain the --notify completion queue to the orchestrator (extension-internal)",
-	Hidden: true,
-	Args:   cobra.ExactArgs(1),
+	Use:     "notify-drain <session>",
+	Short:   "Drain the --notify completion queue to the orchestrator (extension-internal)",
+	Example: "  tt pi notify-drain \"$(tt name)\"",
+	Hidden:  true,
+	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		runNotifyDrain(args[0])
 	},

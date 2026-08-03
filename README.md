@@ -12,7 +12,7 @@ than one-shot `pi -p` calls. The model comes from the dispatched **tier**
 every session; the CLI is a thin client over its unix socket.
 
 - **Tool:** this repo — installed to `~/.local/bin/tt` with `go-task install`.
-- **Design & rationale:** `docs/DESIGN.md`. **Upgrade plan:** `docs/PLAN.md`.
+- **Design & rationale:** `docs/DESIGN.md`.
 
 > **Contributors & AI agents:** read `CLAUDE.md` first, then `docs/STATUS.md`, before editing anything.
 
