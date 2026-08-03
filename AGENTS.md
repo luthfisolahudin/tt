@@ -71,6 +71,12 @@ orients an AI agent working **on** `tt` itself.
 - **On-disk state is the source of truth.** The daemon holds no authoritative
   in-memory state, so it is restartable and idempotent; a dead daemon degrades
   to "CLI can't reach it", never to lost work.
+- **Task ids are never reused, and `results/` outlives the worker.** Ids come
+  from the session-wide `task.seq` (not a per-worker turn), and the mint skips
+  any id whose result file exists. A callsign is a reusable slot, not an
+  identity — do not re-derive ids from `<cs>.tasks.jsonl`, which teardown
+  deletes. `WipeWorkerFiles` must keep `results/`; bounding it is
+  `PruneResults`' job.
 - **The control-channel file formats are a contract with the extension** —
   queue task head (`<id> <tier> <nonce>[ notify]`), `tasks.jsonl`, the
   `results/<id>.result` head, and the steer/resume triggers. Write them

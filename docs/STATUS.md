@@ -305,7 +305,12 @@ Each increment was verified live against a throwaway project (see CHANGELOG).
 
 ## Possible next steps
 
-- Pipeline stage workers persist after a run; reclaim them with `tt pi popidle`
-  or `tt pi rm`. Auto-reaping them is unimplemented.
 - An optional per-project config to auto-run the dev command remains deliberately
   deferred.
+- `PruneResults` bounds the result store at teardown only, so a session that
+  never removes a worker keeps every result. Fine at current volumes; revisit if
+  a long-lived session gets large.
+- A worker incarnation has no identity of its own. Task ids no longer alias, but
+  nothing distinguishes "alfa, the incarnation that ran this morning" from a
+  later one — a `uid`/generation stamp in `tasks.jsonl` and the result header
+  would close that if a cross-session work log ever needs it.

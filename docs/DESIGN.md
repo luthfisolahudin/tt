@@ -211,10 +211,25 @@ format so the reader side needs no JSON parser:
 
 ## Task IDs & completion
 
-1. `tt pi send` assigns the task id `<callsign>-<turn>` (turn = line
-   count of `tasks.jsonl` + 1), appends `<cs>.queue/<turn>.task`, and appends
-   `{turn,id,sent_at,tier,nonce,notify}` to `tasks.jsonl` (the `notify` flag lets
-   `tt pi resume` re-honor the original `--notify`).
+1. `tt pi send` assigns the task id `<callsign>-<seq>`, appends
+   `<cs>.queue/<seq>.task`, and appends `{turn,id,sent_at,tier,nonce,notify}` to
+   `tasks.jsonl` (the `notify` flag lets `tt pi resume` re-honor the original
+   `--notify`).
+
+   `<seq>` comes from **`task.seq`, one counter for the whole session**, not
+   from a per-worker turn. A callsign names a slot that is reused across
+   spawns, so it cannot be part of a task's identity: the counter used to be
+   the line count of `<cs>.tasks.jsonl`, which teardown deletes, so a respawned
+   `alfa` restarted at `alfa-1` and its first result overwrote the previous
+   incarnation's. Ids are therefore sparse per worker — `alfa-1` may be
+   followed by `alfa-7` — which is the intended trade for never aliasing.
+
+   Allocation is also self-verifying: a minted id whose `results/<id>.result`
+   already exists is skipped. The durable result store, not the counter, is the
+   authority on what has been issued, so losing `task.seq` cannot cause reuse.
+   The daemon is a single writer under `writeMu`, so the counter needs no
+   coordination beyond that — which is why the ids stay short and readable
+   rather than becoming ULID/UUIDv7 tokens that every digest row would carry.
 2. `tt pi wait <cs> [task-id]` polls `results/<task-id>.result` until its `id`
    field matches; the task-id is **optional** and defaults to the worker's latest
    dispatch. Reading the per-id store (not the `<cs>.result` latest-pointer) means
@@ -382,10 +397,11 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 | `queue/<seq>.task` | Shared pool task from `tt pi auto` (id `pool-<seq>`); any idle worker steals it after draining its own queue. |
 | `results/<id>.result` | Unified id-keyed result store for **every** task (named + pool). Durable, never overwritten by a later task; read by `wait`/`collect`/`results`. Head carries `started_at` (on claim) and `ended_at` (on terminal) → `--json` `duration_s` + the `tt pi results` `DUR` column. |
 | `<cs>.collected` | `tt pi collect` cursor: the highest turn whose result has been collected for this worker. |
-| `pool.seq` | Monotonic counter for pool task ids. |
+| `task.seq` | Monotonic counter for **every** task id, named and pool alike; session-wide so a reused callsign can never alias a removed worker's ids. Seeded from existing results if absent. Supersedes `pool.seq`, which is only read once to seed it. |
 | `notify/<ts>-<pid>-<n>.msg` | `--notify` completion ping (`<id> <status>`), drained to the orchestrator. |
 | `notify-drain.lock` | Single-instance lock for the notify drainer (holds its pid). |
-| `<cs>.ephemeral` | Marker: this worker was spawned by `tt pi auto --rm`; it never steals pool work and is reaped once idle with an empty queue. |
+| `<cs>.ephemeral` | Marker: this worker was spawned by `tt pi auto --rm` or by a pipeline stage; it never steals pool work and is reaped once it settles (idle/blocked/interrupted) with an empty queue. Reaping keeps `results/`, so it is lossless. |
+| `<cs>.reserving` | Marker: a dispatcher has reserved this worker but has not enqueued its task yet. Holds the ephemeral reaper off across the REPL boot wait, which runs outside the write mutex. |
 | `<cs>.steer` | Run-now injection for `tt pi steer`; consumed by the extension (`<cs>.steer.consuming` is the transient mid-consume rename). |
 | `<cs>.resume` | Recovery trigger for `tt pi resume` (presence = signal); consumed by the extension, which re-drives the interrupted task to completion. |
 | `<cs>.result` | Latest-pointer: a copy of this worker's newest `results/<id>.result`, read by `worker_state` for liveness/idle classification. |
@@ -611,12 +627,26 @@ sandbox — the 90% of the value at 10% of the cost.
 - A **fanout** stage dispatches N tasks and joins each to a terminal status.
   Every task gets its **own freshly spawned worker** — never a reused idle one,
   whose leftover context would bias a stage that should judge only what it was
-  handed. At the worker cap the remainder queue on the shared pool. Workers
-  persist after the run (`tt pi popidle` / `tt pi rm` to reclaim).
+  handed. Those workers are marked **ephemeral**, so the existing reaper
+  reclaims them as soon as they fall idle: a run that left its workers behind
+  pushed the *next* run straight to the cap, where the fallback below silently
+  undid the freshness guarantee. Teardown is lossless — results outlive the
+  worker (see Task IDs), so reclaiming costs nothing.
+- At the worker cap a fanout task falls back to the shared pool, where any idle
+  worker may steal it. That worker's context is unknown, so the stage is no
+  longer guaranteed a clean judge; the run says so on stderr rather than
+  pretending otherwise.
 - A **review** stage hands the previous stage's results to ONE worker, which
   must end with `PIPELINE_PASS` or `PIPELINE_FAIL: <reason>`. On failure the
   engine re-runs the preceding fanout stage, bounded by `retries` (default 0;
-  exhausted → exit 1 with the reason).
+  exhausted → exit 1 with the reason). A review gate **refuses** the pool
+  fallback: a judge that might have produced the work it is reviewing is
+  worthless, so at the cap the pipeline fails with an actionable message
+  instead.
+- Joining tolerates a flaky liveness sample. `ReplRunning` is a `pgrep` probe,
+  and one false negative used to end a join with a fake terminal `down`, after
+  which the stage advanced and its review gate judged work that was still
+  running. A worker is only declared down after several consecutive misses.
 
 The spec is documented by `docs/pipeline.schema.json`.
 

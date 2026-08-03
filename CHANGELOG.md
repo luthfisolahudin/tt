@@ -4,6 +4,50 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.17.0] — 2026-08-03
+
+Worker teardown is now lossless, and a pipeline no longer degrades into using
+context-dirty workers. Found by dogfooding a real fan-out through `tt pipeline
+run` and reading what it actually did.
+
+- **Task ids are never reused.** Ids came from the line count of
+  `<cs>.tasks.jsonl` — a file `tt pi rm` deletes — so a respawned callsign
+  restarted at `alfa-1` and its first result silently overwrote the previous
+  incarnation's. Ids now come from `task.seq`, one counter per session, seeded
+  from existing results when absent. Allocation is self-verifying: an id whose
+  `results/<id>.result` exists is skipped, so losing the counter cannot cause
+  reuse. Ids are consequently sparse per worker (`alfa-1` then `alfa-7`).
+  Considered and rejected: ULID/UUIDv7/NanoID ids — the daemon is a single
+  writer under `writeMu`, so there is no coordination problem to solve, and a
+  26+ char opaque token would ride in every digest row and review prompt.
+- **`tt pi rm` no longer destroys results.** `WipeWorkerFiles` kept deleting
+  `results/<cs>-*.result`, so reclaiming a worker threw away the work it had
+  produced. Results are the durable product and now outlive the worker;
+  `PruneResults` bounds the store at teardown (keeps the newest 500).
+- **Pipeline workers are reclaimed automatically.** Stage workers are marked
+  ephemeral, so the existing reaper collects them once they settle — lossless
+  now that results survive. Previously each run left its workers behind, which
+  pushed the *next* run to the worker cap, where the shared-pool fallback
+  silently handed stages a worker with someone else's context. That is exactly
+  what happened during dogfooding.
+- **An ephemeral worker that settles non-idle is now reclaimed too.** The reaper
+  only ever collected `idle`, so a worker ending `interrupted` or `blocked`
+  pinned its slot forever — observed live, and it would have quietly undone the
+  reclaim above. Nobody is coming to `tt pi resume` a one-shot worker and its
+  result is already durable, so only genuinely unfinished states are spared.
+- **New `<cs>.reserving` marker.** Dispatch waits for a REPL to boot outside the
+  write mutex, leaving a reserved worker idle with an empty queue for up to 40 s
+  — long enough for a concurrent `tt pi status` sweep to reap it out from under
+  the pipeline. The marker holds the reaper off until the task is enqueued.
+- **A review gate refuses the pool fallback.** At the cap it now fails with an
+  actionable message rather than letting an arbitrary idle worker — possibly the
+  one that produced the work — judge it.
+- **A flaky liveness sample no longer ends a join.** `ReplRunning` is a `pgrep`
+  probe; a single false negative returned a fake terminal `down`, and the stage
+  advanced to its review gate on work that was still running. A worker is now
+  declared down only after several consecutive misses, and a fan-out task that
+  ends non-`done` is reported on stderr so it is not mistaken for a verdict.
+
 ## [0.16.2] — 2026-08-03
 
 - **Every verb's `--help` now carries a copy-pasteable example.** Help is the

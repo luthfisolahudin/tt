@@ -85,7 +85,9 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
   freshly spawned worker (clean context), so scopes must be disjoint. Schema
   and a worked example: `docs/pipeline.schema.json`. The review verdict is
   evidence, not acceptance — you still own the final diff review. Pipeline
-  workers persist; reclaim them with `tt pi popidle` / `tt pi rm <cs>`.
+  workers are reclaimed automatically once they finish; their results stay
+  readable by id afterwards. If the pool is at the cap a review gate fails
+  rather than judging with a worker that may have produced the work.
 - `tt pi steer <cs> - <<<'...'` — inject a correction into the current turn
   (run-now). `send` queues for the next turn instead; use `send` for review
   remediation that needs its own tracked result and acceptance checks.
@@ -94,7 +96,9 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
   `tt pi wait <cs>`.
 - `tt pi clear <cs>` — wipe context and respawn; use only when you want a fresh
   REPL.
-- `tt pi rm <cs>` — remove a persistent worker when done.
+- `tt pi rm <cs>` — remove a persistent worker when done. Lossless: its results
+  stay readable with `tt pi results <id>`, so reclaiming a worker never discards
+  the work it produced.
 - `tt pi update [--self|--extensions|<source>]` — run `pi update` against the
   worker's private `PI_CODING_AGENT_DIR` (the pool's installed extensions
   get updated, not the orchestrator's own pi config). Forwards all args.

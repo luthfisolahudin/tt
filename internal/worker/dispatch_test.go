@@ -81,8 +81,9 @@ func TestEnqueueToWorkerFormat(t *testing.T) {
 	}
 }
 
-// TestEnqueuePoolFormat pins the shared-pool format: id pool-<seq>, counter
-// pool.seq, and a queue/<seq>.task with the same line-1 shape.
+// TestEnqueuePoolFormat pins the shared-pool format: id pool-<seq>, the
+// session-wide counter task.seq, and a queue/<seq>.task with the same line-1
+// shape.
 func TestEnqueuePoolFormat(t *testing.T) {
 	sdir := t.TempDir()
 	prompt := []byte("TASK: pool task\n")
@@ -93,12 +94,12 @@ func TestEnqueuePoolFormat(t *testing.T) {
 	if id != "pool-1" {
 		t.Fatalf("id = %q, want pool-1", id)
 	}
-	seq, err := os.ReadFile(filepath.Join(sdir, "pool.seq"))
+	seq, err := os.ReadFile(filepath.Join(sdir, "task.seq"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(seq) != "1" {
-		t.Fatalf("pool.seq = %q, want 1", seq)
+		t.Fatalf("task.seq = %q, want 1", seq)
 	}
 	task, err := os.ReadFile(filepath.Join(sdir, "queue", "1.task"))
 	if err != nil {
@@ -150,13 +151,75 @@ func TestClearMarker(t *testing.T) {
 	if strings.Count(string(after), "\n") != 2 {
 		t.Fatalf("tasks.jsonl should have 2 lines after clear marker")
 	}
-	// next turn counts the marker: 3 lines -> turn 3
+	// Ids come from the session-wide counter, not from this file's line count,
+	// so a clear marker does not consume one.
 	id, err := EnqueueToWorker(sdir, "alfa", "default", []byte("TASK: y\n"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != "alfa-3" {
-		t.Fatalf("id = %q, want alfa-3 (turn counts clear markers)", id)
+	if id != "alfa-2" {
+		t.Fatalf("id = %q, want alfa-2 (clear markers do not consume a task id)", id)
+	}
+}
+
+// TestTaskIDsNeverReused is the regression guard for the aliasing bug: ids used
+// to come from the line count of `<cs>.tasks.jsonl`, which `tt pi rm` deletes,
+// so a respawned callsign restarted at 1 and its first result silently
+// overwrote the previous incarnation's.
+func TestTaskIDsNeverReused(t *testing.T) {
+	sdir := t.TempDir()
+	first, err := EnqueueToWorker(sdir, "alfa", "default", []byte("TASK: x\n"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stand in for the result the worker wrote, then tear the worker down.
+	if err := os.MkdirAll(filepath.Join(sdir, "results"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	rpath := filepath.Join(sdir, "results", first+".result")
+	if err := os.WriteFile(rpath, []byte("id: "+first+"\nstatus: done\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	WipeWorkerFiles(sdir, "alfa")
+
+	if _, err := os.Stat(rpath); err != nil {
+		t.Fatalf("teardown must not delete the durable result %s: %v", first, err)
+	}
+	next, err := EnqueueToWorker(sdir, "alfa", "default", []byte("TASK: y\n"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == first {
+		t.Fatalf("id %q reused after the worker was removed", next)
+	}
+	body, _ := os.ReadFile(rpath)
+	if !strings.Contains(string(body), "status: done") {
+		t.Fatalf("result for %s was overwritten by the new task", first)
+	}
+}
+
+// TestTaskIDSurvivesLostCounter pins the self-verifying mint: even if task.seq
+// is lost with part of the state dir, an id whose result still exists is never
+// handed out again.
+func TestTaskIDSurvivesLostCounter(t *testing.T) {
+	sdir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(sdir, "results"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"alfa-1", "alfa-2", "alfa-3"} {
+		if err := os.WriteFile(filepath.Join(sdir, "results", id+".result"), []byte("id: "+id+"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// No task.seq at all — the result store is the only record of what issued.
+	id, err := EnqueueToWorker(sdir, "alfa", "default", []byte("TASK: z\n"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, taken := range []string{"alfa-1", "alfa-2", "alfa-3"} {
+		if id == taken {
+			t.Fatalf("minted %q, which already has a result", id)
+		}
 	}
 }
 

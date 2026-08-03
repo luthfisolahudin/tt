@@ -4,10 +4,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/luthfisolahudin/tt/internal/tmux"
 )
+
+// ResultsRetained caps the durable result store. Results are small text files
+// and are the product of the work, so the cap is generous — it exists to stop
+// a long-lived session growing without bound, not to reclaim space.
+const ResultsRetained = 500
 
 // NATO is the ordered callsign pool (alfa..zulu); none is special.
 var NATO = []string{
@@ -52,9 +58,15 @@ func CountWorkers(session string) int {
 	return c
 }
 
-// WipeWorkerFiles removes all of a worker's state: <cs>.* files, its durable
-// results, and its pi-sessions dir. Shared dirs (queue/, results/ index) are
-// untouched.
+// WipeWorkerFiles removes a worker's own state — its <cs>.* files and its
+// pi-sessions dir — so the callsign is free to be spawned again.
+//
+// It deliberately does NOT touch `results/<cs>-*.result`. Reclaiming a worker
+// is reclaiming compute; the results are the durable product of the work and
+// outlive the worker that produced it, so `tt pi rm` is lossless and a task id
+// stays readable with `tt pi results <id>` afterwards. Task ids are never
+// reused (see NextSeq), so a later incarnation of the callsign cannot collide
+// with what is kept here. Bounding that store is PruneResults' job.
 func WipeWorkerFiles(sdir, name string) {
 	entries, err := os.ReadDir(sdir)
 	if err == nil {
@@ -64,15 +76,44 @@ func WipeWorkerFiles(sdir, name string) {
 			}
 		}
 	}
-	rdir := filepath.Join(sdir, "results")
-	if entries, err := os.ReadDir(rdir); err == nil {
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), name+"-") && strings.HasSuffix(e.Name(), ".result") {
-				os.Remove(filepath.Join(rdir, e.Name()))
-			}
-		}
-	}
 	os.RemoveAll(filepath.Join(sdir, "pi-sessions", name))
+	PruneResults(sdir, ResultsRetained)
+}
+
+// PruneResults keeps the newest `keep` result files and deletes the rest.
+//
+// Retention is by modification time, not by id: the sequence is session-wide,
+// so a callsign's numbering is no longer contiguous and "oldest id" is not
+// "oldest result". Called on teardown, the one moment the store is known to
+// have grown.
+func PruneResults(sdir string, keep int) {
+	rdir := filepath.Join(sdir, "results")
+	entries, err := os.ReadDir(rdir)
+	if err != nil {
+		return
+	}
+	type result struct {
+		name string
+		mod  int64
+	}
+	files := make([]result, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".result") {
+			continue
+		}
+		info, ierr := e.Info()
+		if ierr != nil {
+			continue
+		}
+		files = append(files, result{e.Name(), info.ModTime().UnixNano()})
+	}
+	if len(files) <= keep {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod > files[j].mod })
+	for _, f := range files[keep:] {
+		os.Remove(filepath.Join(rdir, f.name))
+	}
 }
 
 // ReapEphemeralWorkers tears down any ephemeral (auto --rm) worker that has
@@ -87,7 +128,20 @@ func ReapEphemeralWorkers(sdir, session string) {
 			WipeWorkerFiles(sdir, n)
 			continue
 		}
-		if WorkerState(sdir, session, n) != "idle" {
+		// Reserved by a dispatcher that has not enqueued its task yet. The
+		// worker is legitimately idle with an empty queue during the REPL boot
+		// wait, which can be 40 s, so without this the sweep would reap a
+		// pipeline's worker out from under it.
+		if FileExists(filepath.Join(sdir, n+".reserving")) {
+			continue
+		}
+		// An ephemeral worker is one-shot: no one is coming to `tt pi resume`
+		// it, and its result is already durable in results/. So a settled but
+		// non-idle outcome must not pin the slot forever — only genuinely
+		// unfinished work (busy/starting) is spared.
+		switch WorkerState(sdir, session, n) {
+		case "idle", "blocked", "interrupted":
+		default:
 			continue
 		}
 		// leave pinned follow-ups (named sends) to drain first

@@ -2,6 +2,9 @@ package daemon
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +78,12 @@ func (s *Session) runFanoutStage(st PipelineStage, timeout int, note func(string
 		if rerr != "" {
 			return nil, rerr
 		}
+		// A task that did not finish cleanly still flows into the review gate,
+		// which can only judge what it is handed — say so on the console, or a
+		// `down`/`timeout` looks like a review verdict about the work itself.
+		if r.Status != "done" {
+			note(fmt.Sprintf("fanout: %s ended %s — %s", r.ID, r.Status, r.Summary))
+		}
 		results = append(results, r)
 	}
 	return results, ""
@@ -106,6 +115,23 @@ func (s *Session) reserveWorker(claimed map[string]bool) (string, string) {
 			if claimed[n] || tmux.WindowExists(s.Name, "pi-"+n) {
 				continue
 			}
+			// Mark ephemeral BEFORE spawning — StartRepl reads the marker to
+			// set TT_WORKER_EPHEMERAL in the REPL's env, which is what stops an
+			// ephemeral worker stealing shared-pool work. A pipeline never
+			// reuses a worker, so its workers are one-shot and the reaper
+			// reclaims them once they settle. Without this a run left its
+			// workers behind, and the next run started at the cap and fell back
+			// onto context-dirty pool workers.
+			//
+			// `.reserving` holds the reaper off until the task is actually
+			// enqueued: dispatch waits for the REPL outside the write mutex, so
+			// the worker sits idle-and-empty for up to 40 s first.
+			if werr := os.WriteFile(filepath.Join(s.Dir, n+".ephemeral"), nil, 0644); werr != nil {
+				return "", werr.Error()
+			}
+			if werr := os.WriteFile(filepath.Join(s.Dir, n+".reserving"), nil, 0644); werr != nil {
+				return "", werr.Error()
+			}
 			if werr := worker.SpawnPiWindow(s.Dir, s.Name, s.Cwd, n, s.SyncEnv, &errb); werr != nil {
 				return "", werr.Error()
 			}
@@ -130,6 +156,9 @@ func (s *Session) dispatchTo(cs, body string) (string, string) {
 		}
 		return tid, ""
 	}
+	// Release the reservation however this returns: on failure the worker must
+	// become reapable again rather than pinning a slot no one will ever use.
+	defer os.Remove(filepath.Join(s.Dir, cs+".reserving"))
 	if err := worker.EnsureReplReady(s.Dir, s.Name, s.Cwd, cs, &errb); err != nil {
 		return "", err.Error()
 	}
@@ -149,8 +178,20 @@ func (s *Session) dispatchAuto(body string, timeout int) (string, string) {
 	if rerr != "" {
 		return "", rerr
 	}
+	// A review gate MUST run on a fresh worker. Falling back to the shared
+	// pool would let any idle worker steal the task — possibly one that just
+	// produced the work being reviewed, which makes the verdict worthless.
+	// Fail loudly instead of silently reviewing with a biased judge.
+	if cs == "" {
+		return "", fmt.Sprintf("review gate needs a fresh worker but the pool is at the cap (%s); reclaim one with `tt pi popidle` or `tt pi rm <cs>`", strconv.Itoa(worker.PiCap()))
+	}
 	return s.dispatchTo(cs, body)
 }
+
+// replDownConfirmations is how many CONSECUTIVE liveness misses must stack up
+// before a join gives up on a worker. `ReplRunning` is a `pgrep` sample and is
+// racy across a REPL restart, so one miss proves nothing.
+const replDownConfirmations = 5
 
 // awaitTerminal blocks until a task id reaches a terminal status
 // (done/blocked/other/error), the worker dies, or the timeout lapses.
@@ -160,6 +201,7 @@ func (s *Session) awaitTerminal(id string, timeout int) (stageResult, string) {
 	if i := strings.Index(id, "-"); i >= 0 {
 		cs = id[:i]
 	}
+	downPolls := 0
 	for {
 		head, _ := worker.ResultHeadByID(s.Dir, id)
 		if head != "" {
@@ -186,8 +228,13 @@ func (s *Session) awaitTerminal(id string, timeout int) (stageResult, string) {
 			}
 		}
 		// For a pooled task the claiming worker is unknown; only a named task's
-		// worker can be checked for a dead REPL.
-		if !strings.HasPrefix(id, "pool-") && !worker.ReplRunning(s.Dir, cs) {
+		// worker can be checked for a dead REPL. A single miss is not enough:
+		// one false negative used to end the join with a fake terminal "down",
+		// after which the stage advanced and handed its review gate work that
+		// was still running.
+		if strings.HasPrefix(id, "pool-") || worker.ReplRunning(s.Dir, cs) {
+			downPolls = 0
+		} else if downPolls++; downPolls >= replDownConfirmations {
 			return stageResult{ID: id, Status: "down", Summary: "worker REPL stopped"}, ""
 		}
 		if deadlineExpired(deadline) {
