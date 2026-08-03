@@ -232,9 +232,9 @@ bug in the discovery path.
 - **Full verb parity reached.** Every bash verb has a Go equivalent (audit
   found and fixed two gaps: `pi notify-drain`, which the extension spawns on
   `--notify`, and `pi steer-all`). Plus the new `peek` / `pipeline` / `daemon`.
-- **Side-by-side install (`Makefile`).** `make install` puts the Go binary at
+- **Side-by-side install (`Taskfile.yml`).** `go-task install` puts the Go binary at
   `~/.local/bin/tt-go` for dogfooding while bash `tt` stays live and untouched;
-  `make cutover` flips `~/.local/bin/tt` to the Go binary; `make restore-bash`
+  `go-task cutover` flips `~/.local/bin/tt` to the Go binary; `go-task restore-bash`
   reverts. Go needs a build step, so the bash-era "edits take effect
   immediately, no install step" property ends at cutover.
 - Remaining before cutover: dogfood `tt-go` on real work, then flip and delete

@@ -1,0 +1,88 @@
+version: '3'
+
+# tt — build & install (go-task)
+#
+# tt is a Go program, so there is a build step:
+#   go-task install      -> ~/.local/bin/tt-go   (side-by-side, for testing)
+#   go-task cutover      -> ~/.local/bin/tt      (the live tool)
+#   go-task restore-bash -> recover the retired bash tool from its tag
+#
+# See docs/PLAN.md Phase 4.
+
+vars:
+  BIN_DIR: '{{.BIN_DIR | default (printf "%s/.local/bin" .HOME)}}'
+  BASH_TAG: v0.15.3-bash-final
+
+env:
+  CGO_ENABLED: '0'
+
+tasks:
+  default:
+    desc: Build, vet and test
+    cmds:
+      - task: check
+
+  build:
+    desc: Compile the tt binary into the repo root
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - tt-go
+    cmds:
+      - go build -o tt-go .
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run the unit tests
+    cmds:
+      - go test ./...
+
+  check:
+    desc: Build + vet + test — run this after every change
+    cmds:
+      - task: build
+      - task: vet
+      - task: test
+
+  fmt:
+    desc: gofmt the tree
+    cmds:
+      - gofmt -w .
+
+  install:
+    desc: Install alongside the live tool as tt-go (non-destructive)
+    deps: [build]
+    cmds:
+      - mkdir -p '{{.BIN_DIR}}'
+      - install -m 0755 tt-go '{{.BIN_DIR}}/tt-go'
+      - echo "installed {{.BIN_DIR}}/tt-go"
+
+  cutover:
+    desc: Install the Go binary as the live tt
+    deps: [check]
+    cmds:
+      - mkdir -p '{{.BIN_DIR}}'
+      - rm -f '{{.BIN_DIR}}/tt'
+      - install -m 0755 tt-go '{{.BIN_DIR}}/tt'
+      - 'echo "cutover: {{.BIN_DIR}}/tt is now the Go binary"'
+
+  restore-bash:
+    desc: Emergency fallback — restore the retired bash tool from its tag
+    cmds:
+      - git checkout {{.BASH_TAG}} -- tt
+      - chmod +x tt
+      - rm -f '{{.BIN_DIR}}/tt'
+      - ln -s '{{.ROOT_DIR}}/tt' '{{.BIN_DIR}}/tt'
+      - 'echo "restored: {{.BIN_DIR}}/tt -> {{.ROOT_DIR}}/tt (bash {{.BASH_TAG}})"'
+      - 'echo "NOTE: ./tt is now an untracked checkout of the retired script."'
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f tt-go

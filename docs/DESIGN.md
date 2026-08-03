@@ -583,7 +583,7 @@ than as user-supplied code.
 
 | Location | Purpose |
 |----------|---------|
-| `~/.local/bin/tt` | The installed Go binary (`make cutover`). The retired bash script is tagged `v0.15.3-bash-final`. |
+| `~/.local/bin/tt` | The installed Go binary (`go-task cutover`). The retired bash script is tagged `v0.15.3-bash-final`. |
 | `~/code/tt/pi-worker/` | Repo-owned worker templates: tracked `settings.json`, `package.json`, `APPEND_SYSTEM.md`, and extensions. |
 | `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
 | `~/.local/share/tt/skills` | Compatibility symlink to repo-owned `skills/` for manually referenced tt skills. |

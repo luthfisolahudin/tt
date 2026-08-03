@@ -7,10 +7,10 @@ history in `CHANGELOG.md`.
 
 - **`tt` is a Go program (0.16.0); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
-  client). There IS a build step: `make cutover` installs the binary to
-  `~/.local/bin/tt`; `make install` puts a side-by-side `tt-go`; `make check`
+  client). There IS a build step: `go-task cutover` installs the binary to
+  `~/.local/bin/tt`; `go-task install` puts a side-by-side `tt-go`; `go-task check`
   runs build + vet + test. The retired bash script lives at the
-  `v0.15.3-bash-final` tag — `make restore-bash` brings it back if needed.
+  `v0.15.3-bash-final` tag — `go-task restore-bash` brings it back if needed.
 - **A single daemon (`ttd`) serves every session** over a unix socket at
   `<state base>/ttd.sock` (pidfile `ttd.pid`, single-instance and stale-aware).
   It auto-starts on first CLI use; `tt daemon start|stop|status`. It owns the
@@ -230,14 +230,14 @@ session — what a handoff can trust without retesting:
 
 ## How to test
 
-`make check` (build + vet + test) must be clean after every change. Beyond
+`go-task check` (build + vet + test) must be clean after every change. Beyond
 that there is no full harness — verify manually against a throwaway project.
 Use a real, protocol-respecting task (do NOT ask the worker to "reply
 WORKER_DONE": that makes it emit the marker WITHOUT the nonce footer, which is
 correctly rejected as `interrupted`).
 
 ```sh
-make cutover                            # build + install (there IS a build step now)
+go-task cutover                            # build + install (there IS a build step now)
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
 env -u TMUX tt up                       # builds dev/claude only; attach fails harmlessly off-tty
                                         # (in-tmux `tt up` stays put; --attach to switch)

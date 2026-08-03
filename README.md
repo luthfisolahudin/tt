@@ -11,7 +11,7 @@ than one-shot `pi -p` calls. The model comes from the dispatched **tier**
 (see [Model tier](#model-tier)). A single background daemon (`ttd`) serves
 every session; the CLI is a thin client over its unix socket.
 
-- **Tool:** this repo — installed to `~/.local/bin/tt` with `make cutover`.
+- **Tool:** this repo — installed to `~/.local/bin/tt` with `go-task cutover`.
 - **Design & rationale:** `docs/DESIGN.md`. **Upgrade plan:** `docs/PLAN.md`.
 
 > **Contributors & AI agents:** read `CLAUDE.md` first, then `docs/STATUS.md`, before editing anything.
@@ -19,14 +19,14 @@ every session; the CLI is a thin client over its unix socket.
 ## Install
 
 ```sh
-make cutover        # build + install to ~/.local/bin/tt
-make install        # or: side-by-side ~/.local/bin/tt-go for testing
-make check          # build + vet + test
+go-task cutover        # build + install to ~/.local/bin/tt
+go-task install        # or: side-by-side ~/.local/bin/tt-go for testing
+go-task check          # build + vet + test
 ```
 
-Requires Go (see `go.mod`). Editing the source now needs a rebuild — the
-bash-era symlink (edit-and-run) is gone; the retired script is tagged
-`v0.15.3-bash-final`.
+Requires Go (see `go.mod`) and [go-task](https://taskfile.dev). Editing the
+source now needs a rebuild — the bash-era symlink (edit-and-run) is gone; the
+retired script is tagged `v0.15.3-bash-final`.
 
 Dependencies: `tmux`, `pi` on `PATH` for the worker verbs, `jq` for
 `.tt/windows.json` (without it tt falls back to the built-in layout),

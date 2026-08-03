@@ -20,5 +20,8 @@ skills/*-workspace/
 # pi runtime cache (auth, tasks, session state)
 .pi/
 
-# Go build artifact (see Makefile)
+# Go build artifact (see Taskfile.yml)
 tt-go
+
+# go-task fingerprint cache
+.task/

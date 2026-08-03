@@ -30,7 +30,7 @@ orients an AI agent working **on** `tt` itself.
   is the pi extension `tt` drives the REPLs through, auto-loaded by pi from
   tt's private `PI_CODING_AGENT_DIR`.
 - `~/.local/bin/tt` is the **installed binary** — there IS a build step now:
-  `make cutover` (or `make install` for a side-by-side `tt-go`).
+  `go-task cutover` (or `go-task install` for a side-by-side `tt-go`).
 - `docs/` — design, status, plan. `CHANGELOG.md` — version history (newest
   first).
 
@@ -134,7 +134,7 @@ tt peek dev                    # read any window's pane content (read-only)
 tt pipeline run spec.json      # declarative fan-out + review-gate pipeline
 tt pi status                   # show all workers: state, last task, tier, gen
 tt pi clear alfa               # wipe context; required before reuse
-make check                     # build + vet + test after editing
+go-task check                     # build + vet + test after editing
 ```
 
 Inline prompts use `-` (stdin) with a heredoc/here-string — `tt pi send alfa -
@@ -172,7 +172,7 @@ first), commit, then tag the commit — `git tag -a v<x.y.z> -m "tt v<x.y.z> —
 | trigger/result file format or nonce protocol | `docs/DESIGN.md` control channel + task IDs sections · `pi-worker/extensions/tt-worker.ts` |
 | worker states | `docs/DESIGN.md` worker state detection section |
 | daemon ops or socket protocol | `docs/DESIGN.md` · `docs/PLAN.md` |
-| install layout (`~/.local/share/tt/`, `Makefile`) | `docs/STATUS.md` current state |
+| install layout (`~/.local/share/tt/`, `Taskfile.yml`) | `docs/STATUS.md` current state |
 | completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-worker/APPEND_SYSTEM.md` |
 | model tiers or provider | `docs/DESIGN.md` model tier · `docs/MODEL_DECISION.md` · `README.md` model tier table · consumer skill `references/prompting-and-tiers.md` + `references/prompting-<tier>.md` |
 | version bump | `CHANGELOG.md` entry · `git tag -a v<x.y.z>` (see Versioning) |
