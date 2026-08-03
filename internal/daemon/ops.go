@@ -126,6 +126,10 @@ func dispatchOp(s *Session, req client.Request) client.Response {
 		var a XObserveArgs
 		decodeArgs(req.Args, &a)
 		return xObserveOp(s, a)
+	case "deliver":
+		var a XDeliverArgs
+		decodeArgs(req.Args, &a)
+		return xDeliverOp(s, a)
 	}
 	return client.Response{OK: false, Error: "unknown op: " + req.Op}
 }

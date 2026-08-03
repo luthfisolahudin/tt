@@ -40,6 +40,33 @@ type XObserveArgs struct {
 	All      bool `json:"all"`
 }
 
+// XDeliverArgs is the internal `deliver` op: push a pre-headed message into a
+// target session's claude pane. Used by the notify drainer (a detached CLI
+// process) which coalesces `notify/*.msg` and calls this per drain cycle.
+type XDeliverArgs struct {
+	Target     string `json:"target"`
+	Timeout    int    `json:"timeout"`
+	MessageB64 string `json:"message_b64"`
+}
+
+// xDeliverOp delivers an already-attributed message via xDeliver. Unlike
+// xSendOp it does not prepend a header (the drainer builds its own `[tt] …`
+// coalesced body) and does not require the orchestrator to be live up front —
+// the drainer checks that itself per cycle.
+func xDeliverOp(s *Session, a XDeliverArgs) client.Response {
+	var out, errb strings.Builder
+	msg, err := decodePrompt(a.MessageB64)
+	if err != nil {
+		fmt.Fprintf(&errb, "tt: %s\n", err.Error())
+		return ok(&out, &errb, 1)
+	}
+	if err := xDeliver(s, a.Target, string(msg), a.Timeout); err != nil {
+		fmt.Fprintf(&errb, "tt: %s\n", err.Error())
+		return ok(&out, &errb, 1)
+	}
+	return ok(&out, &errb, 0)
+}
+
 // --- the safe-input classifier ----------------------------------------------
 //
 // These are the EXACT ANSI heuristics of the bash x_classify_claude_input.
