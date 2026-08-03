@@ -91,16 +91,36 @@ func detectTUI(target, plain string) string {
 			return "pi"
 		}
 	}
+	return detectTUIFromContent(plain)
+}
+
+// detectTUIFromContent is the pure fallback: which TUI does this pane look
+// like? Used when pane_current_command names a wrapper rather than the TUI —
+// notably pi, which runs as a node grandchild and reports "node".
+func detectTUIFromContent(plain string) string {
 	if reOpencodeMark.MatchString(plain) {
 		return "opencode"
 	}
 	if strings.Contains(plain, "❯") {
 		return "claude"
 	}
-	if rePiBusy.MatchString(plain) || piInputLine(plain) != "" {
+	// An EMPTY pi prompt has no content to match on, so recognize the input
+	// box structurally — count the dividers, not the text.
+	if rePiBusy.MatchString(plain) || piDividerCount(plain) >= 2 {
 		return "pi"
 	}
 	return "claude" // historical default
+}
+
+// piDividerCount counts pi's horizontal rule lines (the input box borders).
+func piDividerCount(plain string) int {
+	n := 0
+	for _, l := range strings.Split(plain, "\n") {
+		if rePiDivider.MatchString(reANSICSI.ReplaceAllString(l, "")) {
+			n++
+		}
+	}
+	return n
 }
 
 // piInputLine returns the raw content between the LAST two divider lines —
@@ -182,13 +202,16 @@ func classifyPi(plain, escaped string) xClassification {
 	}
 	// Prefer the escaped capture: pi renders the empty input as a lone
 	// reverse-video cursor, which survives as whitespace once ANSI is stripped.
-	input := piInputLine(escaped)
-	if input == "" {
-		input = piInputLine(plain)
-	}
-	if input == "" {
-		c.classifier = "wait_no_prompt"
+	if piDividerCount(escaped) < 2 && piDividerCount(plain) < 2 {
+		c.classifier = "wait_no_prompt" // not pi's input box, or not rendered yet
 		return c
+	}
+	input := piInputLine(escaped)
+	if strings.TrimSpace(reANSICSI.ReplaceAllString(input, "")) == "" {
+		// An empty box is the safe state; keep whichever capture showed it.
+		if alt := piInputLine(plain); strings.TrimSpace(reANSICSI.ReplaceAllString(alt, "")) != "" {
+			input = alt
+		}
 	}
 	c.promptEscaped = escapeESC(input)
 	c.strippedAfter = reANSICSI.ReplaceAllString(input, "")

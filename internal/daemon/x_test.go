@@ -157,3 +157,37 @@ func TestAcceptsInputGate(t *testing.T) {
 		}
 	}
 }
+
+// An empty pi box must classify safe even when the input line carries no
+// visible text at all (the pane_current_command is "node", so detection and
+// classification both have to work off the box structure).
+func TestClassifyPiEmptyBoxNoCursor(t *testing.T) {
+	pane := "────────────────────────────\n\n────────────────────────────\n/tmp\nLSP Inactive\n"
+	if got := classifyPi(pane, pane); got.classifier != "safe_empty" {
+		t.Fatalf("classifier = %q, want safe_empty", got.classifier)
+	}
+	if n := piDividerCount(pane); n != 2 {
+		t.Fatalf("piDividerCount = %d, want 2", n)
+	}
+	if got := detectTUIFromContent(pane); got != "pi" {
+		t.Fatalf("detectTUIFromContent = %q, want pi", got)
+	}
+}
+
+func TestDetectTUIFromContent(t *testing.T) {
+	cases := []struct{ name, pane, want string }{
+		{"opencode by placeholder", opencodeIdle, "opencode"},
+		{"opencode by footer", "\ntab agents  ctrl+p commands\n", "opencode"},
+		{"claude by prompt char", "\n❯ \n", "claude"},
+		{"pi by divider box", piIdleEscaped, "pi"},
+		{"pi by spinner", piBusyPlain, "pi"},
+		{"unknown falls back to claude", "just some text\n", "claude"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := detectTUIFromContent(tc.pane); got != tc.want {
+				t.Fatalf("detectTUIFromContent = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

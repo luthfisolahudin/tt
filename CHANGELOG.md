@@ -4,6 +4,36 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.16.1] — 2026-08-03
+
+- **`x send` and `--notify` work against opencode and pi orchestrators.** The
+  safe-input classifier only knew Claude Code's TUI, so delivery to anything
+  else waited forever (verified: the retired bash tool failed identically).
+  It now detects the TUI — `pane_current_command`, falling back to content,
+  since pi runs as a node grandchild and reports `node` — and applies per-TUI
+  rules: opencode renders an "Ask anything..." placeholder only while its
+  input is empty; pi's input box sits between the last two dividers and is
+  whitespace-only when empty; both expose a distinct busy marker. The Claude
+  Code path is unchanged and pinned by tests built from real pane captures.
+  Verified live end to end against both an opencode and a pi orchestrator.
+- **Pipeline fan-out is actually parallel now.** A worker does not flip to
+  `busy` until the extension claims its task (a 200 ms poll), so the dispatch
+  loop kept handing the next task to the worker that had just been given one:
+  a 3-task run used 2 workers and took 6:15. Dispatch is now three phases —
+  reserve a worker per task serially, then boot-wait and enqueue concurrently
+  **outside** the daemon write mutex, then join — and reserved callsigns are
+  tracked so tasks cannot stack. The same run: 3 workers, 11 s.
+- **Pipeline stages always get a fresh worker.** Reusing an idle one carried
+  its previous task's context into a stage meant to judge only what it was
+  handed. At the worker cap the remainder queue on the shared pool.
+- `EnsureReplReady` no longer runs while holding the daemon write mutex — a
+  40 s boot wait used to stall every other session's dispatch.
+- `go-task cutover` restarts `ttd`. The daemon is long-lived, so a rebuild
+  alone left it serving the previous binary.
+- Replaced the Makefile with a `Taskfile.yml` (go-task).
+- Added `docs/pipeline.schema.json` documenting the pipeline spec.
+- Split every source file over 300 LoC along its natural seams.
+
 ## [0.16.0] — 2026-08-03
 
 The bash implementation is retired; `tt` is a Go program driven by a single
