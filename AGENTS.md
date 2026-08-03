@@ -63,7 +63,12 @@ orients an AI agent working **on** `tt` itself.
 - **The daemon must stay a single writer for turn assignment.** Ops that
   mutate state (`send`/`auto`/`clear`/`rm`/`popidle`/`status`) hold `writeMu`;
   long-running ops (`wait`/`collect`/`pipeline`) must NOT hold it for their
-  lifetime — the pipeline locks only its per-dispatch critical section.
+  lifetime — the pipeline locks only its per-dispatch critical section, and
+  **never** across `EnsureReplReady` (a 40 s boot wait would stall every
+  session).
+- **`ttd` is long-lived, so a rebuild alone changes nothing** — the running
+  daemon keeps serving the old binary until it is restarted. `go-task cutover`
+  stops it for you; if you install by hand, run `tt daemon stop`.
 - **On-disk state is the source of truth.** The daemon holds no authoritative
   in-memory state, so it is restartable and idempotent; a dead daemon degrades
   to "CLI can't reach it", never to lost work.
@@ -169,6 +174,7 @@ first), commit, then tag the commit — `git tag -a v<x.y.z> -m "tt v<x.y.z> —
 | Change | Also update |
 |--------|-------------|
 | `tt pi` verbs or flags | `README.md` command table · cobra `Use`/`Short` · consumer skill `SKILL.md` |
+| pipeline spec shape | `docs/pipeline.schema.json` · `docs/DESIGN.md` pipeline section · consumer skill `references/tt-cli.md` |
 | trigger/result file format or nonce protocol | `docs/DESIGN.md` control channel + task IDs sections · `pi-worker/extensions/tt-worker.ts` |
 | worker states | `docs/DESIGN.md` worker state detection section |
 | daemon ops or socket protocol | `docs/DESIGN.md` · `docs/PLAN.md` |

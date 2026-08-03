@@ -3,29 +3,73 @@ package daemon
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/luthfisolahudin/tt/internal/tmux"
 	"github.com/luthfisolahudin/tt/internal/worker"
 )
 
-// runFanoutStage dispatches every task via the auto policy and joins them all
-// (blocking until each reaches a terminal status), returning one stageResult
-// per task in dispatch order.
+// runFanoutStage dispatches every task and joins them all, returning one
+// stageResult per task in dispatch order.
+//
+// Parallelism is the whole point of a fan-out, so this is deliberately three
+// phases rather than a dispatch-and-wait loop:
+//
+//  1. Reserve a worker per task, serially. Reserving is cheap — spawning
+//     creates the window and fires the REPL without waiting for it.
+//  2. Wait for each REPL and enqueue, concurrently. The boot wait is up to
+//     40 s per worker and must not be serialized (nor hold the write mutex).
+//  3. Join.
+//
+// The reservation set is what keeps tasks off the same worker: a worker does
+// not flip to `busy` until the extension claims its task (a 200 ms poll), so
+// a naive "pick the first idle worker" loop hands the next task to the worker
+// that just got one and silently serializes the fan-out.
 func (s *Session) runFanoutStage(st PipelineStage, timeout int, note func(string)) ([]stageResult, string) {
-	ids := make([]string, 0, len(st.Fanout))
-	for _, t := range st.Fanout {
-		body := t.Task
+	n := len(st.Fanout)
+	bodies := make([]string, n)
+	for i, t := range st.Fanout {
+		bodies[i] = t.Task
 		if t.Label != "" {
-			body = "LABEL: " + t.Label + "\n" + body
+			bodies[i] = "LABEL: " + t.Label + "\n" + t.Task
 		}
-		tid, rerr := s.dispatchAuto(body, timeout)
+	}
+
+	reserved := make([]string, n) // "" => no worker free, use the shared pool
+	claimed := map[string]bool{}
+	for i := range bodies {
+		cs, rerr := s.reserveWorker(claimed)
 		if rerr != "" {
 			return nil, rerr
 		}
-		ids = append(ids, tid)
+		if cs != "" {
+			claimed[cs] = true
+		}
+		reserved[i] = cs
 	}
-	results := make([]stageResult, 0, len(ids))
+	if len(claimed) < n {
+		note(fmt.Sprintf("fanout: %d task(s) share %d worker(s) — at the cap, the rest queue on the pool", n, len(claimed)))
+	}
+
+	ids := make([]string, n)
+	errs := make([]string, n)
+	var wg sync.WaitGroup
+	for i := range bodies {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			ids[i], errs[i] = s.dispatchTo(reserved[i], bodies[i])
+		}(i)
+	}
+	wg.Wait()
+	for _, e := range errs {
+		if e != "" {
+			return nil, e
+		}
+	}
+
+	results := make([]stageResult, 0, n)
 	for _, id := range ids {
 		r, rerr := s.awaitTerminal(id, timeout)
 		if rerr != "" {
@@ -36,61 +80,76 @@ func (s *Session) runFanoutStage(st PipelineStage, timeout int, note func(string
 	return results, ""
 }
 
-// dispatchAuto sends one task through the auto policy (reuse idle -> spawn ->
-// shared pool) and returns its task id. Shares the daemon's single writer
-// path by going through the same primitives autoOp uses, minus the CLI arg
-// surface.
-func (s *Session) dispatchAuto(body string, timeout int) (string, string) {
-	// Lock only the choose+spawn+enqueue critical section (turn assignment,
-	// spawn) — NOT the whole pipeline, so other send/wait ops are not blocked
-	// for the pipeline's lifetime.
+// reserveWorker picks a worker for one pipeline task and returns its
+// callsign, or "" when the cap is reached and the task must go to the shared
+// pool. Spawning does NOT wait for the REPL, so this stays cheap.
+//
+// A pipeline ALWAYS spawns a fresh worker rather than reusing an idle one: a
+// reused worker carries its previous task's context, which biases a stage
+// that is supposed to judge only what it was handed (a review gate that has
+// already seen the work it reviews is worthless). `claimed` additionally
+// excludes callsigns this stage already took — a worker does not flip to
+// `busy` until the extension claims its task (a 200 ms poll), so without it
+// the fan-out silently stacks onto one worker.
+//
+// At the cap there is nothing fresh to hand out, so the task goes to the
+// shared pool instead of stealing (and dirtying) someone's existing worker.
+// Pipeline workers persist after the run — reclaim them with `tt pi popidle`
+// or `tt pi rm <cs>`.
+func (s *Session) reserveWorker(claimed map[string]bool) (string, string) {
 	writeMu.Lock()
 	defer writeMu.Unlock()
 	worker.ReapEphemeralWorkers(s.Dir, s.Name)
-	tier := worker.TierDefault
-	// Reuse the first idle, non-stale worker (NATO order).
-	chosen := ""
-	for _, n := range worker.NATO {
-		if !tmux.WindowExists(s.Name, "pi-"+n) {
-			continue
-		}
-		if worker.WorkerState(s.Dir, s.Name, n) != "idle" {
-			continue
-		}
-		if worker.WorkerHasStaleTier(s.Dir, n) {
-			continue
-		}
-		chosen = n
-		break
-	}
-	var errb strings.Builder
-	if chosen == "" && worker.CountWorkers(s.Name) < worker.PiCap() {
+	if worker.CountWorkers(s.Name) < worker.PiCap() {
+		var errb strings.Builder
 		for _, n := range worker.NATO {
-			if !tmux.WindowExists(s.Name, "pi-"+n) {
-				chosen = n
-				if werr := worker.SpawnPiWindow(s.Dir, s.Name, s.Cwd, n, s.SyncEnv, &errb); werr != nil {
-					return "", werr.Error()
-				}
-				break
+			if claimed[n] || tmux.WindowExists(s.Name, "pi-"+n) {
+				continue
 			}
+			if werr := worker.SpawnPiWindow(s.Dir, s.Name, s.Cwd, n, s.SyncEnv, &errb); werr != nil {
+				return "", werr.Error()
+			}
+			return n, ""
 		}
 	}
-	if chosen != "" {
-		if err := worker.EnsureReplReady(s.Dir, s.Name, s.Cwd, chosen, &errb); err != nil {
-			return "", err.Error()
-		}
-		tid, err := worker.EnqueueToWorker(s.Dir, chosen, worker.CurrentTier(s.Dir, chosen), []byte(body), false)
+	return "", "" // at the cap — caller falls back to the shared pool
+}
+
+// dispatchTo waits for a reserved worker's REPL and enqueues the task, or
+// drops the task on the shared pool when no worker was reserved. The boot
+// wait deliberately runs OUTSIDE the write mutex: it can take 40 s, which
+// would otherwise block every other session's dispatch.
+func (s *Session) dispatchTo(cs, body string) (string, string) {
+	var errb strings.Builder
+	if cs == "" {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		tid, err := worker.EnqueuePool(s.Dir, worker.TierDefault, []byte(body), false)
 		if err != nil {
 			return "", err.Error()
 		}
 		return tid, ""
 	}
-	// All workers busy at cap -> shared pool; the next idle worker steals it.
-	tid, err := worker.EnqueuePool(s.Dir, tier, []byte(body), false)
+	if err := worker.EnsureReplReady(s.Dir, s.Name, s.Cwd, cs, &errb); err != nil {
+		return "", err.Error()
+	}
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	tid, err := worker.EnqueueToWorker(s.Dir, cs, worker.CurrentTier(s.Dir, cs), []byte(body), false)
 	if err != nil {
 		return "", err.Error()
 	}
 	return tid, ""
+}
+
+// dispatchAuto sends one task through the auto policy — used by the review
+// stage, which is a single dispatch with no parallelism to preserve.
+func (s *Session) dispatchAuto(body string, timeout int) (string, string) {
+	cs, rerr := s.reserveWorker(nil)
+	if rerr != "" {
+		return "", rerr
+	}
+	return s.dispatchTo(cs, body)
 }
 
 // awaitTerminal blocks until a task id reaches a terminal status

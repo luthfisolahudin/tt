@@ -117,7 +117,7 @@ reference. Summary:
 | `tt a` / `tt attach` | Attach without creating. |
 | `tt name` | Print the computed session name. |
 | `tt peek [--lines N] <window\|cs>` | Read any window's current pane content (read-only) — a bare window name (`dev`), a worker callsign (`alfa` → `pi-alfa`), or `pi-<cs>`. The agent-readable "show me that window". |
-| `tt pipeline run [--timeout N] [--json] (FILE\|-)` | Run a declarative JSON pipeline spec (ordered fan-out / review stages) in the daemon: one trigger in, one digest out. A review stage's `PIPELINE_PASS` / `PIPELINE_FAIL: <reason>` verdict gates a bounded retry of the preceding fan-out. |
+| `tt pipeline run [--timeout N] [--json] (FILE\|-)` | Run a declarative JSON pipeline spec (ordered fan-out / review stages) in the daemon: one trigger in, one digest out. Each fan-out task gets its own freshly spawned worker (clean context), so scopes must be disjoint. A review stage's `PIPELINE_PASS` / `PIPELINE_FAIL: <reason>` verdict gates a bounded retry of the preceding fan-out. Schema: `docs/pipeline.schema.json`. |
 | `tt daemon start\|stop\|status` | Control `ttd`, the single daemon serving all sessions. It auto-starts on first use. |
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
 | `tt --help`, `tt -h` | Reference block; every verb also answers `--help`. |

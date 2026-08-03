@@ -568,12 +568,35 @@ sandbox — the 90% of the value at 10% of the cost.
   ] }
 ```
 
-- A **fanout** stage dispatches N tasks through the auto policy
-  (idle → spawn → shared pool) and joins each to a terminal status.
+- A **fanout** stage dispatches N tasks and joins each to a terminal status.
+  Every task gets its **own freshly spawned worker** — never a reused idle one,
+  whose leftover context would bias a stage that should judge only what it was
+  handed. At the worker cap the remainder queue on the shared pool. Workers
+  persist after the run (`tt pi popidle` / `tt pi rm` to reclaim).
 - A **review** stage hands the previous stage's results to ONE worker, which
   must end with `PIPELINE_PASS` or `PIPELINE_FAIL: <reason>`. On failure the
   engine re-runs the preceding fanout stage, bounded by `retries` (default 0;
   exhausted → exit 1 with the reason).
+
+The spec is documented by `docs/pipeline.schema.json`.
+
+### Why a fan-out is three phases, not a loop
+
+Dispatching and waiting in one loop looks natural and is wrong here, in two
+ways that both showed up in real runs:
+
+- A worker does not flip to `busy` until the extension **claims** its task (a
+  200 ms poll). A "pick the first idle worker" loop therefore hands the next
+  task to the worker that just got one, and the fan-out silently serializes —
+  a measured 3-task run put 2 tasks on one worker and took 6:15 instead of ~3:10.
+- `EnsureReplReady` blocks for up to 40 s. Holding the daemon's write mutex
+  across it serializes every worker boot *and* stalls unrelated sessions.
+
+So the engine (1) reserves a worker per task serially — spawning is cheap
+because it does not wait for the REPL — tracking the callsigns already taken,
+then (2) waits for the REPLs and enqueues **concurrently and outside the write
+mutex**, then (3) joins. The same 3-task run then used 3 distinct workers and
+finished in 11 s.
 
 This buys the two quality patterns Claude Code's dynamic workflows name —
 adversarial review before reporting, and check-until-green — as a stage rather

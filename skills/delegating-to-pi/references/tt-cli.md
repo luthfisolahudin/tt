@@ -81,7 +81,11 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
   gate, and returns one digest. A review stage ends with `PIPELINE_PASS` or
   `PIPELINE_FAIL: <reason>`, and a failure retries the preceding fan-out up to
   `retries` times. Use it when a fan-out plus a verification pass would
-  otherwise cost you many round-trips.
+  otherwise cost you many round-trips. Every fan-out task runs on its own
+  freshly spawned worker (clean context), so scopes must be disjoint. Schema
+  and a worked example: `docs/pipeline.schema.json`. The review verdict is
+  evidence, not acceptance — you still own the final diff review. Pipeline
+  workers persist; reclaim them with `tt pi popidle` / `tt pi rm <cs>`.
 - `tt pi steer <cs> - <<<'...'` — inject a correction into the current turn
   (run-now). `send` queues for the next turn instead; use `send` for review
   remediation that needs its own tracked result and acceptance checks.

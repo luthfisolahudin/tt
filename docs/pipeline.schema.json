@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tt/schema/pipeline.json",
+  "title": "tt pipeline spec",
+  "description": "A declarative pipeline for `tt pipeline run (FILE|-)`: an ordered list of stages the ttd daemon executes, so one trigger returns one digest instead of costing the orchestrator a round-trip per task. This is data, not a scripting language — there are no variables, conditionals or loops, only the fixed stage shapes below. Each fanout task runs on its OWN freshly spawned worker (never a reused one, whose leftover context would bias the task); at the worker cap the remainder queue on the shared pool. Workers persist after the run — reclaim them with `tt pi popidle` or `tt pi rm <cs>`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stages"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": {
+      "type": "string",
+      "description": "Label for this pipeline, used in the daemon's progress notes on stderr. Defaults to 'pipeline'."
+    },
+    "retries": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "How many times a FAILING review gate may re-run the fanout stage that precedes it. 0 (the default) means a failed review ends the run with exit 1 and the reviewer's reason. Each retry re-dispatches the whole preceding fanout on fresh workers.",
+      "examples": [0, 1, 2]
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Stages, executed in order. At least one fanout stage is required (a spec with only review stages has nothing to review). A review stage reads the results of the stage before it.",
+      "items": { "$ref": "#/$defs/stage" }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exactly one of `fanout` or `review` must be set.",
+      "oneOf": [
+        { "required": ["fanout"], "not": { "required": ["review"] } },
+        { "required": ["review"], "not": { "required": ["fanout"] } }
+      ],
+      "properties": {
+        "fanout": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Tasks dispatched in parallel, one fresh worker each. Scopes MUST be disjoint — tt cannot detect overlap, and two workers editing the same files (or the same build) will corrupt each other's work and each other's verification.",
+          "items": { "$ref": "#/$defs/task" }
+        },
+        "join": {
+          "type": "string",
+          "enum": ["digest", "full"],
+          "default": "digest",
+          "description": "How the FINAL stage's results are printed. 'digest' (default) prints one lean line per result — id, status, duration, one-line summary — and keeps full bodies out of the orchestrator's context; pull one with `tt pi results <id>`. 'full' inlines every body. Only the last stage's join is used. Ignored when --json is passed."
+        },
+        "review": { "$ref": "#/$defs/review" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Short name for this task, prepended to the prompt as 'LABEL: <label>' so the worker (and the digest) can identify it."
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The full prompt body. Use tt's task contract — TASK / FILES or SCOPE / CHANGE / DO NOT / SUCCESS, plus VERIFY for code changes. The worker takes every field literally and cannot ask you a follow-up question, so state the scope and the success check explicitly."
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt"],
+      "description": "A gate: ONE fresh worker is handed every result of the preceding stage and must return a verdict. tt appends the verdict instruction automatically — the reviewer is told to end with exactly `PIPELINE_PASS` or `PIPELINE_FAIL: <reason>`, and the LAST such line in its reply decides. A reviewer that returns neither counts as a failure. The verdict is evidence, never acceptance: the orchestrator still owns the final diff review.",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What to check. State the pass bar concretely ('did each result do X and report Y') rather than asking for a general opinion — a vague reviewer passes everything."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "name": "audit-routes",
+      "retries": 1,
+      "stages": [
+        {
+          "join": "digest",
+          "fanout": [
+            {
+              "label": "auth",
+              "task": "TASK: Audit src/routes/auth.ts for missing authentication checks.\nFILES / SCOPE: src/routes/auth.ts only. Read-only.\nSUCCESS: a list of findings as file:line, or the exact words 'NO DEFECTS FOUND'."
+            },
+            {
+              "label": "billing",
+              "task": "TASK: Audit src/routes/billing.ts for missing authentication checks.\nFILES / SCOPE: src/routes/billing.ts only. Read-only.\nSUCCESS: a list of findings as file:line, or the exact words 'NO DEFECTS FOUND'."
+            }
+          ]
+        },
+        {
+          "review": {
+            "prompt": "You are a strict reviewer. For each report below, confirm it inspected the file it was assigned and returned either concrete file:line findings or the exact words 'NO DEFECTS FOUND'. A vague or off-scope report is a FAIL."
+          }
+        }
+      ]
+    }
+  ]
+}

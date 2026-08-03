@@ -64,13 +64,16 @@ tasks:
       - echo "installed {{.BIN_DIR}}/tt-go"
 
   cutover:
-    desc: Install the Go binary as the live tt
+    desc: Install the Go binary as the live tt (restarts ttd)
     deps: [check]
     cmds:
       - mkdir -p '{{.BIN_DIR}}'
       - rm -f '{{.BIN_DIR}}/tt'
       - install -m 0755 tt-go '{{.BIN_DIR}}/tt'
-      - 'echo "cutover: {{.BIN_DIR}}/tt is now the Go binary"'
+      # ttd is long-lived: without this it keeps serving the PREVIOUS binary and
+      # your change silently does nothing. It restarts on the next CLI call.
+      - '{{.BIN_DIR}}/tt daemon stop || true'
+      - 'echo "cutover: {{.BIN_DIR}}/tt is now the Go binary (ttd restarted)"'
 
   restore-bash:
     desc: Emergency fallback — restore the retired bash tool from its tag
