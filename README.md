@@ -11,7 +11,7 @@ than one-shot `pi -p` calls. The model comes from the dispatched **tier**
 (see [Model tier](#model-tier)). A single background daemon (`ttd`) serves
 every session; the CLI is a thin client over its unix socket.
 
-- **Tool:** this repo — installed to `~/.local/bin/tt` with `go-task cutover`.
+- **Tool:** this repo — installed to `~/.local/bin/tt` with `go-task install`.
 - **Design & rationale:** `docs/DESIGN.md`. **Upgrade plan:** `docs/PLAN.md`.
 
 > **Contributors & AI agents:** read `CLAUDE.md` first, then `docs/STATUS.md`, before editing anything.
@@ -19,9 +19,9 @@ every session; the CLI is a thin client over its unix socket.
 ## Install
 
 ```sh
-go-task cutover        # build + install to ~/.local/bin/tt
-go-task install        # or: side-by-side ~/.local/bin/tt-go for testing
-go-task check          # build + vet + test
+go-task install     # build to bin/tt, install to ~/.local/bin/tt, restart ttd
+go-task build       # just compile to bin/tt
+go-task check       # build + vet + test
 ```
 
 Requires Go (see `go.mod`) and [go-task](https://taskfile.dev). Editing the

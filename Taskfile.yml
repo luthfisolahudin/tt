@@ -3,11 +3,14 @@ version: '3'
 # tt — build & install (go-task)
 #
 # tt is a Go program, so there is a build step:
-#   go-task install      -> ~/.local/bin/tt-go   (side-by-side, for testing)
-#   go-task cutover      -> ~/.local/bin/tt      (the live tool)
+#   go-task build        -> bin/tt              (local build output)
+#   go-task install      -> ~/.local/bin/tt     (the live tool; restarts ttd)
 #   go-task restore-bash -> recover the retired bash tool from its tag
 #
-# See docs/PLAN.md Phase 4.
+# `bin/` is the usual home for a local Go build; `dist/` is left for release
+# artifacts (GoReleaser's default), which this repo does not produce. The
+# binary is plain `tt` — it lived in the repo root as `tt-go` only while the
+# bash script still occupied ./tt.
 
 vars:
   BIN_DIR: '{{.BIN_DIR | default (printf "%s/.local/bin" .HOME)}}'
@@ -23,15 +26,15 @@ tasks:
       - task: check
 
   build:
-    desc: Compile the tt binary into the repo root
+    desc: Compile the tt binary to bin/tt
     sources:
       - '**/*.go'
       - go.mod
       - go.sum
     generates:
-      - tt-go
+      - bin/tt
     cmds:
-      - go build -o tt-go .
+      - go build -o bin/tt .
 
   vet:
     desc: Run go vet
@@ -56,24 +59,17 @@ tasks:
       - gofmt -w .
 
   install:
-    desc: Install alongside the live tool as tt-go (non-destructive)
-    deps: [build]
-    cmds:
-      - mkdir -p '{{.BIN_DIR}}'
-      - install -m 0755 tt-go '{{.BIN_DIR}}/tt-go'
-      - echo "installed {{.BIN_DIR}}/tt-go"
-
-  cutover:
-    desc: Install the Go binary as the live tt (restarts ttd)
+    desc: Install bin/tt as the live tt (restarts ttd)
+    aliases: [cutover]
     deps: [check]
     cmds:
       - mkdir -p '{{.BIN_DIR}}'
       - rm -f '{{.BIN_DIR}}/tt'
-      - install -m 0755 tt-go '{{.BIN_DIR}}/tt'
+      - install -m 0755 bin/tt '{{.BIN_DIR}}/tt'
       # ttd is long-lived: without this it keeps serving the PREVIOUS binary and
       # your change silently does nothing. It restarts on the next CLI call.
       - '{{.BIN_DIR}}/tt daemon stop || true'
-      - 'echo "cutover: {{.BIN_DIR}}/tt is now the Go binary (ttd restarted)"'
+      - 'echo "installed {{.BIN_DIR}}/tt (ttd restarted)"'
 
   restore-bash:
     desc: Emergency fallback — restore the retired bash tool from its tag
@@ -88,4 +84,4 @@ tasks:
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -f tt-go
+      - rm -rf bin

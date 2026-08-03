@@ -214,7 +214,7 @@ bug in the discovery path.
 - Gate: `tt pi --help`, `tt pi wait --help`, `tt x send --help` each print
   scoped help and exit 0; `tt verbs --json` round-trips every registered verb.
 
-### Phase 4 — retire bash  (in progress)
+### Phase 4 — retire bash  ✅ DONE (0.16.0, cutover verified live)
 - Session lifecycle ported: `up` / `attach` (`a`) / `down` in Go
   (`internal/session/up.go`, `cmd/up.go`) — windows.json jq normalization
   (byte-faithful NORMALIZE_JQ), bare-shell-guarded pane commands, cold-start
@@ -232,19 +232,20 @@ bug in the discovery path.
 - **Full verb parity reached.** Every bash verb has a Go equivalent (audit
   found and fixed two gaps: `pi notify-drain`, which the extension spawns on
   `--notify`, and `pi steer-all`). Plus the new `peek` / `pipeline` / `daemon`.
-- **Side-by-side install (`Taskfile.yml`).** `go-task install` puts the Go binary at
-  `~/.local/bin/tt-go` for dogfooding while bash `tt` stays live and untouched;
-  `go-task cutover` flips `~/.local/bin/tt` to the Go binary; `go-task restore-bash`
-  reverts. Go needs a build step, so the bash-era "edits take effect
-  immediately, no install step" property ends at cutover.
-- Remaining before cutover: dogfood `tt-go` on real work, then flip and delete
-  the bash body; docs pass (README table, DESIGN, STATUS, AGENTS.md "single-file
-  bash tool", consumer skill) + MINOR version bump.
-- **Unverified legs (code-reviewed only, need a live Claude Code TUI or are
-  destructive):** `x send` delivery and `notify-drain` delivery (the safe-input
-  classifier only accepts a real Claude TUI — a `cat` stand-in never
-  classifies safe, as observed); `x observe` sqlite sampler; `down`. The
-  drainer's lock/discard/stale-takeover paths ARE verified.
+- **Build step (`Taskfile.yml`, go-task).** `go-task build` compiles to
+  `bin/tt`; `go-task install` installs it to `~/.local/bin/tt` and restarts
+  `ttd` (the daemon is long-lived and otherwise keeps serving the old binary —
+  this bit us once, silently). `go-task restore-bash` recovers the retired
+  script from its tag. The bash-era "edits take effect immediately, no install
+  step" property is gone.
+- **Cutover done (0.16.0).** The bash body was deleted after tagging
+  `v0.15.3-bash-final`, and the docs pass landed (README, DESIGN, STATUS,
+  AGENTS.md, consumer skill, CHANGELOG).
+- **Delivery legs verified after the fact (0.16.1).** `x send` /
+  `notify-drain` delivery could not be proven at cutover because the
+  safe-input classifier only knew Claude Code's TUI. The classifier now
+  supports opencode and pi as well, and delivery was verified live into both.
+  Still code-reviewed only: the `x observe` sqlite sampler, and `down`.
 
 ## Explicitly out of scope (this round)
 

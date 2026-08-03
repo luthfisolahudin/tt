@@ -30,7 +30,7 @@ orients an AI agent working **on** `tt` itself.
   is the pi extension `tt` drives the REPLs through, auto-loaded by pi from
   tt's private `PI_CODING_AGENT_DIR`.
 - `~/.local/bin/tt` is the **installed binary** — there IS a build step now:
-  `go-task cutover` (or `go-task install` for a side-by-side `tt-go`).
+  `go-task install` (builds to `bin/tt`, then installs and restarts `ttd`).
 - `docs/` — design, status, plan. `CHANGELOG.md` — version history (newest
   first).
 
@@ -67,7 +67,7 @@ orients an AI agent working **on** `tt` itself.
   **never** across `EnsureReplReady` (a 40 s boot wait would stall every
   session).
 - **`ttd` is long-lived, so a rebuild alone changes nothing** — the running
-  daemon keeps serving the old binary until it is restarted. `go-task cutover`
+  daemon keeps serving the old binary until it is restarted. `go-task install`
   stops it for you; if you install by hand, run `tt daemon stop`.
 - **On-disk state is the source of truth.** The daemon holds no authoritative
   in-memory state, so it is restartable and idempotent; a dead daemon degrades

@@ -7,10 +7,11 @@ history in `CHANGELOG.md`.
 
 - **`tt` is a Go program (0.16.0); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
-  client). There IS a build step: `go-task cutover` installs the binary to
-  `~/.local/bin/tt`; `go-task install` puts a side-by-side `tt-go`; `go-task check`
-  runs build + vet + test. The retired bash script lives at the
-  `v0.15.3-bash-final` tag — `go-task restore-bash` brings it back if needed.
+  client). There IS a build step: `go-task build` compiles to `bin/tt` and
+  `go-task install` installs it to `~/.local/bin/tt` (restarting `ttd`, which
+  otherwise keeps serving the old binary); `go-task check` runs build + vet +
+  test. The retired bash script lives at the `v0.15.3-bash-final` tag —
+  `go-task restore-bash` brings it back if needed.
 - **A single daemon (`ttd`) serves every session** over a unix socket at
   `<state base>/ttd.sock` (pidfile `ttd.pid`, single-instance and stale-aware).
   It auto-starts on first CLI use; `tt daemon start|stop|status`. It owns the
@@ -237,7 +238,7 @@ WORKER_DONE": that makes it emit the marker WITHOUT the nonce footer, which is
 correctly rejected as `interrupted`).
 
 ```sh
-go-task cutover                            # build + install (there IS a build step now)
+go-task install                         # build + install (there IS a build step now)
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
 env -u TMUX tt up                       # builds dev/claude only; attach fails harmlessly off-tty
                                         # (in-tmux `tt up` stays put; --attach to switch)
