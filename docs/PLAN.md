@@ -229,8 +229,22 @@ bug in the discovery path.
   before. Verified live: in-tmux `up` against a different session keeps the
   caller on their session. This is a deliberate behavior CHANGE vs bash (which
   always switched) — the one intentional divergence in the port.
-- Remaining: fold any last `x observe` fidelity checks, retire the bash body
-  (`tt` → shim that execs the Go CLI), docs + version bump.
+- **Full verb parity reached.** Every bash verb has a Go equivalent (audit
+  found and fixed two gaps: `pi notify-drain`, which the extension spawns on
+  `--notify`, and `pi steer-all`). Plus the new `peek` / `pipeline` / `daemon`.
+- **Side-by-side install (`Makefile`).** `make install` puts the Go binary at
+  `~/.local/bin/tt-go` for dogfooding while bash `tt` stays live and untouched;
+  `make cutover` flips `~/.local/bin/tt` to the Go binary; `make restore-bash`
+  reverts. Go needs a build step, so the bash-era "edits take effect
+  immediately, no install step" property ends at cutover.
+- Remaining before cutover: dogfood `tt-go` on real work, then flip and delete
+  the bash body; docs pass (README table, DESIGN, STATUS, AGENTS.md "single-file
+  bash tool", consumer skill) + MINOR version bump.
+- **Unverified legs (code-reviewed only, need a live Claude Code TUI or are
+  destructive):** `x send` delivery and `notify-drain` delivery (the safe-input
+  classifier only accepts a real Claude TUI — a `cat` stand-in never
+  classifies safe, as observed); `x observe` sqlite sampler; `down`. The
+  drainer's lock/discard/stale-takeover paths ARE verified.
 
 ## Explicitly out of scope (this round)
 
