@@ -69,6 +69,19 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
 - `tt pi wait all` — join workers that are busy right now.
 - `tt pi collect` — join uncollected results across a fan-out, including tasks
   that may have finished before you waited. Add `--json` if needed.
+- `tt pi collect --digest` — the same join as one lean line per result (id,
+  status, duration, one-line summary). **Prefer this for wide fan-outs**: it
+  keeps result prose out of your context; pull any full body on demand with
+  `tt pi results <id>`.
+- `tt peek [--lines N] <window|cs>` — read any window's current pane content
+  read-only (a bare window like `dev`, or a worker callsign). Use it to see
+  what a pane is doing without attaching or driving it.
+- `tt pipeline run (FILE|-)` — run a declarative JSON spec (ordered fan-out and
+  review stages) in one call: the daemon dispatches, joins, runs the review
+  gate, and returns one digest. A review stage ends with `PIPELINE_PASS` or
+  `PIPELINE_FAIL: <reason>`, and a failure retries the preceding fan-out up to
+  `retries` times. Use it when a fan-out plus a verification pass would
+  otherwise cost you many round-trips.
 - `tt pi steer <cs> - <<<'...'` — inject a correction into the current turn
   (run-now). `send` queues for the next turn instead; use `send` for review
   remediation that needs its own tracked result and acceptance checks.
@@ -82,10 +95,13 @@ Use stdin `-` with heredocs/here-strings; do **not** use process substitution.
   worker's private `PI_CODING_AGENT_DIR` (the pool's installed extensions
   get updated, not the orchestrator's own pi config). Forwards all args.
 
+Every verb answers `--help` (exit 0) with a scoped synopsis — use it to
+discover flags instead of guessing.
+
 ## Parallelism rules
 
 - Fan out only when `FILES / SCOPE` scopes are disjoint; `tt` cannot detect overlap.
 - Prefer `auto --prefer-fresh` for parallel fan-out to claim distinct workers.
 - Join with `wait all` for still-busy workers, or `collect` when some results may
-  already be complete.
+  already be complete; add `--digest` to keep the join lean.
 - Past the worker cap, `auto` queues on the shared pool until a worker frees up.

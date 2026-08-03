@@ -1,8 +1,47 @@
 # Changelog
 
-Notable changes to `tt`, newest first. Versions follow the `VERSION` constant
-in `tt`; each is tagged `v<x.y.z>` (annotated). Use `git diff v<x.y.z>
-v<x.y.z>` to inspect a range.
+Notable changes to `tt`, newest first. Versions follow the `Version` constant
+in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
+`git diff v<x.y.z> v<x.y.z>` to inspect a range.
+
+## [0.16.0] — 2026-08-03
+
+The bash implementation is retired; `tt` is a Go program driven by a single
+background daemon. Recover the old tool from the `v0.15.3-bash-final` tag
+(`make restore-bash`) if a regression ever forces a fallback.
+
+- **`ttd` daemon.** One process serves every session over a unix socket
+  (`<state>/ttd.sock`), owning the worker-dispatch write side and the
+  result/notify watch side. On-disk state stays the source of truth, so the
+  daemon is restartable and idempotent; a dead daemon degrades to "CLI can't
+  reach it", never to lost work. Auto-starts on first use;
+  `tt daemon start|stop|status`.
+- **Go CLI at full parity.** Every former bash verb is served by the cobra CLI
+  against the daemon: `up`/`attach`/`down`, `name`, all `tt pi` verbs
+  (including `notify-drain` and `steer-all`), and `tt x send`/`list`/`observe`.
+  The `tt-worker` extension and its file protocol are unchanged.
+- **`tt pipeline run`.** A declarative JSON spec (ordered fan-out and review
+  stages) executed inside the daemon: one trigger in, one digest out. A review
+  stage hands the prior stage's results to a worker whose `PIPELINE_PASS` /
+  `PIPELINE_FAIL: <reason>` verdict gates a bounded retry of the fan-out. No
+  scripting engine and no sandbox.
+- **`tt pi collect --digest`.** Joins a fan-out as one line per result
+  (id, status, duration, one-line summary); full bodies stay id-addressable
+  via `tt pi results <id>`, so a join no longer floods the orchestrator's
+  context.
+- **`tt peek [--lines N] <window|callsign>`.** Reads any window's pane content
+  as a daemon state query — the agent-readable "show me that window"
+  primitive. Read-only; never drives a worker.
+- **Per-verb `--help` everywhere.** Every verb and subcommand answers `--help`
+  with exit 0 and a scoped synopsis (`tt pi --help` used to fail). Help is
+  generated from the cobra definitions instead of a hand-maintained heredoc.
+- **`tt up` no longer steals your window.** Inside tmux it builds/heals the
+  session and stays put; `--attach` switches deliberately; outside tmux it
+  attaches as before. A deliberate divergence from bash, which always
+  `switch-client`ed and twice replaced a live window.
+- **Build step.** `make cutover` installs the binary as `~/.local/bin/tt`;
+  `make install` puts a side-by-side `tt-go`; `make check` runs
+  build + vet + test. Editing no longer takes effect without a rebuild.
 
 ## [0.15.3] — 2026-08-03
 

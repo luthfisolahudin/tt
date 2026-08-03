@@ -86,7 +86,7 @@ the extension strips to the end of that context file and logs the problem in
 
 The extension and tt exchange plain files under
 `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`, all in a trivial line
-format so the bash side needs no JSON parser:
+format so the reader side needs no JSON parser:
 
 - **`<cs>.queue/`** — a per-worker task queue (directory). `tt pi send`
   always **appends** a `<turn>.task` file (atomic `mv`): line 1 is
@@ -133,7 +133,7 @@ format so the bash side needs no JSON parser:
   **re-drives the worker's interrupted task to completion** — it rehydrates the
   pending id/nonce/notify (looked up from `tasks.jsonl`), writes `running`, and
   re-sends the turn, so the normal `agent_end` validator closes it. Indirection
-  through the extension is required: bash cannot restore the extension's
+  through the extension is required: tt cannot restore the extension's
   in-memory pending id, so a plain steer would run untracked and never reach
   `done`. This is `tt pi resume` (and the in-pane `/tt-resume` command, which
   calls the same routine directly).
@@ -527,11 +527,63 @@ substrate and file protocol are already provider-agnostic.)
 - Auto-starting the dev server (`dev` window stays an empty shell).
 - Per-project `tt` config (custom dev command / default tier).
 
+## The `ttd` daemon
+
+Since 0.16.0 `tt` is a Go program and a **single daemon (`ttd`) serves every
+session**, not one daemon per session: one process (~10-30 MB) regardless of
+how many projects are open, and a natural owner for the things that are
+already cross-session (`tt x send`, `x observe`, the notify drainer).
+
+- **Socket.** `<state base>/ttd.sock`, single-instance via `<state base>/ttd.pid`
+  (stale-pid aware). Auto-starts on first CLI use; `tt daemon start|stop|status`.
+- **Wire format.** One line-delimited JSON request per connection —
+  `{op,session,cwd,sync_env,args}` → `{ok,stdout,stderr,exit_code,error}`. Ops
+  return **pre-formatted** stdout/stderr so the CLI relays them byte-for-byte
+  and the exit-code contract is preserved. The cost: a blocked op cannot stream
+  progress notes back (they land in `ttd.log`); the final error still reaches
+  the caller.
+- **Single writer.** Ops that mutate state (`send`/`auto`/`clear`/`rm`/
+  `popidle`/`steer`/`resume`/`status`) take `writeMu` so turn assignment and
+  spawns cannot race. Long-running ops (`wait`/`collect`/`pipeline`) must NOT
+  hold it for their lifetime — the pipeline locks only its per-dispatch
+  critical section.
+- **No authoritative memory.** On-disk state remains the source of truth, so
+  the daemon is restartable and idempotent; killing it degrades to "the CLI
+  can't reach it", never to lost work.
+- **The extension did not change.** It still claims tasks by polling the same
+  files; the daemon replaced only the writer/watcher side. That symmetry is
+  what made the Go port safe.
+
+## Declarative pipelines — `tt pipeline run`
+
+A pipeline is a **fixed shape defined as data**, executed by the daemon: one
+trigger in, one digest out. There is deliberately no scripting engine and no
+sandbox — the 90% of the value at 10% of the cost.
+
+```json
+{ "name": "audit", "retries": 1,
+  "stages": [
+    {"fanout": [{"label": "a", "task": "TASK: …"}], "join": "digest"},
+    {"review": {"prompt": "Verify each result against its SUCCESS."}}
+  ] }
+```
+
+- A **fanout** stage dispatches N tasks through the auto policy
+  (idle → spawn → shared pool) and joins each to a terminal status.
+- A **review** stage hands the previous stage's results to ONE worker, which
+  must end with `PIPELINE_PASS` or `PIPELINE_FAIL: <reason>`. On failure the
+  engine re-runs the preceding fanout stage, bounded by `retries` (default 0;
+  exhausted → exit 1 with the reason).
+
+This buys the two quality patterns Claude Code's dynamic workflows name —
+adversarial review before reporting, and check-until-green — as a stage rather
+than as user-supplied code.
+
 ## Files and external state
 
 | Location | Purpose |
 |----------|---------|
-| `~/code/tt/tt` | The tool itself (symlinked from `~/.local/bin/tt`). |
+| `~/.local/bin/tt` | The installed Go binary (`make cutover`). The retired bash script is tagged `v0.15.3-bash-final`. |
 | `~/code/tt/pi-worker/` | Repo-owned worker templates: tracked `settings.json`, `package.json`, `APPEND_SYSTEM.md`, and extensions. |
 | `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
 | `~/.local/share/tt/skills` | Compatibility symlink to repo-owned `skills/` for manually referenced tt skills. |

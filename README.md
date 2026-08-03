@@ -1,6 +1,6 @@
 # tt — tmux team
 
-A single-file bash tool that gives every project **one tmux session** hosting
+A Go tool that gives every project **one tmux session** hosting
 the dev server, the orchestrator (Claude Code), and a pool of **pi** code
 workers — so there is one place to attach and watch everything.
 
@@ -8,23 +8,29 @@ workers — so there is one place to attach and watch everything.
 runs a persistent, interactive pi REPL in a visible tmux window — the
 orchestrator drives it via a per-worker task queue and control files rather
 than one-shot `pi -p` calls. The model comes from the dispatched **tier**
-(see [Model tier](#model-tier)).
+(see [Model tier](#model-tier)). A single background daemon (`ttd`) serves
+every session; the CLI is a thin client over its unix socket.
 
-- **Tool:** `~/code/tt/tt` (this repo) — symlinked from `~/.local/bin/tt`.
-- **Design & rationale:** `docs/DESIGN.md`.
+- **Tool:** this repo — installed to `~/.local/bin/tt` with `make cutover`.
+- **Design & rationale:** `docs/DESIGN.md`. **Upgrade plan:** `docs/PLAN.md`.
 
 > **Contributors & AI agents:** read `CLAUDE.md` first, then `docs/STATUS.md`, before editing anything.
 
 ## Install
 
 ```sh
-ln -s ~/code/tt/tt ~/.local/bin/tt
+make cutover        # build + install to ~/.local/bin/tt
+make install        # or: side-by-side ~/.local/bin/tt-go for testing
+make check          # build + vet + test
 ```
 
-Dependencies: `tmux`, `bash`, coreutils (`sha1sum`/`sha256sum`, `stat`, `date`),
-`sed`, `awk`, `perl`. `pi` must be on `PATH` for the worker verbs. Also:
-`jq` for `.tt/windows.json` (without it tt falls back to the built-in layout),
-`sqlite3` for `tt x observe`.
+Requires Go (see `go.mod`). Editing the source now needs a rebuild — the
+bash-era symlink (edit-and-run) is gone; the retired script is tagged
+`v0.15.3-bash-final`.
+
+Dependencies: `tmux`, `pi` on `PATH` for the worker verbs, `jq` for
+`.tt/windows.json` (without it tt falls back to the built-in layout),
+`sqlite3` + `perl` for `tt x observe`.
 
 ## Quick start
 
@@ -102,15 +108,19 @@ orchestrator but not delegated pi workers. Respawn existing workers with
 
 ## Command reference
 
-Run `tt --help` for the full block. Summary:
+Run `tt --help`, or `tt <verb> --help` for any verb, for the generated
+reference. Summary:
 
 | Verb | Effect |
 |------|--------|
-| `tt` / `tt up` | Create (if missing) + attach the project session. Idempotent. No pi workers are pre-spawned — the pool is lazy. |
+| `tt` / `tt up [--attach]` | Create (if missing) or heal the project session. Idempotent. No pi workers are pre-spawned — the pool is lazy. **Inside tmux it does not switch away** (that replaced the caller's window); `--attach` switches. Outside tmux it attaches. |
 | `tt a` / `tt attach` | Attach without creating. |
 | `tt name` | Print the computed session name. |
+| `tt peek [--lines N] <window\|cs>` | Read any window's current pane content (read-only) — a bare window name (`dev`), a worker callsign (`alfa` → `pi-alfa`), or `pi-<cs>`. The agent-readable "show me that window". |
+| `tt pipeline run [--timeout N] [--json] (FILE\|-)` | Run a declarative JSON pipeline spec (ordered fan-out / review stages) in the daemon: one trigger in, one digest out. A review stage's `PIPELINE_PASS` / `PIPELINE_FAIL: <reason>` verdict gates a bounded retry of the preceding fan-out. |
+| `tt daemon start\|stop\|status` | Control `ttd`, the single daemon serving all sessions. It auto-starts on first use. |
 | `tt --version`, `tt -v` | Print the installed `tt` version. |
-| `tt --help`, `tt -h` | Full reference block. |
+| `tt --help`, `tt -h` | Reference block; every verb also answers `--help`. |
 | `tt down` | Kill the project session (with confirmation). |
 | `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses while the worker is `busy`. |
 | `tt pi resume <cs>` | Recover an **interrupted** worker without a context wipe: re-drive its task to completion (`interrupted → busy → done`). Needs the REPL alive. In the worker's own pane, `/tt-resume` does the same. |
@@ -120,7 +130,7 @@ Run `tt --help` for the full block. Summary:
 | `tt pi steer-all (FILE\|-)` | Steer every live worker. Same as `tt pi steer all`. |
 | `tt pi wait [--timeout N] [--json] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id (any id resolves, even an old one), a pool id, or `all` (join all busy). `--json`: result envelope(s). `all` prints a one-line tally on stderr and exits non-zero if any worker ended error/other/down/timeout. |
 | `tt pi wait-all [--timeout N] [--json] [<cs>...]` | Join a specific set of workers (`tt pi wait all` can only join *every* busy worker). No callsigns → all currently-busy workers. |
-| `tt pi collect [--timeout N] [--json] [all\|<cs>]` | Cursor-based fan-out join: every result with turn past the per-worker cursor, blocking on in-flight ones, then advances the cursor. Never drops a task that finished before you asked (vs `wait all`, busy-now only). |
+| `tt pi collect [--timeout N] [--json] [--digest] [all\|<cs>]` | Cursor-based fan-out join: every result with turn past the per-worker cursor, blocking on in-flight ones, then advances the cursor. Never drops a task that finished before you asked (vs `wait all`, busy-now only). `--digest`: one lean line per result (id, status, duration, summary) instead of full bodies — pull a body with `tt pi results <id>`. |
 | `tt pi results [--json] [<cs>\|<task-id>]` | Read durable outcomes from the per-id store: list all (newest first), filter to a worker, or re-read one by id. Recovers an id you no longer have. |
 | `tt pi logs [--lines N] <cs>` | Dump a worker's pi REPL pane scrollback (read-only; default 200 lines) — tell an in-flight turn from a wedged one without attaching. |
 | `tt pi status [--json]` | One row per worker: state, **elapsed** (in-flight turn time when busy), **queue depth** (`+N` pinned tasks waiting), last task, tier, generation; interrupted/blocked rows carry a reason hint. `--json` adds `elapsed_s`/`queued`. |

@@ -5,9 +5,26 @@ history in `CHANGELOG.md`.
 
 ## Current state
 
-- Single bash file (`~/code/tt/tt`, symlinked from `~/.local/bin/tt`) plus
-  worker templates under `pi-worker/` and the consumer delegation skill under
-  `skills/delegating-to-pi/`. State lives under
+- **`tt` is a Go program (0.16.0); the bash tool is retired.** Sources are
+  `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
+  client). There IS a build step: `make cutover` installs the binary to
+  `~/.local/bin/tt`; `make install` puts a side-by-side `tt-go`; `make check`
+  runs build + vet + test. The retired bash script lives at the
+  `v0.15.3-bash-final` tag — `make restore-bash` brings it back if needed.
+- **A single daemon (`ttd`) serves every session** over a unix socket at
+  `<state base>/ttd.sock` (pidfile `ttd.pid`, single-instance and stale-aware).
+  It auto-starts on first CLI use; `tt daemon start|stop|status`. It owns the
+  worker-dispatch write side (task files, steer/resume triggers, `tasks.jsonl`,
+  spawn) and the result/notify watch side, plus cross-session `x`. It holds no
+  authoritative in-memory state — disk is the source of truth — so it is
+  restartable and idempotent. Wire format: one line-delimited JSON request per
+  connection; ops return pre-formatted stdout/stderr plus an exit code, so the
+  CLI relays byte-for-byte.
+- **The `tt-worker` extension is unchanged** and still claims tasks by polling
+  the same files. That symmetry is what made the port safe: the daemon replaced
+  only the writer/watcher side.
+- Worker templates live under `pi-worker/` and the consumer delegation skill
+  under `skills/delegating-to-pi/`. State lives under
   `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/` (override `TT_STATE_DIR`);
   worker runtime under `${XDG_DATA_HOME:-$HOME/.local/share}/tt/pi-worker`
   (override `TT_PI_WORKER_DIR`). The global skill entry
@@ -15,21 +32,33 @@ history in `CHANGELOG.md`.
   "Files and external state".
 - `tt up` builds the fixed windows (default `dev`/`claude`, or whatever
   `<project>/.tt/windows.json` declares — see README "Custom window layout" and
-  `docs/windows.schema.json`), launches the orchestrator, attaches. Pane commands
-  are bare-shell-guarded so re-`up` is idempotent and reboots self-heal; healing
-  is at window granularity; panes are targeted by `pane_id` (safe under
-  `pane-base-index 1`). Needs `jq` for the config path; without it the legacy
-  `dev`/`claude` layout is used. The worker pool is lazy — no REPLs are
-  pre-spawned; the first `tt pi send`/`auto` spawns the worker and waits for its
-  readiness. `up` also stamps `TT_VERSION` into the session env and
-  `$(state_dir)/version`.
+  `docs/windows.schema.json`). Pane commands are bare-shell-guarded so re-`up`
+  is idempotent and reboots self-heal; healing is at window granularity; panes
+  are targeted by `pane_id` (safe under `pane-base-index 1`). Needs `jq` for the
+  config path; without it the legacy `dev`/`claude` layout is used. The worker
+  pool is lazy — no REPLs are pre-spawned; the first `tt pi send`/`auto` spawns
+  the worker and waits for its readiness. `up` also stamps `TT_VERSION` into the
+  session env and `$(state_dir)/version`.
+- **`tt up` inside tmux does NOT switch by default** (0.16.0). An unsolicited
+  `switch-client` replaces the caller's window — it stole a live window twice.
+  In-tmux `up` builds/heals and stays put and prints how to enter; `--attach`
+  switches; outside tmux `up` attaches. Deliberate divergence from bash.
+- **`tt pipeline run (FILE|-)`** executes a declarative JSON spec (ordered
+  fan-out / review stages) in the daemon: one trigger in, one digest out. A
+  review stage hands the prior stage's results to one worker whose
+  `PIPELINE_PASS` / `PIPELINE_FAIL: <reason>` verdict gates a bounded retry of
+  the preceding fan-out (`retries`, default 0). Spec is validated up front.
+- **`tt pi collect --digest`** joins a fan-out as one line per result; full
+  bodies stay id-addressable via `tt pi results <id>`. **`tt peek [--lines N]
+  <window|callsign>`** reads any window's pane content as a daemon state query
+  (read-only; accepts a bare window, a callsign, or `pi-<cs>`).
+- **Every verb answers `--help` with exit 0**, scoped per verb and generated
+  from the cobra definitions.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- The single `default` tier routes all workers to OpenAI Codex GPT 5.6 Luna
-  at client-facing max effort through local 9Router's dynamic Anthropic
-  Messages-compatible provider. The shared integration maps that to the measured
-  wire `max`. Normal dispatches omit `--tier`; the registry remains data-driven
+- The single `default` tier routes all workers to OpenAI Codex GPT 5.6 Luna at
+  max effort. Normal dispatches omit `--tier`; the registry remains data-driven
   so a future model decision changes one row. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
   (thinking effort is fixed per tier, not independently settable). See
@@ -172,9 +201,22 @@ session — what a handoff can trust without retesting:
 
 ## Known limitations / not yet tested
 
+- **`x send` / `--notify` delivery only works against a Claude Code TUI.** The
+  safe-input classifier recognizes Claude Code's ANSI markers only; against an
+  `opencode` orchestrator it never sees a safe state and times out (verified
+  2026-08-03 — the retired bash tool failed identically, so this is
+  pre-existing, not a port regression). A `cat` stand-in never classifies as
+  safe either, so these two legs cannot be verified without a live Claude Code
+  TUI and remain code-reviewed only. `notify-drain`'s lock, discard, and
+  stale-takeover paths ARE verified.
+- The Go `x observe` sqlite sampler is code-reviewed only.
 - `tt down` reads a y/N confirmation from stdin — non-interactive callers must
   pipe `y`.
 - `tt up`'s final attach fails harmlessly off a tty (expected headless).
+- A daemon-side note printed while an op blocks (e.g. `x send: waiting for safe
+  input`) goes to `ttd.log`, not the caller's terminal — the request/response
+  socket cannot stream progress the way the bash tool did. The final error
+  still reaches the CLI.
 - tmux-resurrect/continuum can race `tt up` and recreate a session with
   duplicate or shell-only `pi-*` windows. `tt up` heals this (dedups standard
   windows, revives dead REPLs), but keep `pi`/`claude` out of
@@ -188,14 +230,17 @@ session — what a handoff can trust without retesting:
 
 ## How to test
 
-There is no harness — verify manually against a throwaway project. Use a real,
-protocol-respecting task (do NOT ask the worker to "reply WORKER_DONE": that
-makes it emit the marker WITHOUT the nonce footer, which is correctly rejected
-as `interrupted`).
+`make check` (build + vet + test) must be clean after every change. Beyond
+that there is no full harness — verify manually against a throwaway project.
+Use a real, protocol-respecting task (do NOT ask the worker to "reply
+WORKER_DONE": that makes it emit the marker WITHOUT the nonce footer, which is
+correctly rejected as `interrupted`).
 
 ```sh
+make cutover                            # build + install (there IS a build step now)
 TD=$(mktemp -d /tmp/tt-test-XXXX); cd "$TD"
 env -u TMUX tt up                       # builds dev/claude only; attach fails harmlessly off-tty
+                                        # (in-tmux `tt up` stays put; --attach to switch)
 # lazy spawn on first send; task-id optional on wait
 TID=$(tt pi send alfa - <<'P'
 TASK: No code change needed — acknowledge receipt.
@@ -204,6 +249,8 @@ P
 )
 tt pi wait "$TID"                       # or: tt pi wait alfa
 tt pi auto - <<<'TASK: ... ; SUCCESS: ...' ; tt pi wait all   # pick-for-me + fan-out join
+tt pi collect --digest                  # lean join: one line per result
+tt peek dev                             # read any window read-only
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/tt/$(tt name)"
 tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
 ```
@@ -211,8 +258,7 @@ tmux kill-session -t "=$(tt name)"; rm -rf "$TD" "$STATE"
 For the queue/pool/--rm/--notify paths see the CHANGELOG (each was verified
 live). Editing `pi-worker/extensions/tt-worker.ts` only takes effect on
 a freshly launched REPL — respawn workers (`tt pi clear <cs>`) after changing
-it. After syntax changes run `bash -n tt`. Live `pi` steps spend OpenAI Codex
-quota — keep test tasks trivial.
+it. Live `pi` steps spend real model quota — keep test tasks trivial.
 
 ## Worker pool
 
