@@ -5,7 +5,7 @@ history in `CHANGELOG.md`.
 
 ## Current state
 
-- **`tt` is a Go program (0.16.0); the bash tool is retired.** Sources are
+- **`tt` is a Go program (0.17.1); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
   client). There IS a build step: `go-task build` compiles to `bin/tt` and
   `go-task install` installs it to `~/.local/bin/tt` (restarting `ttd`, which
@@ -31,7 +31,8 @@ history in `CHANGELOG.md`.
   (override `TT_PI_WORKER_DIR`). The global skill entry
   `~/.agents/skills/delegating-to-pi` is a symlink to the repo skill. See DESIGN
   "Files and external state".
-- `tt up` builds the fixed windows (default `dev`/`claude`, or whatever
+- `tt up` builds the fixed windows (default `dev`/`claude`, with Claude Code
+  starting a fresh conversation, or whatever
   `<project>/.tt/windows.json` declares — see README "Custom window layout" and
   `docs/windows.schema.json`). Pane commands are bare-shell-guarded so re-`up`
   is idempotent and reboots self-heal; healing is at window granularity; panes

@@ -41,7 +41,8 @@ tt                       # create + attach the project's tmux session
 
 This creates a session named `<basename($PWD)>-<sha1($PWD)[:4]>` with two
 windows: `dev` and `claude`. Run the dev server in `dev`; the orchestrator
-(Claude Code) is auto-launched in `claude`. The worker pool is **lazy** — no
+(Claude Code) is auto-launched in `claude` in a fresh conversation. The worker
+pool is **lazy** — no
 `pi-*` workers are pre-spawned; a worker's REPL is created on demand by the
 first `tt pi send <cs>` or `tt pi auto`.
 

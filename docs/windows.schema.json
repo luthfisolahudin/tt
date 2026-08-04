@@ -13,7 +13,7 @@
     },
     "claude": {
       "$ref": "#/$defs/window",
-      "description": "Orchestrator window — the attach/focus target on `tt up`. Default name 'claude'. Default panes: one pane running `claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions`. To use a different coding agent, set claude.panes[0].cmd (e.g. \"pi\")."
+      "description": "Orchestrator window — the attach/focus target on `tt up`. Default name 'claude'. Default panes: one pane running `claude --allow-dangerously-skip-permissions` in a fresh conversation. To use a different coding agent, set claude.panes[0].cmd (e.g. \"pi\")."
     },
     "extra_windows": {
       "type": "array",

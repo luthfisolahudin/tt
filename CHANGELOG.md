@@ -4,6 +4,12 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.17.1] — 2026-08-04
+
+- **Fresh Claude default.** `tt up` now launches the default Claude Code pane
+  with `claude --allow-dangerously-skip-permissions`, without `--continue`.
+  Explicit `claude.panes[0].cmd` values in `.tt/windows.json` are unchanged.
+
 ## [0.17.0] — 2026-08-03
 
 Worker teardown is now lossless, and a pipeline no longer degrades into using

@@ -11,7 +11,7 @@ import (
 
 // DefaultClaudeCmd is the default orchestrator launch, used when
 // .tt/windows.json does not override the claude window's command.
-const DefaultClaudeCmd = "claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions"
+const DefaultClaudeCmd = "claude --allow-dangerously-skip-permissions"
 
 // normalizeJQ is the byte-faithful port of the bash NORMALIZE_JQ: read an
 // optional <project>/.tt/windows.json and emit a normalized, defaults-applied
