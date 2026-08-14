@@ -4,6 +4,12 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.17.2] — 2026-08-14
+
+- **Terra worker default.** The single `default` tier now launches OpenAI Codex
+  GPT 5.6 Terra through 9Router at max effort. Existing workers must be cleared
+  before they adopt the new model.
+
 ## [0.17.1] — 2026-08-04
 
 - **Fresh Claude default.** `tt up` now launches the default Claude Code pane

@@ -7,15 +7,15 @@ this is the evidence and decision record, not a second configuration surface.
 ## Current decision
 
 - Tier: `default`
-- Provider/model: `9router/cx/gpt-5.6-luna`
+- Provider/model: `9router/cx/gpt-5.6-terra`
 - API: Anthropic Messages
 - Client thinking effort: `max`
 - Measured wire effort: `max`
 - Input: text and image
-- Decided: 2026-08-03
+- Decided: 2026-08-14
 
 This switch is operator-directed as part of consolidating local AI routing on
-9Router and selecting OpenAI Codex GPT 5.6 Luna for delegated work. It is not the
+9Router and selecting OpenAI Codex GPT 5.6 Terra for delegated work. It is not the
 result of a new comparative benchmark. 9Router discovers models from active
 provider connections, but the default model remains pinned so a changing catalog
 cannot silently change worker behavior. The prior benchmark remains below as
@@ -25,7 +25,7 @@ The canonical measurement record lives in
 `../../9router-integrations/docs/EFFORT_MATRIX.md`. The five CodeBuddy CN models
 were normalized by 9Router to `THINK:xhigh`, while the three active OpenAI Codex
 models accepted explicit `max` requests. The shared resolver therefore transmits
-`max` for the pinned Luna model.
+`max` for the pinned Terra model.
 
 Pi's model contract supports text and image input only. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model

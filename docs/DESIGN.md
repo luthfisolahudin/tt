@@ -322,7 +322,7 @@ extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `default` | `9router/cx/gpt-5.6-luna` | `max` | All delegated worker tasks. |
+| `default` | `9router/cx/gpt-5.6-terra` | `max` | All delegated worker tasks. |
 
 `<cs>.tier` stores the tier name. `start_repl` derives
 `--model $provider_model:$effort` from it. The extension never changes the model,

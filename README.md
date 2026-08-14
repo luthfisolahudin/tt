@@ -157,7 +157,7 @@ current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
-| `default` | `9router/cx/gpt-5.6-luna` | `max` | All delegated worker tasks. |
+| `default` | `9router/cx/gpt-5.6-terra` | `max` | All delegated worker tasks. |
 
 The default worker accepts text and images. Pi auto-discovers the models owned
 by active connections from the local 9Router Anthropic-compatible endpoint,
