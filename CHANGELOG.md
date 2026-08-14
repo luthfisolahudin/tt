@@ -9,6 +9,10 @@ in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 - **Terra worker default.** The single `default` tier now launches OpenAI Codex
   GPT 5.6 Terra through 9Router at max effort. Existing workers must be cleared
   before they adopt the new model.
+- A paired four-task worker benchmark against Luna found comparable correctness,
+  with Terra using about 28% fewer reported input/output tokens and 37% less
+  recorded turn time including one failed attempt and retry per model. It also
+  exposed and corrected stale Bash-era tier registry names in the current docs.
 
 ## [0.17.1] — 2026-08-04
 

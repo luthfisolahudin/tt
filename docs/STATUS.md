@@ -92,9 +92,9 @@ history in `CHANGELOG.md`.
   from loaded `AGENTS.md`/`CLAUDE.md` context before each tt-spawned worker turn,
   so ancestor/global docs can hold orchestrator-only guidance. Existing workers
   must be respawned (`tt pi clear <cs>`) to load the updated extension.
-- **Default auto tier regression fixed (0.13.2).** `tt pi auto` and `auto --rm`
-  again use `PI_TIER_DEFAULT` when `--tier` is omitted instead of aborting on the
-  stale, unset `PI_DEFAULT_TIER` name.
+- **Default auto tier behavior (0.13.2 origin).** `tt pi auto` and `auto --rm`
+  use `worker.TierDefault` when `--tier` is omitted; the Go port preserves the
+  earlier regression fix without the retired Bash constants.
 - **Model-agnostic default tier (0.14.1).** The former provider/model-named tiers are
   replaced by one model-agnostic `default` tier. The registry is now one
   data-driven list in `tt`; the worker extension no longer mirrors tier names or

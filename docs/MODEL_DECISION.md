@@ -1,8 +1,9 @@
 # Worker model decision
 
 This document owns the periodic choice of the model behind `tt`'s single
-`default` tier. The runtime source of truth remains `PI_TIER_REGISTRY` in `tt`;
-this is the evidence and decision record, not a second configuration surface.
+`default` tier. The runtime source of truth remains `TierRegistry` in
+`internal/worker/tier.go`; this is the evidence and decision record, not a
+second configuration surface.
 
 ## Current decision
 
@@ -14,12 +15,14 @@ this is the evidence and decision record, not a second configuration surface.
 - Input: text and image
 - Decided: 2026-08-14
 
-This switch is operator-directed as part of consolidating local AI routing on
-9Router and selecting OpenAI Codex GPT 5.6 Terra for delegated work. It is not the
-result of a new comparative benchmark. 9Router discovers models from active
-provider connections, but the default model remains pinned so a changing catalog
-cannot silently change worker behavior. The prior benchmark remains below as
-historical selection evidence.
+The operator-directed switch was validated by the paired Luna/Terra benchmark
+below. Terra matched Luna on the four capability tasks, completed the measured
+run with about 28% fewer reported input/output tokens and 37% less recorded turn
+time, and produced the smaller passing Bash edit. Both models needed one retry
+on the hardest planning task, so this result supports Terra on efficiency
+without claiming a reliability advantage. 9Router discovers models from active
+provider connections, but the default remains pinned so a changing catalog
+cannot silently change worker behavior.
 
 The canonical measurement record lives in
 `../../9router-integrations/docs/EFFORT_MATRIX.md`. The five CodeBuddy CN models
@@ -30,6 +33,50 @@ models accepted explicit `max` requests. The shared resolver therefore transmits
 Pi's model contract supports text and image input only. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model
 advertises them.
+
+## Benchmark: 2026-08-14
+
+Environment:
+
+- Fresh tt workers through the same 9Router OpenAI Codex connection, Anthropic
+  Messages compatibility path, and `max` effort.
+- Identical clones at commit `7301d27`, identical prompts and tool access, and
+  sequential paired runs to avoid provider concurrency effects.
+- Reported token totals sum Pi's input and output footer counters; cache-read
+  counters are excluded. Turn time is the result channel's `duration_s`.
+- Terra's first audit worker was ephemeral and its footer became unavailable;
+  one additional fresh audit supplied its token estimate. The original audit's
+  168-second duration remains in the run total.
+
+Tasks:
+
+1. Audit the tier source of truth and current code/docs consistency.
+2. Analyze hypothetical mixed-tier shared-pool routing from dispatch to claim.
+3. Plan eight fresh audits under a cap of four without losing durable results.
+4. Fix numeric task ordering in a bounded Bash fixture and pass its tests.
+
+Results:
+
+- **Luna:** 4/4 tasks after one retry; approximately 1.49M reported input/output
+  tokens and 1,699 seconds across five attempts. Its audit had the broadest
+  first-pass drift finding and its Bash edit handled task bodies defensively,
+  but the first planning attempt ended on an incomplete upstream stream and the
+  successful retry took 718 seconds.
+- **Terra:** 4/4 tasks after one retry; approximately 1.08M reported input/output
+  tokens and 1,068 seconds across five scored attempts. It gave the most complete
+  mixed-tier trace and the smallest passing Bash edit. Its first planning answer
+  contained a correct plan but attached `WORKER_DONE` to preceding text, so the
+  result channel correctly classified it non-terminal and required a retry.
+- Both models found the stale Bash-era registry names, correctly identified the
+  unqualified shared-pool misrouting risk in a hypothetical multi-tier registry,
+  rejected a single eight-task pipeline at a cap of four, and passed the Bash
+  syntax and behavioral tests.
+- The sample is too small to establish a reliability difference: each model had
+  one failed first attempt on the same hard task. Terra is retained because it
+  showed no material capability regression while reducing measured token volume
+  by about 28% and turn time by about 37%. The 9Router catalog reports zero
+  per-token cost for both entries, with the same 272K context and 128K output
+  limits.
 
 ## Decision rule
 
@@ -122,7 +169,7 @@ Price snapshot supplied on 2026-07-14:
 3. Record model/version, provider/API, effort, prices, completion count, output
    quality, Pi-reported tokens, retries, and active time.
 4. Reject candidates that fail a hard gate before comparing price.
-5. Change only the selected row in `PI_TIER_REGISTRY`, then update this record,
+5. Change only the selected row in `TierRegistry`, then update this record,
    current-state docs, and model-specific prompting guidance.
 6. Spawn a fresh worker and verify its process command, Pi footer, and one
    tracked send/wait turn. Existing workers must be cleared to adopt a new model.

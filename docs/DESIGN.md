@@ -2,8 +2,8 @@
 
 ## Why it exists
 
-The orchestrator (Claude Code) delegates mechanical subtasks to **pi**, a
-code worker wired to OpenAI Codex (ChatGPT Plus, flat-rate). Running
+The orchestrator delegates mechanical subtasks to **pi**, a code worker routed
+through the local 9Router provider to the selected upstream model. Running
 `pi -p "..."` directly in Bash had two problems:
 
 1. **No visibility / no control** — the user could not watch pi work, let
@@ -313,10 +313,10 @@ A "tier" is a named preset that bundles (model provider, thinking
 effort). The effort is **fixed per tier** and cannot be set
 independently — `tt pi send` / `tt pi auto` reject
 `--low`/`--medium`/`--high`/`--xhigh`/`--max` with a pointer to
-`--tier=<name>`. The data-driven registry lives at the top of `tt`
-(`PI_TIER_DEFAULT`, `PI_TIER_REGISTRY`, and the generic `tier_field` /
-`tier_is_known` / `tier_model` / `tier_effort` helpers). Each row is
-`name|provider/model|effort`. The `tt-worker` extension treats the tier as
+`--tier=<name>`. The data-driven registry lives in
+`internal/worker/tier.go` (`TierDefault`, `TierRegistry`, and the generic
+`GetTier` / `IsKnownTier` helpers). Each `Tier` bundles a name,
+provider/model, and effort. The `tt-worker` extension treats the tier as
 opaque dispatch metadata, so changing or adding a model does not require an
 extension change.
 
@@ -324,10 +324,10 @@ extension change.
 |------|-------|--------|------|
 | `default` | `9router/cx/gpt-5.6-terra` | `max` | All delegated worker tasks. |
 
-`<cs>.tier` stores the tier name. `start_repl` derives
-`--model $provider_model:$effort` from it. The extension never changes the model,
+`<cs>.tier` stores the tier name. `StartRepl` derives
+`--model <model>:<effort>` from it. The extension never changes the model,
 effort, or worker tier at task claim. Legacy or removed tier names are
-normalized to the default on read by `current_tier()`.
+normalized to the default on read by `CurrentTier`.
 
 The worker runtime auto-registers `9router` as a dynamic Anthropic Messages
 provider through the compatibility shim at
