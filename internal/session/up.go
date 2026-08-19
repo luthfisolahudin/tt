@@ -54,7 +54,7 @@ func setSessionVersion(sess, stateDir string) error {
 	return os.WriteFile(filepath.Join(stateDir, "version"), []byte(version.Version+"\n"), 0644)
 }
 
-func createSession(sess, cwd, stateDir string, wins []Window, ok bool, note func(string)) error {
+func createSession(sess, cwd, stateDir, claudeCmd string, wins []Window, ok bool, note func(string)) error {
 	// Brand-new session: every pane is fresh (prefills fire once).
 	if err := tmux.NewSession(sess, firstWindowName(wins, ok), cwd); err != nil {
 		return err
@@ -67,7 +67,7 @@ func createSession(sess, cwd, stateDir string, wins []Window, ok bool, note func
 	if err := tmux.SetOption(sess, "history-limit", "50000"); err != nil {
 		return err
 	}
-	if err := ensureStandardWindows(sess, cwd, stateDir, wins, ok, true, note); err != nil {
+	if err := ensureStandardWindows(sess, cwd, stateDir, claudeCmd, wins, ok, true, note); err != nil {
 		return err
 	}
 	return tmux.SelectWindow(sess, orchestratorWindowName(wins, ok))
@@ -95,8 +95,8 @@ func isTerminal() bool {
 	return false
 }
 
-// Up creates (or heals) the project's tmux session, stamps version + project
-// into the state dir, and enters it. Prints nothing on success.
+// Up creates or heals the project session, optionally selecting Claude continuation,
+// and then enters it. Prints nothing on success.
 //
 // Attach policy (the default flips on where you run it):
 //   - Inside tmux ($TMUX set): do NOT switch by default. A bare `tt up` meant
@@ -106,7 +106,7 @@ func isTerminal() bool {
 //     healed without switching, a stderr note says how to enter it.
 //   - Outside tmux: attach is the point of `tt up`; always attach. Off a tty
 //     the attach fails harmlessly (exit 0) so scripted `tt up` stays green.
-func Up(attach bool) error {
+func Up(attach, continued bool) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = "."
@@ -117,16 +117,17 @@ func Up(attach bool) error {
 		return err
 	}
 	note := func(m string) { fmt.Fprintf(os.Stderr, "[tt] %s\n", m) }
-	wins, ok := windowsConfig(cwd, note)
+	claudeCmd := claudeCommand(continued)
+	wins, ok := windowsConfig(cwd, claudeCmd, note)
 	if tmux.HasSession(sess) {
 		if err := setSessionVersion(sess, stateDir); err != nil {
 			return err
 		}
-		if err := ensureStandardWindows(sess, cwd, stateDir, wins, ok, false, note); err != nil {
+		if err := ensureStandardWindows(sess, cwd, stateDir, claudeCmd, wins, ok, false, note); err != nil {
 			return err
 		}
 	} else {
-		if err := createSession(sess, cwd, stateDir, wins, ok, note); err != nil {
+		if err := createSession(sess, cwd, stateDir, claudeCmd, wins, ok, note); err != nil {
 			return err
 		}
 	}

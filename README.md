@@ -36,12 +36,15 @@ Dependencies: `tmux`, `pi` on `PATH` for the worker verbs, `jq` for
 
 ```sh
 cd ~/code/my-project
-tt                       # create + attach the project's tmux session
+tt                       # create + attach with a fresh Claude conversation
+tt --continue            # create + attach, resuming Claude when possible
 ```
 
 This creates a session named `<basename($PWD)>-<sha1($PWD)[:4]>` with two
 windows: `dev` and `claude`. Run the dev server in `dev`; the orchestrator
-(Claude Code) is auto-launched in `claude` in a fresh conversation. The worker
+(Claude Code) is auto-launched in `claude` in a fresh conversation. Pass `-c`
+or `--continue` to `tt` or `tt up` to resume Claude when possible; if Claude
+cannot continue, tt starts a fresh conversation. The worker
 pool is **lazy** — no
 `pi-*` workers are pre-spawned; a worker's REPL is created on demand by the
 first `tt pi send <cs>` or `tt pi auto`.
@@ -70,8 +73,10 @@ file → the built-in `dev` + `claude` default. Schema: [`docs/windows.schema.js
   `tt up` never doubles panes or re-injects into a running process — and a crashed
   daemon (`enter:true`) is relaunched on the next `tt up`. `enter:false` panes are
   pre-typed once on creation and never re-sent.
-- `dev`/`claude` are *roles*; `claude` is always the attach/focus target. Override
-  `claude.panes[0].cmd` to launch any agent. Add more windows via `extra_windows`.
+- `dev`/`claude` are *roles*; `claude` is always the attach/focus target. `tt -c`,
+  `tt --continue`, `tt up -c`, and `tt up --continue` affect only the omitted
+  built-in Claude pane command; an explicit `claude.panes[0].cmd` remains
+  authoritative. Override it to launch any agent. Add more windows via `extra_windows`.
 - The lazy `pi-*` worker pool is **not** configured here — that stays tt-owned.
 - Requires `jq`; without it tt ignores the file and uses the legacy `dev`+`claude` layout.
 
@@ -114,7 +119,7 @@ reference. Summary:
 
 | Verb | Effect |
 |------|--------|
-| `tt` / `tt up [--attach]` | Create (if missing) or heal the project session. Idempotent. No pi workers are pre-spawned — the pool is lazy. **Inside tmux it does not switch away** (that replaced the caller's window); `--attach` switches. Outside tmux it attaches. |
+| `tt [--continue]` / `tt up [--attach] [--continue]` | Create (if missing) or heal the project session. The default Claude pane starts fresh; `-c` / `--continue` resumes it when possible, then falls back to fresh Claude. Idempotent. No pi workers are pre-spawned — the pool is lazy. **Inside tmux it does not switch away** (that replaced the caller's window); `--attach` switches. Outside tmux it attaches. |
 | `tt a` / `tt attach` | Attach without creating. |
 | `tt name` | Print the computed session name. |
 | `tt peek [--lines N] <window\|cs>` | Read any window's current pane content (read-only) — a bare window name (`dev`), a worker callsign (`alfa` → `pi-alfa`), or `pi-<cs>`. The agent-readable "show me that window". |

@@ -9,15 +9,27 @@ import (
 	"time"
 )
 
-// DefaultClaudeCmd is the default orchestrator launch, used when
-// .tt/windows.json does not override the claude window's command.
+// DefaultClaudeCmd starts a fresh Claude Code conversation when no custom
+// claude pane command is configured.
 const DefaultClaudeCmd = "claude --allow-dangerously-skip-permissions"
+
+// ContinuedClaudeCmd resumes Claude Code, then starts fresh if no conversation
+// can be continued.
+const ContinuedClaudeCmd = "claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions"
+
+// claudeCommand selects the built-in Claude Code launch command for session up.
+func claudeCommand(continued bool) string {
+	if continued {
+		return ContinuedClaudeCmd
+	}
+	return DefaultClaudeCmd
+}
 
 // normalizeJQ is the byte-faithful port of the bash NORMALIZE_JQ: read an
 // optional <project>/.tt/windows.json and emit a normalized, defaults-applied
 // window array [{role,name,layout,panes:[{cmd,enter}]}]. Absent/empty input
 // ({}) yields the built-in default (dev + claude) — one code path serves both.
-// $cc carries DefaultClaudeCmd. jq must produce this exactly.
+// $cc carries the selected built-in Claude command. jq must produce this exactly.
 const normalizeJQ = `def norm: {cmd: (.cmd // ""), enter: (.enter != false)};
 [ ( (.dev    // {}) | {role:"dev",    name:(.name // "dev"),    layout:(.layout // null), panes:((.panes // [{}])       | map(norm))} ),
   ( (.claude // {}) | {role:"claude", name:(.name // "claude"), layout:(.layout // null), panes:((.panes // [{cmd:$cc}]) | map(norm))} ) ]
@@ -57,7 +69,7 @@ func timeSleep(ms int) {
 // is unavailable — the caller falls back to the legacy dev+claude layout
 // (the same code path the bash ensure_standard_windows uses). A malformed
 // config file falls back to the built-in default with a note.
-func windowsConfig(cwd string, note func(string)) ([]Window, bool) {
+func windowsConfig(cwd, claudeCmd string, note func(string)) ([]Window, bool) {
 	if !haveJQ() {
 		return nil, false
 	}
@@ -65,7 +77,7 @@ func windowsConfig(cwd string, note func(string)) ([]Window, bool) {
 	if FileExists(file) {
 		data, err := os.ReadFile(file)
 		if err == nil {
-			if out, jerr := runNormalizeJQ(string(data)); jerr == nil {
+			if out, jerr := runNormalizeJQ(string(data), claudeCmd); jerr == nil {
 				if wins, perr := parseWindows(out); perr == nil {
 					return wins, true
 				}
@@ -73,7 +85,7 @@ func windowsConfig(cwd string, note func(string)) ([]Window, bool) {
 		}
 		note("ignoring malformed " + file + "; using built-in window layout")
 	}
-	out, err := runNormalizeJQ("{}")
+	out, err := runNormalizeJQ("{}", claudeCmd)
 	if err != nil {
 		return nil, false
 	}
@@ -81,8 +93,8 @@ func windowsConfig(cwd string, note func(string)) ([]Window, bool) {
 	return wins, perr == nil
 }
 
-func runNormalizeJQ(input string) (string, error) {
-	cmd := exec.Command("jq", "-c", "--arg", "cc", DefaultClaudeCmd, normalizeJQ)
+func runNormalizeJQ(input, claudeCmd string) (string, error) {
+	cmd := exec.Command("jq", "-c", "--arg", "cc", claudeCmd, normalizeJQ)
 	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.Output()
 	if err != nil {

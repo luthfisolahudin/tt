@@ -81,19 +81,29 @@ func applyWindowPanes(sess, cwd string, wins []Window, i, created int, coldStart
 	}
 }
 
-// legacyLaunchClaude is the no-jq fallback: auto-launch claude in the claude
-// window if the pane is a bare shell (bash's legacy_launch_claude).
-func legacyLaunchClaude(sess string) {
-	cmd, err := tmux.PaneCurrentCommand("=" + sess + ":claude")
+// claudeCommandForBarePane returns the configured command only for a bare
+// shell, preserving an existing Claude process on every heal path.
+func claudeCommandForBarePane(paneCommand, claudeCmd string) (string, bool) {
+	switch paneCommand {
+	case "bash", "zsh", "sh", "fish":
+		return claudeCmd, true
+	default:
+		return "", false
+	}
+}
+
+// legacyLaunchClaude is the no-jq fallback: auto-launch the selected Claude
+// command in the claude window only if the pane is a bare shell.
+func legacyLaunchClaude(sess, claudeCmd string) {
+	paneCommand, err := tmux.PaneCurrentCommand("=" + sess + ":claude")
 	if err != nil {
 		return
 	}
-	switch cmd {
-	case "bash", "zsh", "sh", "fish":
-	default:
+	cmd, ok := claudeCommandForBarePane(paneCommand, claudeCmd)
+	if !ok {
 		return
 	}
-	tmux.SendKeys("="+sess+":claude", DefaultClaudeCmd, "Enter")
+	tmux.SendKeys("="+sess+":claude", cmd, "Enter")
 }
 
 // dedupWindows collapses duplicate standard windows. A tmux-resurrect restore
@@ -157,7 +167,7 @@ func dedupWindows(sess, cwd, stateDir string, wins []Window, ok bool, note func(
 // ensureStandardWindows brings the session to the standard layout. Idempotent
 // — this is what makes `tt up` heal a session degraded by a crash, an aborted
 // teardown, or a tmux-resurrect restore, not just build one from cold.
-func ensureStandardWindows(sess, cwd, stateDir string, wins []Window, ok bool, coldStart bool, note func(string)) error {
+func ensureStandardWindows(sess, cwd, stateDir, claudeCmd string, wins []Window, ok bool, coldStart bool, note func(string)) error {
 	dedupWindows(sess, cwd, stateDir, wins, ok, note)
 	if !ok {
 		// Legacy fallback (no jq): the historical dev + claude layout.
@@ -174,7 +184,7 @@ func ensureStandardWindows(sess, cwd, stateDir string, wins []Window, ok bool, c
 		if FileExists(filepath.Join(cwd, ".tt", "windows.json")) {
 			note("jq not found; ignoring .tt/windows.json")
 		}
-		legacyLaunchClaude(sess)
+		legacyLaunchClaude(sess, claudeCmd)
 		return nil
 	}
 	for i, w := range wins {

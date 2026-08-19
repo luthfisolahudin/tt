@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/luthfisolahudin/tt/internal/session"
@@ -11,29 +12,39 @@ import (
 // switch away by default (that stole the caller's window); --attach switches.
 // Outside tmux it attaches (the point of `up`). Off a tty attach is harmless.
 var upCmd = &cobra.Command{
-	Use:                "up [--attach]",
-	Short:              "Create or heal the project's tmux session (attach outside tmux; --attach to switch in-tmux)",
-	Example:            "  tt up\n  tt up --attach",
+	Use:                "up [--attach] [--continue]",
+	Short:              "Create or heal the project's tmux session (fresh Claude by default; --continue/-c to resume)",
+	Example:            "  tt up\n  tt up --continue\n  tt up --attach --continue",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
 		if helpRequested(args) {
 			showHelp(cmd)
 		}
-		attach := false
-		for _, a := range args {
-			if a == "--attach" {
-				attach = true
-				continue
-			}
-			if strings.HasPrefix(a, "-") {
-				die("unknown flag for up: " + a)
-			}
-			die("up: unexpected argument: " + a)
+		attach, continued, err := parseUpArgs(args)
+		if err != nil {
+			die(err.Error())
 		}
-		if err := session.Up(attach); err != nil {
+		if err := session.Up(attach, continued); err != nil {
 			die(err.Error())
 		}
 	},
+}
+
+func parseUpArgs(args []string) (attach, continued bool, err error) {
+	for _, a := range args {
+		switch a {
+		case "--attach":
+			attach = true
+		case "-c", "--continue":
+			continued = true
+		default:
+			if strings.HasPrefix(a, "-") {
+				return false, false, fmt.Errorf("unknown flag for up: %s", a)
+			}
+			return false, false, fmt.Errorf("up: unexpected argument: %s", a)
+		}
+	}
+	return attach, continued, nil
 }
 
 // attachCmd is `tt attach` / `tt a` — enter without creating; errors if the
@@ -84,5 +95,7 @@ var downCmd = &cobra.Command{
 }
 
 func init() {
+	upCmd.Flags().Bool("attach", false, "switch to the project session when already inside tmux")
+	upCmd.Flags().BoolP("continue", "c", false, "resume the default Claude Code conversation when launching a bare claude pane")
 	rootCmd.AddCommand(upCmd, attachCmd, downCmd)
 }

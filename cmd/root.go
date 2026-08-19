@@ -7,9 +7,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "tt",
+	Use:           "tt [--continue]",
 	Short:         "tmux team: per-project tmux session with a pi worker pool",
-	Example:       "  tt up\n  tt pi send alfa - <<<'TASK: inspect the authentication flow; SUCCESS: report findings.'",
+	Example:       "  tt\n  tt --continue\n  tt pi send alfa - <<<'TASK: inspect the authentication flow; SUCCESS: report findings.'",
 	Version:       version.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -17,11 +17,16 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.SetVersionTemplate("{{.Name}} {{.Version}}\n")
+	rootCmd.Flags().BoolP("continue", "c", false, "resume the default Claude Code conversation when launching a bare claude pane")
 	rootCmd.AddCommand(piCmd)
 	rootCmd.AddCommand(daemonCmd)
 	// bare `tt` aliases `tt up` (bash dispatch: ""|up -> up_cmd)
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
-		if err := session.Up(false); err != nil {
+		continued, err := cmd.Flags().GetBool("continue")
+		if err != nil {
+			die(err.Error())
+		}
+		if err := session.Up(false, continued); err != nil {
 			die(err.Error())
 		}
 	}

@@ -45,7 +45,9 @@ orients an AI agent working **on** `tt` itself.
   `up` attaches. This is a deliberate divergence from the retired bash tool.
 - **Fixed windows come from `<project>/.tt/windows.json`** (normalized by the
   `normalizeJQ` program via `jq`; absent → built-in `dev`+`claude` default, same
-  code path). Pane commands MUST stay **bare-shell-guarded** (`paneIsBare`) so
+  code path). The built-in Claude pane starts fresh; `tt -c` /
+  `tt up --continue` selects continuation with a fresh fallback. Pane commands
+  MUST stay **bare-shell-guarded** (`paneIsBare`) so
   re-`up` is idempotent and reboots self-heal; `enter:false` prefills fire only
   on fresh panes (cold start / created / just split), never on heal. Target
   panes by `pane_id`, never index (`pane-base-index` may be 1). Heal at

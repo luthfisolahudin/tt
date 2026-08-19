@@ -4,6 +4,14 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.17.3] — 2026-08-19
+
+- **Optional Claude continuation.** `tt -c` / `tt --continue` and `tt up -c` /
+  `tt up --continue` launch the omitted built-in Claude pane with
+  `claude --continue --allow-dangerously-skip-permissions || claude --allow-dangerously-skip-permissions`.
+  Fresh Claude remains the default, explicit `.tt/windows.json` Claude pane
+  commands remain authoritative, and running panes are never restarted.
+
 ## [0.17.2] — 2026-08-14
 
 - **Terra worker default.** The single `default` tier now launches OpenAI Codex
