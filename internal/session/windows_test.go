@@ -37,13 +37,16 @@ func TestNormalizeJQUsesSelectedClaudeDefault(t *testing.T) {
 		t.Skip("jq is required to exercise window normalization")
 	}
 
-	for _, continued := range []bool{false, true} {
-		name := "fresh"
-		if continued {
-			name = "continued"
-		}
-		t.Run(name, func(t *testing.T) {
-			claudeCmd := claudeCommand(continued)
+	tests := []struct {
+		name      string
+		continued bool
+	}{
+		{name: "fresh"},
+		{name: "continued", continued: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claudeCmd := claudeCommand(tt.continued)
 			out, err := runNormalizeJQ("{}", claudeCmd)
 			if err != nil {
 				t.Fatal(err)
@@ -67,13 +70,16 @@ func TestNormalizeJQPreservesCustomClaudeCommand(t *testing.T) {
 		t.Skip("jq is required to exercise window normalization")
 	}
 
-	for _, continued := range []bool{false, true} {
-		name := "fresh"
-		if continued {
-			name = "continued"
-		}
-		t.Run(name, func(t *testing.T) {
-			out, err := runNormalizeJQ(`{"claude":{"panes":[{"cmd":"pi"}]}}`, claudeCommand(continued))
+	tests := []struct {
+		name      string
+		continued bool
+	}{
+		{name: "fresh"},
+		{name: "continued", continued: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runNormalizeJQ(`{"claude":{"panes":[{"cmd":"pi"}]}}`, claudeCommand(tt.continued))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,7 +94,7 @@ func TestNormalizeJQPreservesCustomClaudeCommand(t *testing.T) {
 	}
 }
 
-func TestClaudeCommandForBarePane(t *testing.T) {
+func TestLegacyLaunchClaudeCommandSelection(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
 		paneCommand string
@@ -119,7 +125,7 @@ func TestClaudeCommandForBarePane(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := claudeCommandForBarePane(tt.paneCommand, claudeCommand(tt.continued))
 			if ok != tt.wantOK || got != tt.want {
-				t.Fatalf("claudeCommandForBarePane(%q) = (%q, %t), want (%q, %t)", tt.paneCommand, got, ok, tt.want, tt.wantOK)
+				t.Fatalf("legacy Claude command for %q = (%q, %t), want (%q, %t)", tt.paneCommand, got, ok, tt.want, tt.wantOK)
 			}
 		})
 	}
