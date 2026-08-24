@@ -175,10 +175,12 @@ provider and effort policy from the pinned GitHub
 `anthropic-compatible-providers.ts` remains solely to avoid a duplicate
 pi auto-load migration; its current adapter is OpenAI Chat Completions.
 
-The pinned model advertises text and image input, but tool, image, and effort
-behavior has not yet been live-verified through this Pi route. Audio, video,
-and native document inputs are not exposed by `tt`. The dated benchmark, price
-snapshot, and re-evaluation rules live in
+Text, read-tool, and image turns are live-verified through standalone Pi,
+OpenCode, and a tracked tt worker. Each client completed a requested Terra
+`max` turn; the route exposes no safe metadata proving a distinct effective
+effort beyond that requested wire value. Audio, video, and native document
+inputs are not exposed by `tt`. The dated benchmark, price snapshot, and
+re-evaluation rules live in
 [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with

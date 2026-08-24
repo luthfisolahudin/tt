@@ -346,9 +346,11 @@ Flash plus Terra; successful discovery replaces that fallback with exactly the
 active 9Router membership. Once at least one connection exists, 9Router filters
 that catalog to models owned by active connections. Provider/model IDs and the
 client-facing Terra `max` tier remain unchanged; the shared resolver maps it to
-measured wire `max`. The model advertises text and image input, but tool, image,
-and effort behavior has not yet been live-verified through this Pi route.
-Audio, video, and native document input remain outside the worker contract.
+wire `max`. Text, read-tool, and image turns are live-verified through
+standalone Pi, OpenCode, and a tracked tt worker. All three completed requested
+Terra `max` turns, but the route exposes no safe metadata proving a distinct
+effective effort. Audio, video, and native document input remain outside the
+worker contract.
 
 9Router keeps upstream provider credentials behind a loopback-only compatibility
 key, so worker processes receive no upstream credential. Model selection

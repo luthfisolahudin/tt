@@ -118,9 +118,10 @@ history in `CHANGELOG.md`.
   managed package and provider-loader copies refresh safely, customized copies
   persist and warn every run, and `.tt-version` records desired, actual, and
   installed hashes. `go-task install` does not respawn existing workers; use
-  `tt pi clear <cs>` or respawn one to load the update. The pinned model
-  advertises text and image input; live tool, image, and effort verification on
-  this Pi route remains pending.
+  `tt pi clear <cs>` or respawn one to load the update. Text, read-tool, and
+  image turns are live-verified through standalone Pi, OpenCode, and a tracked
+  tt worker. Each completed a requested Terra `max` turn; no safe metadata
+  exposes a distinct effective effort.
 
 ## Verified (manual)
 
@@ -208,6 +209,15 @@ session — what a handoff can trust without retesting:
   every active model proved 9Router normalizes literal wire `max` to `xhigh` and
   applies explicit `xhigh`; the shared clients therefore expose `max` and
   transmit `xhigh`.
+- **9Router OpenAI Chat Completions, verified live 2026-08-24** against this
+  repo's session: standalone Pi, OpenCode, and a tracked tt Terra worker each
+  completed exact text and read-tool turns. All three read a generated PNG as
+  `TT OPENAI IMAGE 7429`; the tt turns closed through the nonce-validated result
+  channel. The first fresh worker upgraded the private runtime from the
+  historical `46e8125` manifest to the pinned integration, and `.tt-version`'s
+  desired, actual, and installed hashes matched afterward. The requested client
+  effort was `max` on all three routes; Terra exposes no safe metadata proving a
+  distinct effective effort.
 
 ## Known limitations / not yet tested
 
@@ -239,9 +249,6 @@ session — what a handoff can trust without retesting:
   the extension loaded, but the final provider payload has not been inspected
   specifically to prove marked context was absent. Existing worker REPLs must
   be respawned to load extension changes.
-- The Pi 9Router OpenAI Chat Completions route is configuration-reviewed only;
-  no live tool, image, or reasoning-effort behavior has been verified through
-  it yet.
 
 ## How to test
 

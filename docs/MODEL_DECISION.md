@@ -11,8 +11,8 @@ second configuration surface.
 - Provider/model: `9router/cx/gpt-5.6-terra`
 - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
 - Client thinking effort: `max`
-- Resolver wire effort: `max` (live Pi-route verification pending)
-- Input: text and image (advertised; live Pi-route verification pending)
+- Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
+- Input: text and image (live-verified)
 - Decided: 2026-08-14
 
 The operator-directed switch was validated by the paired Luna/Terra benchmark
@@ -37,8 +37,11 @@ duplicate pi auto-load migration. OpenCode already uses this route and is not
 managed by tt.
 
 The dated benchmark below records the then-current transport and remains valid
-only for its measured model comparison. Live equivalence of tool, image, and
-effort behavior through this new Pi route is pending until tested.
+only for its measured model comparison. On 2026-08-24, standalone Pi, OpenCode,
+and a tracked tt worker each completed exact text, read-tool, and generated-image
+turns through the OpenAI route. Each completed with requested Terra `max`; the
+route exposes no safe metadata proving a distinct effective effort beyond that
+requested wire value.
 
 The canonical measurement record lives in
 `../../9router-integrations/docs/EFFORT_MATRIX.md`. The five CodeBuddy CN models

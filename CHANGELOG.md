@@ -14,6 +14,9 @@ in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
   loader copies refresh on a fresh worker launch; customized copies are kept
   and warn on every synchronization. `.tt-version` records desired, actual,
   and installed hashes so the pinned integration refresh is auditable.
+- Live text, read-tool, and image turns passed through standalone Pi, OpenCode,
+  and a tracked tt Terra worker. Each completed with requested `max`; the route
+  exposes no safe metadata proving a distinct effective effort.
 
 ## [0.17.3] — 2026-08-19
 
