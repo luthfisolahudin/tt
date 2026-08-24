@@ -9,10 +9,10 @@ second configuration surface.
 
 - Tier: `default`
 - Provider/model: `9router/cx/gpt-5.6-terra`
-- API: Anthropic Messages
+- API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
 - Client thinking effort: `max`
-- Measured wire effort: `max`
-- Input: text and image
+- Resolver wire effort: `max` (live Pi-route verification pending)
+- Input: text and image (advertised; live Pi-route verification pending)
 - Decided: 2026-08-14
 
 The operator-directed switch was validated by the paired Luna/Terra benchmark
@@ -23,6 +23,22 @@ on the hardest planning task, so this result supports Terra on efficiency
 without claiming a reliability advantage. 9Router discovers models from active
 provider connections, but the default remains pinned so a changing catalog
 cannot silently change worker behavior.
+
+### Current setup: 2026-08-24
+
+Pi now follows OpenCode through the OpenAI-compatible route: catalog
+`<root>/v1/models`, adapter base `<root>/v1`, and inference
+`/v1/chat/completions`. The adapter sends `reasoning_effort` and replays
+`reasoning_content`; provider/model IDs and the Terra `max` default remain
+unchanged. Its startup fallback contains DeepSeek V4 Flash plus Terra and is
+replaced by exact active membership after a successful catalog refresh. The
+legacy `anthropic-compatible-providers.ts` loader name remains only to avoid a
+duplicate pi auto-load migration. OpenCode already uses this route and is not
+managed by tt.
+
+The dated benchmark below records the then-current transport and remains valid
+only for its measured model comparison. Live equivalence of tool, image, and
+effort behavior through this new Pi route is pending until tested.
 
 The canonical measurement record lives in
 `../../9router-integrations/docs/EFFORT_MATRIX.md`. The five CodeBuddy CN models
@@ -152,7 +168,9 @@ Price snapshot supplied on 2026-07-14:
 
 ## Re-evaluate when
 
-- The provider, API protocol, or default model changes.
+- The provider, API protocol or route behavior, or default model changes; a
+  Pi-route migration requires a live equivalence check before relying on prior
+  tool, image, or effort evidence.
 - Unit price changes materially, or observed token volume changes effective
   cost by at least 25% relative to the selected model.
 - The selected model has repeated blank turns, tool failures, malformed worker
@@ -172,4 +190,6 @@ Price snapshot supplied on 2026-07-14:
 5. Change only the selected row in `TierRegistry`, then update this record,
    current-state docs, and model-specific prompting guidance.
 6. Spawn a fresh worker and verify its process command, Pi footer, and one
-   tracked send/wait turn. Existing workers must be cleared to adopt a new model.
+   tracked send/wait turn. For a Pi-route migration, also verify tool, image,
+   and effort behavior before carrying forward earlier evidence. Existing
+   workers must be cleared or respawned to adopt a new runtime or model.

@@ -329,22 +329,26 @@ extension change.
 effort, or worker tier at task claim. Legacy or removed tier names are
 normalized to the default on read by `CurrentTier`.
 
-The worker runtime auto-registers `9router` as a dynamic Anthropic Messages
-provider through the compatibility shim at
-`pi-worker/extensions/anthropic-compatible-providers.ts`. The canonical provider
-and measured effort resolver are installed from the pinned GitHub
-`@luthfisolahudin/9router-integrations` revision declared by
-`pi-worker/package.json`. On first
-worker startup, or when that manifest changes, `ensure_pi_worker_dir` installs
-the package into the private runtime with pnpm; the provider never traverses
-to a sibling source directory. Successful `/v1/models` discovery replaces the
-pinned startup fallback with exactly the live catalog. Once at least one
-connection exists, 9Router filters that catalog to models owned by active
-connections. Pi appends `/v1/messages` to the base URL. The tier remains
-client-facing `max`; the shared resolver maps it to the measured wire `max` for
-the pinned OpenAI Codex model. The pinned default accepts text and images; Pi's
-message model does
-not expose audio, video, or native document input to workers.
+The worker runtime auto-registers `9router` through an OpenAI Chat Completions
+adapter. Its catalog is `<root>/v1/models`, its adapter base is `<root>/v1`,
+and inference is `/v1/chat/completions`; the adapter sends `reasoning_effort`
+and replays `reasoning_content`. The legacy shim filename
+`pi-worker/extensions/anthropic-compatible-providers.ts` remains only to avoid
+a duplicate pi auto-load migration; it now loads the OpenAI-compatible adapter.
+The canonical provider and measured effort resolver are installed from the
+pinned GitHub `@luthfisolahudin/9router-integrations` revision declared by
+`pi-worker/package.json`; the provider never traverses to a sibling source
+directory.
+
+A fresh worker launch synchronizes the private runtime and installs the package
+when its managed manifest changed. The startup fallback contains DeepSeek V4
+Flash plus Terra; successful discovery replaces that fallback with exactly the
+active 9Router membership. Once at least one connection exists, 9Router filters
+that catalog to models owned by active connections. Provider/model IDs and the
+client-facing Terra `max` tier remain unchanged; the shared resolver maps it to
+measured wire `max`. The model advertises text and image input, but tool, image,
+and effort behavior has not yet been live-verified through this Pi route.
+Audio, video, and native document input remain outside the worker contract.
 
 9Router keeps upstream provider credentials behind a loopback-only compatibility
 key, so worker processes receive no upstream credential. Model selection
@@ -681,7 +685,7 @@ than as user-supplied code.
 | `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
 | `~/.local/share/tt/skills` | Compatibility symlink to repo-owned `skills/` for manually referenced tt skills. |
 | `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker, plus `project` and `version` session metadata. Override with `TT_STATE_DIR`. |
-| `~/.local/share/tt/pi-worker` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_WORKER_DIR` (legacy `TT_PI_AGENT_DIR` is still honored). Lazily filled missing-only: copied `settings.json` and `package.json`, managed symlinks to repo-owned files such as `APPEND_SYSTEM.md` and `extensions/tt-worker.ts`, the pinned GitHub integration package installed into `node_modules`, symlinked global `auth.json`/`models.json` when present, pi-owned mutable files, and `.tt-version` metadata for template-drift warnings. Existing runtime files are left alone for customization. |
+| `~/.local/share/tt/pi-worker` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_WORKER_DIR` (legacy `TT_PI_AGENT_DIR` is still honored). Each fresh worker launch synchronizes it: unchanged managed `package.json` and the legacy-named `extensions/anthropic-compatible-providers.ts` loader refresh safely, while customized copies persist and warn on every synchronization. `.tt-version` records desired, actual, and installed hashes. The runtime also has managed symlinks to repo-owned files such as `APPEND_SYSTEM.md` and `extensions/tt-worker.ts`, the pinned GitHub integration package in `node_modules`, symlinked global `auth.json`/`models.json` when present, and pi-owned mutable files. `go-task install` does not respawn existing workers; clear or respawn one to synchronize its runtime. |
 | `~/.pi/agent/settings.json` | User-owned normal pi settings; tt no longer installs worker resources here. |
 | `pi-worker/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |
 | `skills/delegating-to-pi/` | Repo-owned consumer-facing skill telling the orchestrator how to use `tt pi send`/`wait`. |

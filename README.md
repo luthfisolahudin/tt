@@ -164,16 +164,21 @@ current tier (a fresh worker starts on the default):
 |------|-------|-----------------|------|
 | `default` | `9router/cx/gpt-5.6-terra` | `max` | All delegated worker tasks. |
 
-The default worker accepts text and images. Pi auto-discovers the models owned
-by active connections from the local 9Router Anthropic-compatible endpoint,
-with only the pinned default as its startup fallback. The private worker
-installs the canonical provider and effort policy from the pinned GitHub
-`@luthfisolahudin/9router-integrations` revision; client `max` maps to the
-measured wire `max` for the pinned OpenAI Codex model. Pi's message model can support text and
-image inputs, and the pinned model advertises both. Audio, video, and native
-document inputs are not exposed by `tt`. The dated benchmark, price snapshot,
-and re-evaluation
-rules live in
+The default worker starts with the DeepSeek V4 Flash and Terra fallback catalog,
+then a successful `<root>/v1/models` refresh replaces it with exactly the active
+9Router membership. Pi, like OpenCode, uses the OpenAI-compatible adapter base
+`<root>/v1` and sends inference to `/v1/chat/completions`, with
+`reasoning_effort` and replayed `reasoning_content`; provider/model IDs and the
+Terra `max` default are unchanged. The private worker installs the canonical
+provider and effort policy from the pinned GitHub
+`@luthfisolahudin/9router-integrations` revision. The legacy filename
+`anthropic-compatible-providers.ts` remains solely to avoid a duplicate
+pi auto-load migration; its current adapter is OpenAI Chat Completions.
+
+The pinned model advertises text and image input, but tool, image, and effort
+behavior has not yet been live-verified through this Pi route. Audio, video,
+and native document inputs are not exposed by `tt`. The dated benchmark, price
+snapshot, and re-evaluation rules live in
 [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with
@@ -194,6 +199,15 @@ new work until `tt pi clear <cs>` respawns them on the current default.
 worker processes receive no upstream provider credential. `TT_PI_ENV_VARS`
 remains an opt-in, space-separated allowlist for environment-authenticated
 custom providers; values are not written to tt state files.
+
+On each fresh worker launch, tt synchronizes its private runtime. Untouched
+managed `package.json` and provider-loader copies refresh safely; custom copies
+are preserved and warn on every run. `.tt-version` records each copy's desired
+and actual hashes plus the installed manifest hash. `go-task install` rebuilds
+and restarts `ttd`, but does not respawn existing worker REPLs; use
+`tt pi clear <cs>` (or remove and spawn a worker) to adopt the new runtime.
+OpenCode already uses this same OpenAI-compatible route and is not managed by
+tt.
 
 ## Checking a session's tt version
 

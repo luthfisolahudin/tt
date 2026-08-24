@@ -4,6 +4,17 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.17.4] — 2026-08-24
+
+- **Pi uses OpenAI Chat Completions through 9Router.** Pi now matches OpenCode
+  at `/v1/chat/completions`; the adapter uses `reasoning_effort` and replays
+  `reasoning_content`. Existing worker REPLs must be cleared or respawned to
+  load the new private runtime.
+- **Private runtime refreshes safely.** Untouched managed package and provider
+  loader copies refresh on a fresh worker launch; customized copies are kept
+  and warn on every synchronization. `.tt-version` records desired, actual,
+  and installed hashes so the pinned integration refresh is auditable.
+
 ## [0.17.3] — 2026-08-19
 
 - **Optional Claude continuation.** `tt -c` / `tt --continue` and `tt up -c` /

@@ -5,7 +5,7 @@ history in `CHANGELOG.md`.
 
 ## Current state
 
-- **`tt` is a Go program (0.17.3); the bash tool is retired.** Sources are
+- **`tt` is a Go program (0.17.4); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
   client). There IS a build step: `go-task build` compiles to `bin/tt` and
   `go-task install` installs it to `~/.local/bin/tt` (restarting `ttd`, which
@@ -107,14 +107,20 @@ history in `CHANGELOG.md`.
   Existing workers from an older tier registry are labeled `stale:<name>` and
   blocked from new work until `tt pi clear <cs>` respawns them on `default`.
 
-- **Dynamic 9Router catalog (0.15.1).** The private worker runtime installs the
-  canonical provider from the pinned GitHub
-  `@luthfisolahudin/9router-integrations` revision in its worker manifest. A
-  successful `/v1/models` refresh replaces the pinned
-  startup fallback with exactly the active catalog. Once 9Router has an active
-  connection, its endpoint returns only models owned by active providers. The
-  pinned local model accepts text and images; Pi does not expose audio, video,
-  or native document inputs.
+- **9Router OpenAI Chat Completions (0.17.4).** Pi now uses the same
+  OpenAI-compatible route as OpenCode, which tt does not manage: catalog
+  `<root>/v1/models`, adapter base `<root>/v1`, and inference
+  `/v1/chat/completions`. The adapter sends `reasoning_effort` and replays
+  `reasoning_content`; provider/model IDs and the Terra `max` default are
+  unchanged. Its startup fallback contains DeepSeek V4 Flash plus Terra, and a
+  successful catalog refresh replaces that fallback with exactly the active
+  membership. A fresh worker launch synchronizes the private runtime: unchanged
+  managed package and provider-loader copies refresh safely, customized copies
+  persist and warn every run, and `.tt-version` records desired, actual, and
+  installed hashes. `go-task install` does not respawn existing workers; use
+  `tt pi clear <cs>` or respawn one to load the update. The pinned model
+  advertises text and image input; live tool, image, and effort verification on
+  this Pi route remains pending.
 
 ## Verified (manual)
 
@@ -233,6 +239,9 @@ session — what a handoff can trust without retesting:
   the extension loaded, but the final provider payload has not been inspected
   specifically to prove marked context was absent. Existing worker REPLs must
   be respawned to load extension changes.
+- The Pi 9Router OpenAI Chat Completions route is configuration-reviewed only;
+  no live tool, image, or reasoning-effort behavior has been verified through
+  it yet.
 
 ## How to test
 
