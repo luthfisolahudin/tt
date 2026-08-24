@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -22,6 +23,23 @@ func readMeta(path string) map[string]string {
 		}
 	}
 	return m
+}
+
+func writeMeta(path string, meta map[string]string) error {
+	keys := make([]string, 0, len(meta))
+	for key := range meta {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var data strings.Builder
+	for _, key := range keys {
+		data.WriteString(key)
+		data.WriteByte('=')
+		data.WriteString(meta[key])
+		data.WriteByte('\n')
+	}
+	return os.WriteFile(path, []byte(data.String()), 0644)
 }
 
 func fileSHA(path string) string {
