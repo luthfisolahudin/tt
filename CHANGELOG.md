@@ -4,6 +4,14 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.18.0] — 2026-08-26
+
+- **Altitude Model Tiering & Gemini 3.7 Flash High default.** Introduced the **Altitude Theme** for model tiers:
+  - `default` / `orbit` (aliases: `flash`, `gemini`): routes to `9router/ag/gemini-3.7-flash-high` at `max` effort with an expansive 1,048,576 (~1M) token context window as the primary, quota-efficient workhorse.
+  - `strato` (aliases: `luna`, `gpt`): routes to `9router/cx/gpt-5.6-luna` at `max` effort (272K context) for surgical refactoring and precision bounded edits.
+  - Dropped `cx/gpt-5.6-terra`.
+- **MINOR bump:** Multiple active tiers restored with clear altitude hierarchy, updated per-tier reference docs (`prompting-default.md`, `prompting-strato.md`), and updated orchestrator skill instructions.
+
 ## [0.17.5] — 2026-08-25
 
 - **Deps: `pflag` v1.0.9 → v1.0.10.** Single runtime transitive bump (cobra's flag lib); `cobra` itself is already at latest (`v1.10.2`). `go.yaml.in/yaml/v3` (`v3.0.4` → `v3.0.5`), `go-md2man/v2` (`v2.0.6` → `v2.0.7`) and `gopkg.in/check.v1` are cobra tool/docs deps not imported into the `tt` binary (`go list` Deps is `cobra`+`pflag` only) so `go mod tidy` correctly prunes them — no binary change, and `go list -m -u` still reports them as available but not load-bearing.

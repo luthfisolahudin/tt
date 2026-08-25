@@ -20,12 +20,11 @@ removed, and are capped at `min(cores-2, 26)`.
 - **Inspect pool:** `tt pi status`.
 
 Tier flags (`--low`/`--medium`/`--high`/`--xhigh`/`--max`) are **rejected** — thinking
-effort is fixed by the registry, not independently settable. The only accepted
-explicit preset is:
+effort is fixed by the registry, not independently settable. Active presets
+follow the **Altitude Theme**:
 
-- `--tier default` — `9router/cx/gpt-5.6-terra` at max effort. This is
-  the only active tier, so normal dispatches should omit the flag. Provider
-  catalogs are discovered dynamically, but the default model is pinned.
+- `--tier default` / `--tier orbit` (aliases: `flash`, `gemini`) — `9router/ag/gemini-3.7-flash-high` at max effort (1M context). Primary worker.
+- `--tier strato` (aliases: `luna`, `gpt`) — `9router/cx/gpt-5.6-luna` at max effort (272K context). Targeted surgical worker.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
 `default`). `--tier NAME` is refused on a worker already running on a

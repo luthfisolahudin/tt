@@ -322,7 +322,8 @@ extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `default` | `9router/cx/gpt-5.6-terra` | `max` | All delegated worker tasks. |
+| `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.7-flash-high` | `max` | Default worker — 1M context, quota-efficient, repo-wide sweeps, and general delegate tasks. |
+| `strato` (alias: `luna`, `gpt`) | `9router/cx/gpt-5.6-luna` | `max` | Targeted workhorse — bounded code tasks, precision edits, and surgical refactoring. |
 
 `<cs>.tier` stores the tier name. `StartRepl` derives
 `--model <model>:<effort>` from it. The extension never changes the model,
@@ -341,16 +342,15 @@ pinned GitHub `@luthfisolahudin/9router-integrations` revision declared by
 directory.
 
 A fresh worker launch synchronizes the private runtime and installs the package
-when its managed manifest changed. The startup fallback contains DeepSeek V4
-Flash plus Terra; successful discovery replaces that fallback with exactly the
-active 9Router membership. Once at least one connection exists, 9Router filters
-that catalog to models owned by active connections. Provider/model IDs and the
-client-facing Terra `max` tier remain unchanged; the shared resolver maps it to
-wire `max`. Text, read-tool, and image turns are live-verified through
-standalone Pi, OpenCode, and a tracked tt worker. All three completed requested
-Terra `max` turns, but the route exposes no safe metadata proving a distinct
-effective effort. Audio, video, and native document input remain outside the
-worker contract.
+when its managed manifest changed. Successful discovery replaces the startup
+fallback with exactly the active 9Router membership. Once at least one
+connection exists, 9Router filters that catalog to models owned by active
+connections. Provider/model IDs and the client-facing `strato`/`luna`/`gpt` and
+`orbit`/`flash`/`gemini` tiers resolve to wire `max`. Text, read-tool, and image
+turns are live-verified through standalone Pi, OpenCode, and a tracked tt worker.
+All completed requested `max` turns, but the route exposes no safe metadata
+proving a distinct effective effort. Audio, video, and native document input
+remain outside the worker contract.
 
 9Router keeps upstream provider credentials behind a loopback-only compatibility
 key, so worker processes receive no upstream credential. Model selection

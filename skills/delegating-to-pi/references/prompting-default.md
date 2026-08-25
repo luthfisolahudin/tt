@@ -1,7 +1,8 @@
-# Prompting the default worker
+# Prompting the default worker (Orbit / Gemini 3.7 Flash)
 
-The default worker runs `9router/cx/gpt-5.6-terra` at **max** effort for
-all delegated work. Normal dispatches omit `--tier`.
+The default worker runs `9router/ag/gemini-3.7-flash-high` at **max** effort
+with a 1,048,576 (~1M) token context window for all delegated work. Normal
+dispatches omit `--tier`.
 
 The worker accepts text and image input. For an image on disk, put its path in
 `FILES / SCOPE` and explicitly ask the worker to read it. Audio, video, and
@@ -14,12 +15,13 @@ this file only covers what the current default specifically needs.
 
 ## Model-specific
 
+- **1M token context capacity.** Gemini 3.7 Flash High excels at ingesting large codebases, deep directory trees, and comprehensive log dumps. You can safely provide broader `FILES / SCOPE` and reference context.
 - **Max effort is already configured.** Do not ask the model to "think step
   by step", "show your reasoning", or provide chain-of-thought. Spend prompt
   space on **scope precision** and **verifiability** instead.
-- **VERIFY is high-leverage here.** The model is good at executing
-  mechanical checks when told exactly what to run. A concrete
-  `VERIFY:` line (`pnpm tsc --noEmit`, `grep -r OLD_NAME src/`,
+- **VERIFY is high-leverage here.** The model is exceptional at executing
+  mechanical checks and tests when told exactly what to run. A concrete
+  `VERIFY:` line (`pnpm tsc --noEmit`, `go test ./...`, `grep -r OLD_NAME src/`,
   re-read your diff for stale imports) is the single highest-leverage
   thing you can add to a worker prompt.
 - **Strong on structure.** Labeled fields, explicit scope, and

@@ -61,12 +61,15 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- The single `default` tier routes all workers to OpenAI Codex GPT 5.6 Terra at
-  max effort. Normal dispatches omit `--tier`; the registry remains data-driven
-  so a future model decision changes one row. The legacy
-  `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are **rejected**
-  (thinking effort is fixed per tier, not independently settable). See
-  the "Model tier" section and `docs/MODEL_DECISION.md`.
+- **Altitude model tiers (0.18.0).** Model tiers adopt the Altitude Theme:
+  `default` / `orbit` (aliases `flash`, `gemini`) routes to Gemini 3.7 Flash High
+  (`9router/ag/gemini-3.7-flash-high:max`) with 1M context as the primary,
+  quota-efficient worker; `strato` (aliases `luna`, `gpt`) routes to OpenAI
+  Codex GPT 5.6 Luna (`9router/cx/gpt-5.6-luna:max`) for targeted and surgical
+  coding tasks. Normal dispatches omit `--tier` and default to Gemini 3.7 Flash
+  High. The former `cx/gpt-5.6-terra` model is dropped. The legacy
+  `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags remain rejected. See
+  `docs/MODEL_DECISION.md`.
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
 - **Results are durable and id-addressable.** Every task — named and pool

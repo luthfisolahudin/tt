@@ -1,55 +1,53 @@
 # Worker model decision
 
-This document owns the periodic choice of the model behind `tt`'s single
-`default` tier. The runtime source of truth remains `TierRegistry` in
+This document owns the periodic choice of the models behind `tt`'s tier
+registry. The runtime source of truth remains `TierRegistry` in
 `internal/worker/tier.go`; this is the evidence and decision record, not a
 second configuration surface.
 
 ## Current decision
 
-- Tier: `default`
-- Provider/model: `9router/cx/gpt-5.6-terra`
-- API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
-- Client thinking effort: `max`
-- Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
-- Input: text and image (live-verified)
-- Decided: 2026-08-14
+- **Default / Orbit Tier (`default`, `orbit`, `flash`, `gemini`):**
+  - Provider/model: `9router/ag/gemini-3.7-flash-high`
+  - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
+  - Context window: 1,048,576 tokens (~1M tokens)
+  - Max completion tokens: 65,536 tokens
+  - Client thinking effort: `max`
+  - Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
+  - Input: text and image (live-verified)
+  - Role: Default worker and wide-horizon tier — 1M context, high speed/quota efficiency, repo-wide sweeps, and multi-module refactoring.
+  - Decided: 2026-08-26
 
-The operator-directed switch was validated by the paired Luna/Terra benchmark
-below. Terra matched Luna on the four capability tasks, completed the measured
-run with about 28% fewer reported input/output tokens and 37% less recorded turn
-time, and produced the smaller passing Bash edit. Both models needed one retry
-on the hardest planning task, so this result supports Terra on efficiency
-without claiming a reliability advantage. 9Router discovers models from active
-provider connections, but the default remains pinned so a changing catalog
-cannot silently change worker behavior.
+- **Strato Tier (`strato`, `luna`, `gpt`):**
+  - Provider/model: `9router/cx/gpt-5.6-luna`
+  - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
+  - Context window: 272,000 tokens
+  - Max completion tokens: 128,000 tokens
+  - Client thinking effort: `max`
+  - Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
+  - Input: text and image (live-verified)
+  - Role: Alternate tier for surgical refactoring, bounded code tasks, and deep reasoning.
+  - Decided: 2026-08-26
 
-### Current setup: 2026-08-24
+The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse) while dropping `cx/gpt-5.6-terra`. `gemini-3.7-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. `gpt-5.6-luna` provides an alternate tier for bounded and surgical coding tasks. 9Router discovers models from active provider connections, but tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
 
-Pi now follows OpenCode through the OpenAI-compatible route: catalog
+### Current setup: 2026-08-26
+
+Pi follows OpenCode through the OpenAI-compatible route: catalog
 `<root>/v1/models`, adapter base `<root>/v1`, and inference
 `/v1/chat/completions`. The adapter sends `reasoning_effort` and replays
-`reasoning_content`; provider/model IDs and the Terra `max` default remain
-unchanged. Its startup fallback contains DeepSeek V4 Flash plus Terra and is
-replaced by exact active membership after a successful catalog refresh. The
-legacy `anthropic-compatible-providers.ts` loader name remains only to avoid a
+`reasoning_content`. The startup fallback is replaced by exact active membership
+after a successful catalog refresh. The legacy
+`anthropic-compatible-providers.ts` loader name remains only to avoid a
 duplicate pi auto-load migration. OpenCode already uses this route and is not
 managed by tt.
 
-The dated benchmark below records the then-current transport and remains valid
-only for its measured model comparison. On 2026-08-24, standalone Pi, OpenCode,
-and a tracked tt worker each completed exact text, read-tool, and generated-image
-turns through the OpenAI route. Each completed with requested Terra `max`; the
-route exposes no safe metadata proving a distinct effective effort beyond that
-requested wire value.
-
 The canonical measurement record lives in
-`../../9router-integrations/docs/EFFORT_MATRIX.md`. The five CodeBuddy CN models
-were normalized by 9Router to `THINK:xhigh`, while the three active OpenAI Codex
-models accepted explicit `max` requests. The shared resolver therefore transmits
-`max` for the pinned Terra model.
+`../../9router-integrations/docs/EFFORT_MATRIX.md`. Both `cx/gpt-5.6-luna` and
+`ag/gemini-3.7-flash-high` resolve to wire `max` under the 9Router OpenAI Chat
+Completions adapter.
 
-Pi's model contract supports text and image input only. Audio, video, and native
+Pi's model contract supports text and image input. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model
 advertises them.
 

@@ -162,14 +162,14 @@ current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
-| `default` | `9router/cx/gpt-5.6-terra` | `max` | All delegated worker tasks. |
+| `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.7-flash-high` | `max` | Primary worker — 1M context, quota-efficient, fast, repo-wide sweeps, and general delegate tasks. |
+| `strato` (alias: `luna`, `gpt`) | `9router/cx/gpt-5.6-luna` | `max` | Targeted workhorse — bounded code tasks, precision edits, and surgical refactoring. |
 
-The default worker starts with the DeepSeek V4 Flash and Terra fallback catalog,
-then a successful `<root>/v1/models` refresh replaces it with exactly the active
-9Router membership. Pi, like OpenCode, uses the OpenAI-compatible adapter base
-`<root>/v1` and sends inference to `/v1/chat/completions`, with
-`reasoning_effort` and replayed `reasoning_content`; provider/model IDs and the
-Terra `max` default are unchanged. The private worker installs the canonical
+The worker runtime discovers models from active 9Router connections. Pi, like
+OpenCode, uses the OpenAI-compatible adapter base `<root>/v1` and sends inference
+to `/v1/chat/completions`, with `reasoning_effort` and replayed
+`reasoning_content`; provider/model IDs and the `max` effort default are
+managed via the tier registry. The private worker installs the canonical
 provider and effort policy from the pinned GitHub
 `@luthfisolahudin/9router-integrations` revision. The legacy filename
 `anthropic-compatible-providers.ts` remains solely to avoid a duplicate
