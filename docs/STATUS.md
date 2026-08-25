@@ -5,7 +5,7 @@ history in `CHANGELOG.md`.
 
 ## Current state
 
-- **`tt` is a Go program (0.17.4); the bash tool is retired.** Sources are
+- **`tt` is a Go program (0.17.5); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
   client). There IS a build step: `go-task build` compiles to `bin/tt` and
   `go-task install` installs it to `~/.local/bin/tt` (restarting `ttd`, which

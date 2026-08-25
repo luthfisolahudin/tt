@@ -4,6 +4,10 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.17.5] — 2026-08-25
+
+- **Deps: `pflag` v1.0.9 → v1.0.10.** Single runtime transitive bump (cobra's flag lib); `cobra` itself is already at latest (`v1.10.2`). `go.yaml.in/yaml/v3` (`v3.0.4` → `v3.0.5`), `go-md2man/v2` (`v2.0.6` → `v2.0.7`) and `gopkg.in/check.v1` are cobra tool/docs deps not imported into the `tt` binary (`go list` Deps is `cobra`+`pflag` only) so `go mod tidy` correctly prunes them — no binary change, and `go list -m -u` still reports them as available but not load-bearing.
+
 ## [0.17.4] — 2026-08-24
 
 - **Pi uses OpenAI Chat Completions through 9Router.** Pi now matches OpenCode
