@@ -227,6 +227,12 @@ session — what a handoff can trust without retesting:
   desired, actual, and installed hashes matched afterward. The requested client
   effort was `max` on all three routes; Terra exposes no safe metadata proving a
   distinct effective effort.
+- **Per-turn completion contract, verified live 2026-08-26** against this
+  repo's session after installing 0.18.1: fresh ephemeral Orbit / Gemini 3.7
+  Flash High and Strato / GPT 5.6 Luna workers each received a trivial exact-token
+  task and returned a clean `WORKER_DONE` block with the dispatched nonce,
+  `files_changed`, exact-token `summary`, and `notes: none`. Both tracked tasks
+  classified `done` through the normal extension/result path.
 
 ## Known limitations / not yet tested
 
