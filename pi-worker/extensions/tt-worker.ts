@@ -368,7 +368,27 @@ export default function (pi: ExtensionAPI) {
 				pendingStartedAt +
 				"\n---\n",
 		);
-		pi.sendUserMessage(text);
+		pi.sendUserMessage(text + completionContract(nonce));
+	}
+
+	function completionContract(nonce: string): string {
+		return `
+
+---
+MANDATORY COMPLETION PROTOCOL
+Your final assistant text must be exactly one block below, with no text or code fence before or after it.
+Do not merely describe this block. Emit it literally and replace only the angle-bracket fields.
+
+WORKER_DONE
+nonce: ${nonce}
+files_changed: <comma-separated relative paths, or none>
+summary: <one concise sentence stating the result>
+notes: <failed or skipped checks, risks, out-of-scope dependencies, artifact path, or none>
+
+If the task is genuinely impossible or contradictory, emit instead:
+BLOCKED
+nonce: ${nonce}
+reason: <concise reason>`;
 	}
 
 	// --- in-place interrupt recovery (records/recovery R2) ---------------------

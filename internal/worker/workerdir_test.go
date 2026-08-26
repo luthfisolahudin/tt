@@ -71,6 +71,34 @@ mkdir -p "$dir/node_modules/@luthfisolahudin/9router-integrations/extensions"
 	return workerDirFixture{repo: repo, runtime: runtime, packageSrc: packageSrc, providerSrc: providerSrc, pnpmLog: pnpmLog}
 }
 
+func TestComposeWorkerPromptLayersCoreAndProjectOverlay(t *testing.T) {
+	newWorkerDirFixture(t)
+	ensureWorkerDir(t)
+	cwd := t.TempDir()
+	local := filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md")
+	if err := os.MkdirAll(filepath.Dir(local), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(local, []byte("project rules\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sessionDir := t.TempDir()
+	path, err := composeWorkerPrompt(cwd, sessionDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(sessionDir, "APPEND_SYSTEM.md") {
+		t.Fatalf("prompt path = %q", path)
+	}
+	want := "worker rules\n\n\nproject rules\n"
+	if got := readWorkerFile(t, path); got != want {
+		t.Fatalf("composed prompt = %q, want %q", got, want)
+	}
+	if got := strings.Count(readWorkerFile(t, path), "worker rules"); got != 1 {
+		t.Fatalf("core count = %d, want 1", got)
+	}
+}
+
 func ensureWorkerDir(t *testing.T) string {
 	t.Helper()
 	var output bytes.Buffer

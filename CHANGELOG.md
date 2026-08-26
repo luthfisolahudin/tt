@@ -4,6 +4,18 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.18.1] — 2026-08-26
+
+- **Additive project worker prompts.** Every fresh worker now receives the
+  universal Worker Mode contract followed by an optional project-local
+  `.pi/APPEND_SYSTEM.md` overlay. Project prompts can no longer accidentally
+  replace the nonce/result protocol.
+- **Per-turn completion contract.** The worker extension appends a concrete,
+  nonce-filled `WORKER_DONE` / `BLOCKED` contract to every claimed task. This
+  puts the machine-parsed format at the end of the user message and explicitly
+  forbids prose, fences, and trailing text, targeting observed Gemini and GPT
+  failures to emit a terminal block.
+
 ## [0.18.0] — 2026-08-26
 
 - **Altitude Model Tiering & Gemini 3.7 Flash High default.** Introduced the **Altitude Theme** for model tiers:

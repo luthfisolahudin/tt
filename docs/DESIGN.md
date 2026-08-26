@@ -330,6 +330,19 @@ extension change.
 effort, or worker tier at task claim. Legacy or removed tier names are
 normalized to the default on read by `CurrentTier`.
 
+At REPL spawn, `StartRepl` composes one session-local `APPEND_SYSTEM.md` from
+the runtime-managed universal Worker Mode contract followed by the project's
+optional `.pi/APPEND_SYSTEM.md`. The universal protocol therefore cannot be
+replaced by a project customization.
+
+At task claim, the extension appends a short `MANDATORY COMPLETION PROTOCOL` to
+the task body with that task's concrete nonce and the two legal terminal block
+shapes. This deliberately repeats the universal output contract at the end of
+the most recent user message: models that complete substantive work but ignore
+the global format otherwise produce an `other` result. Result validation stays
+nonce-authenticated and tolerant of harmless formatting slips; the stricter
+prompt improves generation without making completed work easier to discard.
+
 The worker runtime auto-registers `9router` through an OpenAI Chat Completions
 adapter. Its catalog is `<root>/v1/models`, its adapter base is `<root>/v1`,
 and inference is `/v1/chat/completions`; the adapter sends `reasoning_effort`
@@ -419,7 +432,8 @@ Under `${XDG_STATE_HOME:-$HOME/.local/state}/tt/<session>/`:
 
 ## What does NOT change vs the old `pi -p` flow
 
-- `pi-worker/APPEND_SYSTEM.md` — pi's Worker Mode rules, injected by tt unless the cwd has its own `.pi/APPEND_SYSTEM.md`.
+- `pi-worker/APPEND_SYSTEM.md` — universal Worker Mode protocol, always injected
+  before the optional project overlay.
 - The `TASK / FILES / CHANGE / [CONTEXT] / SUCCESS` prompt format.
 - The `WORKER_DONE` / `BLOCKED:` completion markers.
 - Model tier is selectable via `--tier NAME` on `tt pi send` / `auto`;
@@ -683,12 +697,12 @@ than as user-supplied code.
 | Location | Purpose |
 |----------|---------|
 | `~/.local/bin/tt` | The installed Go binary (`go-task cutover`). The retired bash script is tagged `v0.15.3-bash-final`. |
-| `~/code/tt/pi-worker/` | Repo-owned worker templates: tracked `settings.json`, `package.json`, `APPEND_SYSTEM.md`, and extensions. |
+| `~/code/tt/pi-worker/` | Repo-owned worker templates: tracked `settings.json`, `package.json`, universal `APPEND_SYSTEM.md`, and extensions. |
 | `~/.local/share/tt/` | XDG data dir: writable runtime worker data plus symlinks to repo-owned source files. |
 | `~/.local/share/tt/skills` | Compatibility symlink to repo-owned `skills/` for manually referenced tt skills. |
 | `~/.local/state/tt/<session>/` | XDG state dir: trigger/result/task files per worker, plus `project` and `version` session metadata. Override with `TT_STATE_DIR`. |
 | `~/.local/share/tt/pi-worker` | Real writable runtime dir passed to worker REPLs as `PI_CODING_AGENT_DIR`; override with `TT_PI_WORKER_DIR` (legacy `TT_PI_AGENT_DIR` is still honored). Each fresh worker launch synchronizes it: unchanged managed `package.json` and the legacy-named `extensions/anthropic-compatible-providers.ts` loader refresh safely, while customized copies persist and warn on every synchronization. `.tt-version` records desired, actual, and installed hashes. The runtime also has managed symlinks to repo-owned files such as `APPEND_SYSTEM.md` and `extensions/tt-worker.ts`, the pinned GitHub integration package in `node_modules`, symlinked global `auth.json`/`models.json` when present, and pi-owned mutable files. `go-task install` does not respawn existing workers; clear or respawn one to synchronize its runtime. |
 | `~/.pi/agent/settings.json` | User-owned normal pi settings; tt no longer installs worker resources here. |
-| `pi-worker/APPEND_SYSTEM.md` | Worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` still takes precedence if present. |
+| `pi-worker/APPEND_SYSTEM.md` | Universal worker protocol injected into every pi REPL. A cwd-local `.pi/APPEND_SYSTEM.md` is appended as a project overlay; it never replaces the protocol. |
 | `skills/delegating-to-pi/` | Repo-owned consumer-facing skill telling the orchestrator how to use `tt pi send`/`wait`. |
 | `~/.agents/skills/delegating-to-pi` | Global pi skill-discovery symlink to `~/code/tt/skills/delegating-to-pi`. |

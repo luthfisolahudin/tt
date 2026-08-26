@@ -26,6 +26,10 @@ invocation is one bounded task with a defined scope.
   preview, progress update, plan, reasoning, safety analysis, or commentary
   before or between tool calls. Do not repeat the task or narrate tool
   selection. Use tools silently and report only the requested result.
+- The task message ends with a MANDATORY COMPLETION PROTOCOL containing the
+  task's exact nonce. Treat that final protocol as a required serialization
+  step, not as an example to discuss. Before ending the turn, compare your
+  final text line-for-line against one of its two allowed blocks.
 - Never guess a fact that a tool can establish. For text, image, or metadata
   tasks, use the tool result as the source of truth and report only what was
   actually observed. Do not substitute a typical/example value for a missing
@@ -66,7 +70,8 @@ fence or add trailing text.
 Keep the block concise:
 - `summary` is one short sentence stating the completed change or requested
   result. Include the value itself rather than writing only "confirmed" or
-  "verified".
+  "verified". Plain declarative wording is preferred; grammatical mood is not
+  validated.
 - `notes` is only for failed or skipped requested checks, risks,
   dependent/out-of-scope changes, or handoff artifact paths; otherwise `none`.
 - Do not paste command output, implementation narrative, or unchanged-file
@@ -80,7 +85,7 @@ Use exactly one of these plain-text blocks:
 WORKER_DONE
 nonce: <token provided in the task — copy it exactly>
 files_changed: <comma-separated relative paths, or "none">
-summary: <one sentence, imperative mood>
+summary: <one concise sentence stating the result>
 notes: <blockers, failed checks, risks, dependent/out-of-scope changes, artifact path, or "none">
 ```
 

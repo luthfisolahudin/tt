@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/luthfisolahudin/tt/internal/tmux"
@@ -219,6 +220,31 @@ func EnsurePiWorkerDir(err io.Writer) error {
 	return writeMeta(metaPath, prev)
 }
 
+func composeWorkerPrompt(cwd, sessionDir string) (string, error) {
+	parts := []string{filepath.Join(PiWorkerDir(), "APPEND_SYSTEM.md")}
+	if local := filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md"); FileExists(local) {
+		parts = append(parts, local)
+	}
+
+	var prompt strings.Builder
+	for _, path := range parts {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("read worker prompt %s: %w", path, err)
+		}
+		if prompt.Len() > 0 {
+			prompt.WriteString("\n\n")
+		}
+		prompt.WriteString(strings.TrimSpace(string(content)))
+		prompt.WriteByte('\n')
+	}
+	path := filepath.Join(sessionDir, "APPEND_SYSTEM.md")
+	if err := AtomicWrite(path, prompt.String()); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 // StartRepl launches the pi REPL in the worker's window — non-blocking. Port
 // of the bash start_repl: tmux respawn-pane with the exact env
 // PI_CODING_AGENT_DIR TT_VERSION TT_WORKER_CS TT_WORKER_STATE
@@ -244,11 +270,15 @@ func StartRepl(sdir, sessionName, cwd, name string, err io.Writer) error {
 	if e := os.MkdirAll(filepath.Join(sdir, name+".queue"), 0755); e != nil {
 		return e
 	}
-	globalAppend := filepath.Join(PiWorkerDir(), "APPEND_SYSTEM.md")
-	appendFlag := ""
-	if !FileExists(filepath.Join(cwd, ".pi", "APPEND_SYSTEM.md")) && FileExists(globalAppend) {
-		appendFlag = " --append-system-prompt '" + globalAppend + "'"
+	t, tierErr := GetTier(tier)
+	if tierErr != nil {
+		return tierErr
 	}
+	appendPrompt, promptErr := composeWorkerPrompt(cwd, psdir)
+	if promptErr != nil {
+		return promptErr
+	}
+	appendFlag := " --append-system-prompt '" + appendPrompt + "'"
 	nicePrefix := "nice -n 19"
 	if _, e := exec.LookPath("ionice"); e == nil {
 		nicePrefix = "ionice -c3 " + nicePrefix
@@ -257,7 +287,6 @@ func StartRepl(sdir, sessionName, cwd, name string, err io.Writer) error {
 	if FileExists(filepath.Join(sdir, name+".ephemeral")) {
 		ephemeralEnv = "TT_WORKER_EPHEMERAL=1 "
 	}
-	t, _ := GetTier(tier)
 	modelArg := t.Model + ":" + t.Effort
 	launch := fmt.Sprintf("%s env PI_CODING_AGENT_DIR='%s' TT_VERSION='%s' TT_WORKER_CS=%s TT_WORKER_STATE='%s' %spi --session-dir '%s' --model %s --no-skills%s; exec bash",
 		nicePrefix, PiWorkerDir(), version.Version, name, sdir, ephemeralEnv, psdir, modelArg, appendFlag)

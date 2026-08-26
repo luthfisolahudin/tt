@@ -5,7 +5,7 @@ history in `CHANGELOG.md`.
 
 ## Current state
 
-- **`tt` is a Go program (0.17.5); the bash tool is retired.** Sources are
+- **`tt` is a Go program (0.18.1); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
   client). There IS a build step: `go-task build` compiles to `bin/tt` and
   `go-task install` installs it to `~/.local/bin/tt` (restarting `ttd`, which
@@ -70,6 +70,12 @@ history in `CHANGELOG.md`.
   High. The former `cx/gpt-5.6-terra` model is dropped. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags remain rejected. See
   `docs/MODEL_DECISION.md`.
+- **Hardened Worker Mode (0.18.1).** Fresh REPLs receive one composed system
+  prompt containing the universal nonce/scope/result contract followed by an
+  optional project `.pi/APPEND_SYSTEM.md` overlay. The project
+  file is additive rather than replacing the protocol. Every claimed task also
+  ends with a concrete nonce-filled completion contract, making the required
+  machine format the model's most recent instruction.
 - `tt x send` / `tt x list` / `tt x observe` provide cross-session messaging plus
   classifier-tuning diagnostics. See DESIGN.
 - **Results are durable and id-addressable.** Every task — named and pool
