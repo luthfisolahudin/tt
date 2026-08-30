@@ -9,8 +9,17 @@ import (
 // --- resume -----------------------------------------------------------------
 
 var piResumeCmd = &cobra.Command{
-	Use:                "resume <callsign>",
-	Short:              "Recover an interrupted worker without a context wipe",
+	Use:   "resume <callsign>",
+	Short: "Recover an interrupted worker without a context wipe",
+	Long: `Re-drive an interrupted task to completion on the same REPL, keeping
+the worker's full conversation context intact.
+
+Use resume when a worker was interrupted (Esc, crash) and you want it
+to finish the same task. Use clear instead to wipe context and start
+fresh on a new task.
+
+The worker must be in the "interrupted" state (its last task ended with
+status "other" or "error").`,
 	Example:            "  tt pi resume alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -43,8 +52,17 @@ var piResumeCmd = &cobra.Command{
 // --- clear ------------------------------------------------------------------
 
 var piClearCmd = &cobra.Command{
-	Use:                "clear [--force] <callsign>",
-	Short:              "Wipe the worker's context and respawn its REPL",
+	Use:   "clear [--force] <callsign>",
+	Short: "Wipe the worker's context and respawn its REPL",
+	Long: `Kill the worker's REPL, wipe its conversation context, bump the
+generation counter, reset the tier to "default", and spawn a fresh
+REPL. Durable results in results/ are preserved.
+
+Required before reusing a worker for a different task domain, or
+before changing a worker's tier.
+
+Flags:
+  --force   Clear even if the worker is busy (default: refused).`,
 	Example:            "  tt pi clear --force alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -83,8 +101,16 @@ var piClearCmd = &cobra.Command{
 
 func newRmCmd(use string) *cobra.Command {
 	return &cobra.Command{
-		Use:                use + " [--force] <callsign>",
-		Short:              "Remove a worker (kill its REPL + window, wipe its state)",
+		Use:   use + " [--force] <callsign>",
+		Short: "Remove a worker (kill its REPL + window, wipe its state)",
+		Long: `Kill the worker's REPL, destroy its tmux window, and wipe its state
+files. Durable results in results/ are preserved. The callsign
+becomes available for a future worker.
+
+"rm" and "remove" are identical aliases.
+
+Flags:
+  --force   Remove even if the worker is busy (default: refused).`,
 		Example:            "  tt pi " + use + " --force alfa",
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -123,8 +149,11 @@ func newRmCmd(use string) *cobra.Command {
 // --- popidle ----------------------------------------------------------------
 
 var piPopidleCmd = &cobra.Command{
-	Use:                "popidle",
-	Short:              "Remove the highest-NATO idle worker",
+	Use:   "popidle",
+	Short: "Remove the highest-NATO idle worker",
+	Long: `Remove the idle worker whose callsign is last in NATO alphabetical
+order (e.g. zulu before yankee). Used for pool shrinking / resource
+reclamation. No-op if no idle workers exist.`,
 	Example:            "  tt pi popidle",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {

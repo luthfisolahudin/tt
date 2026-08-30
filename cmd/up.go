@@ -12,8 +12,26 @@ import (
 // switch away by default (that stole the caller's window); --attach switches.
 // Outside tmux it attaches (the point of `up`). Off a tty attach is harmless.
 var upCmd = &cobra.Command{
-	Use:                "up [--attach] [--continue]",
-	Short:              "Create or heal the project's tmux session (fresh Claude by default; --continue/-c to resume)",
+	Use:   "up [--attach] [--continue]",
+	Short: "Create or heal the project's tmux session (fresh Claude by default; --continue/-c to resume)",
+	Long: `Create the project's tmux session or heal it if it already exists
+(missing windows are recreated, dead REPLs are revived). Idempotent.
+
+Window layout comes from .tt/windows.json in the project root;
+absent that file, the built-in default is "dev" + "claude". The
+worker pool is lazy: no pi workers are pre-spawned by up.
+
+Inside vs. outside tmux:
+  Outside tmux    Creates/heals, then attaches.
+  Inside tmux     Creates/heals only; does NOT switch away (use
+                  --attach to switch, or "tt attach" afterward).
+
+Flags:
+  --attach       Switch to the session (only meaningful inside tmux).
+  -c, --continue Resume the latest Claude Code conversation instead
+                 of starting fresh (applies to the built-in claude
+                 pane command only; explicit .tt/windows.json commands
+                 are authoritative).`,
 	Example:            "  tt up\n  tt up --continue\n  tt up --attach --continue",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -50,8 +68,13 @@ func parseUpArgs(args []string) (attach, continued bool, err error) {
 // attachCmd is `tt attach` / `tt a` — enter without creating; errors if the
 // session is missing.
 var attachCmd = &cobra.Command{
-	Use:                "attach",
-	Short:              "Attach to the project's tmux session (without creating)",
+	Use:     "attach",
+	Short:   "Attach to the project's tmux session (without creating)",
+	Long: `Enter an existing session without creating or healing it. Errors if
+the session does not exist (use "tt up" to create).
+
+Inside tmux this uses switch-client; outside tmux it uses
+attach-session. "tt a" is an alias.`,
 	Example:            "  tt attach\n  tt a",
 	Aliases:            []string{"a"},
 	DisableFlagParsing: true,
@@ -74,8 +97,13 @@ var attachCmd = &cobra.Command{
 // downCmd is `tt down` — kill the project's session (with confirmation) and
 // wipe its state dir.
 var downCmd = &cobra.Command{
-	Use:                "down",
-	Short:              "Kill the project's tmux session (with confirmation)",
+	Use:   "down",
+	Short: "Kill the project's tmux session (with confirmation)",
+	Long: `Destroy the project's tmux session and wipe its state directory.
+All running workers are killed along with the session.
+
+Prompts for y/N confirmation on stdin. Non-interactive callers
+must pipe "y".`,
 	Example:            "  tt down",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {

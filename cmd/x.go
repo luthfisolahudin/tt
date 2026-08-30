@@ -24,8 +24,19 @@ var xCmd = &cobra.Command{
 // message into another tt session's orchestrator and submit it once the
 // Claude Code TUI can safely accept input (see the daemon's classifier).
 var xSendCmd = &cobra.Command{
-	Use:                "send [--timeout SECONDS] <session-id> (FILE | -)",
-	Short:              "Send a message to another session's orchestrator",
+	Use:   "send [--timeout SECONDS] <session-id> (FILE | -)",
+	Short: "Send a message to another session's orchestrator",
+	Long: `Push a message into another tt session's "claude" pane once the
+Claude Code TUI is in a safe-to-accept-input state (detected by the
+daemon's classifier). The session-id is the tmux session name,
+obtainable via "tt name" in the target project.
+
+NOTE: only works against a Claude Code TUI. Other TUIs (e.g. opencode)
+are not recognized by the safe-input classifier and will time out.
+
+Flags:
+  --timeout SECONDS   Time limit for the classifier to find a safe
+                      injection point (default: 0 = wait forever).`,
 	Example:            "  tt x send --timeout 60 \"$(tt name)\" - <<<'Please review the latest worker result.'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -90,8 +101,17 @@ var xSendCmd = &cobra.Command{
 // to message. Default shows only sessions whose orchestrator is running.
 func newXListCmd(use string) *cobra.Command {
 	return &cobra.Command{
-		Use:                use + " [--all]",
-		Short:              "List tt sessions available to message",
+		Use:   use + " [--all]",
+		Short: "List tt sessions available to message",
+		Long: `List tt sessions the daemon knows about. "ls" and "list" are aliases.
+
+By default only sessions whose orchestrator is running (the "claude"
+window has a non-shell process) are shown. Pass --all to include
+sessions without a running orchestrator.
+
+Flags:
+  --all   Show all tt sessions, including those without a running
+          orchestrator.`,
 		Example:            "  tt x " + use + " --all",
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -123,8 +143,16 @@ func newXListCmd(use string) *cobra.Command {
 // a passive read-only sampler writing to x-observe.sqlite. Bare `tt x observe`
 // aliases `run`; flags may also sit in the first position (bash x_observe_cmd).
 var xObserveCmd = &cobra.Command{
-	Use:                "observe [run] [--interval SECONDS] [--duration SECONDS] [--all]",
-	Short:              "Sample Claude panes to tune the x send classifier (writes sqlite)",
+	Use:   "observe [run] [--interval SECONDS] [--duration SECONDS] [--all]",
+	Short: "Sample Claude panes to tune the x send classifier (writes sqlite)",
+	Long: `Diagnostic tool: periodically capture Claude pane snapshots and write
+them to x-observe.sqlite for classifier tuning. Bare "tt x observe"
+aliases "tt x observe run".
+
+Flags:
+  --interval SECONDS   Sampling interval (default: 1).
+  --duration SECONDS   How long to run (default: 0 = until interrupted).
+  --all                Observe all tt sessions, not just the current one.`,
 	Example:            "  tt x observe --interval 5 --duration 60",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -147,20 +175,20 @@ var xObserveCmd = &cobra.Command{
 				if i >= len(args) {
 					die("x observe: --interval requires seconds")
 				}
-				if !worker.ValidTimeoutArg(args[i]) {
-					die("x observe: --timeout must be a non-negative integer")
-				}
-				if atoi(args[i]) <= 0 {
-					die("x observe: --interval must be greater than 0")
-				}
-				interval = atoi(args[i])
-			case a == "--duration":
-				i++
-				if i >= len(args) {
-					die("x observe: --duration requires seconds")
-				}
-				if !worker.ValidTimeoutArg(args[i]) {
-					die("x observe: --timeout must be a non-negative integer")
+			if !worker.ValidTimeoutArg(args[i]) {
+				die("x observe: --interval must be a non-negative integer")
+			}
+			if atoi(args[i]) <= 0 {
+				die("x observe: --interval must be greater than 0")
+			}
+			interval = atoi(args[i])
+		case a == "--duration":
+			i++
+			if i >= len(args) {
+				die("x observe: --duration requires seconds")
+			}
+			if !worker.ValidTimeoutArg(args[i]) {
+				die("x observe: --duration must be a non-negative integer")
 				}
 				duration = atoi(args[i])
 			case a == "--all":

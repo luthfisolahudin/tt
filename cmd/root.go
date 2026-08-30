@@ -7,8 +7,14 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "tt [--continue]",
-	Short:         "tmux team: per-project tmux session with a pi worker pool",
+	Use:   "tt [--continue]",
+	Short: "tmux team: per-project tmux session with a pi worker pool",
+	Long: `Bare "tt" is an alias for "tt up": create or heal the project's
+tmux session. Outside tmux it attaches; inside tmux it builds/heals
+only (use "tt up --attach" or "tt attach" to switch).
+
+Pass -c / --continue to resume the latest Claude Code conversation
+instead of starting fresh.`,
 	Example:       "  tt\n  tt --continue\n  tt pi send alfa - <<<'TASK: inspect the authentication flow; SUCCESS: report findings.'",
 	Version:       version.Version,
 	SilenceUsage:  true,

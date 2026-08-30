@@ -12,8 +12,29 @@ import (
 // --- status -----------------------------------------------------------------
 
 var piStatusCmd = &cobra.Command{
-	Use:                "status [--json]",
-	Short:              "One row per worker: state, elapsed, queue, last task, tier, gen",
+	Use:   "status [--json]",
+	Short: "One row per worker: state, elapsed, queue, last task, tier, gen",
+	Long: `Show the state of every worker in the pool.
+
+Table columns: CALLSIGN  STATE  ELAPSED  QUEUE  LAST-TASK  TIER  GEN
+A "pool: N task(s) queued (unclaimed)" footer appears when the shared
+queue has pending tasks.
+
+Worker states:
+  idle          REPL ready, no task running.
+  busy          Actively processing a task.
+  blocked       Last task ended with BLOCKED (needs intervention).
+  interrupted   Last task ended abnormally (Esc / crash).
+  starting      REPL is booting (within the 45 s window).
+  down          Window exists but REPL process is not running.
+  missing       No pi-<callsign> window exists.
+
+ELAPSED shows M:SS while busy, "-" otherwise. GEN is the context
+generation (incremented on clear). A tier removed from the registry
+shows as "stale:<name>"; the worker is blocked until cleared.
+
+Flags:
+  --json    Output a JSON array of worker objects.`,
 	Example:            "  tt pi status --json",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -43,8 +64,20 @@ var piStatusCmd = &cobra.Command{
 // --- collect ----------------------------------------------------------------
 
 var piCollectCmd = &cobra.Command{
-	Use:                "collect [--timeout SECONDS] [--json] [--digest] [all | <callsign>]",
-	Short:              "Fan-out join that never drops a finished task (cursor-based)",
+	Use:   "collect [--timeout SECONDS] [--json] [--digest] [all | <callsign>]",
+	Short: "Fan-out join that never drops a finished task (cursor-based)",
+	Long: `Join results from a fan-out without dropping already-finished tasks.
+Each call advances a per-worker cursor so repeated collects yield only
+NEW results, never re-emitting previous ones.
+
+Blocks for in-progress tasks (polls once per second). Pass a callsign
+to scope to one worker, or "all" (or omit) for every worker.
+
+Flags:
+  --timeout SECONDS   Deadline for pending tasks (default: 0 = no limit).
+  --json              Output a JSON array of result envelopes.
+  --digest            One lean line per result:
+                      <task-id>  <status>  <dur>  <summary>`,
 	Example:            "  tt pi collect --timeout 300 --digest all",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -95,8 +128,19 @@ var piCollectCmd = &cobra.Command{
 // --- results ----------------------------------------------------------------
 
 var piResultsCmd = &cobra.Command{
-	Use:                "results [--json] [<callsign> | <task-id>]",
-	Short:              "Re-read durable task outcomes from the per-id store",
+	Use:   "results [--json] [<callsign> | <task-id>]",
+	Short: "Re-read durable task outcomes from the per-id store",
+	Long: `Read-only, non-blocking view of recorded results.
+
+Three modes:
+  (no argument)   List all results: TASK  STATUS  DUR  SUMMARY
+  <callsign>      List that worker's results only.
+  <task-id>       Show one result body (e.g. "alfa-3").
+
+Result statuses: done, blocked, other, error.
+
+Flags:
+  --json    Single envelope for a task-id, JSON array for a listing.`,
 	Example:            "  tt pi results --json alfa-3",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -132,12 +176,41 @@ var piResultsCmd = &cobra.Command{
 
 func newWaitCmd(use string, forceAll bool) *cobra.Command {
 	short := "Block until a task's result is recorded (callsign | task-id | pool-id | all)"
+	usage := use + " [--timeout SECONDS] [--json] <callsign|task-id|pool-id|all> [task-id]"
+	long := `Block until the specified task completes and print its result body.
+
+Target forms:
+  <callsign>              Wait on the worker's latest task.
+  <callsign> <task-id>    Wait on a specific task (e.g. "alfa alfa-3").
+  <task-id>               Auto-extract callsign (e.g. "alfa-3").
+  pool-N                  Wait on a pool-dispatched task.
+  all                     Join every currently busy worker (same as wait-all).
+
+Exit codes: 0 for done/blocked, 1 for error/other/timeout/down.
+Stdout receives the result body; stderr receives any error messages.
+
+Flags:
+  --timeout SECONDS   Deadline (default: 0 = wait forever).
+  --json              Output a JSON result envelope.`
 	if forceAll {
 		short = "Join every busy worker in one consolidated report"
+		usage = use + " [--timeout SECONDS] [--json]"
+		long = `Block until every busy worker finishes, then print all results.
+
+Output: "== <callsign> (<task-id>) <status> ==" sections on stdout,
+one per worker. A tally line appears on stderr. Finished workers
+that were not busy at join time are noted with a hint to use collect.
+
+Exit codes: 0 if all tasks are done/blocked, 1 if any failed.
+
+Flags:
+  --timeout SECONDS   Deadline (default: 0 = wait forever).
+  --json              Output a JSON array of result envelopes.`
 	}
 	return &cobra.Command{
-		Use:                use + " [--timeout SECONDS] [--json] <callsign|task-id|pool-id|all> [task-id]",
+		Use:                usage,
 		Short:              short,
+		Long:               long,
 		Example:            waitExample(use, forceAll),
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -203,8 +276,14 @@ func waitExample(use string, forceAll bool) string {
 // --- logs (CLI-local, read-only tmux) ---------------------------------------
 
 var piLogsCmd = &cobra.Command{
-	Use:                "logs [--lines N] <callsign>",
-	Short:              "Dump a worker's pi REPL scrollback (read-only)",
+	Use:   "logs [--lines N] <callsign>",
+	Short: "Dump a worker's pi REPL scrollback (read-only)",
+	Long: `Capture the worker's tmux pane scrollback and print it to stdout.
+This is a direct tmux read, not a daemon operation. The worker's
+pi-<callsign> window must exist.
+
+Flags:
+  --lines N   Number of scrollback lines to capture (default: 200).`,
 	Example:            "  tt pi logs --lines 100 alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {

@@ -18,8 +18,19 @@ var pipelineCmd = &cobra.Command{
 }
 
 var pipelineRunCmd = &cobra.Command{
-	Use:                "run [--timeout SECONDS] [--json] (FILE | -)",
-	Short:              "Run a pipeline spec (fan-out stages + review gates) to one digest",
+	Use:   "run [--timeout SECONDS] [--json] (FILE | -)",
+	Short: "Run a pipeline spec (fan-out stages + review gates) to one digest",
+	Long: `Execute a declarative pipeline: an ordered list of fan-out and review
+stages. Workers are auto-provisioned via the "auto" dispatch path.
+The spec is JSON read from FILE or stdin.
+
+A review stage hands the prior fan-out's results to one worker whose
+PIPELINE_PASS / PIPELINE_FAIL verdict gates a bounded retry of the
+preceding fan-out. See docs/pipeline.schema.json for the spec format.
+
+Flags:
+  --timeout SECONDS   Deadline for the entire pipeline (default: 0 = no limit).
+  --json              Output the digest as a JSON envelope.`,
 	Example:            "  tt pipeline run --timeout 300 --json - <<<'{\"stages\":[{\"fanout\":[{\"label\":\"tests\",\"task\":\"TASK: run focused tests; SUCCESS: report the result.\"}]}]}'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {

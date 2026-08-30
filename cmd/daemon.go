@@ -19,8 +19,10 @@ var daemonCmd = &cobra.Command{
 }
 
 var daemonStartCmd = &cobra.Command{
-	Use:     "start",
-	Short:   "Start the ttd daemon (no-op if already running)",
+	Use:   "start",
+	Short: "Start the ttd daemon (no-op if already running)",
+	Long: `Start the background daemon process. Most tt commands auto-start
+the daemon on first use, so manual start is rarely needed.`,
 	Example: "  tt daemon start",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -37,8 +39,11 @@ var daemonStartCmd = &cobra.Command{
 }
 
 var daemonStopCmd = &cobra.Command{
-	Use:     "stop",
-	Short:   "Stop the ttd daemon",
+	Use:   "stop",
+	Short: "Stop the ttd daemon",
+	Long: `Stop the running daemon. After a rebuild ("go-task install"), the
+daemon must be restarted for the new binary to take effect; install
+handles this automatically, but manual stop + start works too.`,
 	Example: "  tt daemon stop",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {

@@ -8,8 +8,16 @@ import (
 // query returning any window's current pane content, so an agent can read the
 // dev server, a worker REPL, or the orchestrator pane without scraping tmux.
 var peekCmd = &cobra.Command{
-	Use:                "peek [--lines N] <window|callsign>",
-	Short:              "Read a window's current pane content (any window, read-only)",
+	Use:   "peek [--lines N] <window|callsign>",
+	Short: "Read a window's current pane content (any window, read-only)",
+	Long: `Capture and print a tmux window's pane content. Read-only: never
+drives a worker or injects input.
+
+The target can be a window name (e.g. "dev", "claude") or a worker
+callsign (e.g. "alfa", automatically resolved to the "pi-alfa" window).
+
+Flags:
+  --lines N   Number of scrollback lines to capture (default: 200).`,
 	Example:            "  tt peek --lines 50 dev\n  tt peek --lines 100 alfa",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {

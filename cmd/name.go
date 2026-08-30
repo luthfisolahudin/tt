@@ -9,8 +9,10 @@ import (
 )
 
 var nameCmd = &cobra.Command{
-	Use:     "name",
-	Short:   "Print computed session name",
+	Use:   "name",
+	Short: "Print computed session name",
+	Long: `Print the tmux session name derived from the current project
+directory. Useful as a target for "tt x send".`,
 	Example: "  tt name",
 	Args:    cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
