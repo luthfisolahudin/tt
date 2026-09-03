@@ -322,7 +322,7 @@ extension change.
 
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
-| `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.7-flash-high` | `max` | Default worker — 1M context, quota-efficient, repo-wide sweeps, and general delegate tasks. |
+| `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.8-flash-high` | `max` | Default worker — 1M context, quota-efficient, repo-wide sweeps, and general delegate tasks. |
 | `strato` (alias: `luna`, `gpt`) | `9router/cx/gpt-5.6-luna` | `max` | Targeted workhorse — bounded code tasks, precision edits, and surgical refactoring. |
 
 `<cs>.tier` stores the tier name. `StartRepl` derives

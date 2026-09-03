@@ -8,7 +8,7 @@ second configuration surface.
 ## Current decision
 
 - **Default / Orbit Tier (`default`, `orbit`, `flash`, `gemini`):**
-  - Provider/model: `9router/ag/gemini-3.7-flash-high`
+  - Provider/model: `9router/ag/gemini-3.8-flash-high`
   - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
   - Context window: 1,048,576 tokens (~1M tokens)
   - Max completion tokens: 65,536 tokens
@@ -16,7 +16,7 @@ second configuration surface.
   - Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
   - Input: text and image (live-verified)
   - Role: Default worker and wide-horizon tier — 1M context, high speed/quota efficiency, repo-wide sweeps, and multi-module refactoring.
-  - Decided: 2026-08-26
+  - Decided: 2026-09-03
 
 - **Strato Tier (`strato`, `luna`, `gpt`):**
   - Provider/model: `9router/cx/gpt-5.6-luna`
@@ -29,7 +29,7 @@ second configuration surface.
   - Role: Alternate tier for surgical refactoring, bounded code tasks, and deep reasoning.
   - Decided: 2026-08-26
 
-The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse) while dropping `cx/gpt-5.6-terra`. `gemini-3.7-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. `gpt-5.6-luna` provides an alternate tier for bounded and surgical coding tasks. 9Router discovers models from active provider connections, but tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
+The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse) while dropping `cx/gpt-5.6-terra`. `gemini-3.8-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. `gpt-5.6-luna` provides an alternate tier for bounded and surgical coding tasks. 9Router discovers models from active provider connections, but tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
 
 ### Current setup: 2026-08-26
 
@@ -44,7 +44,7 @@ managed by tt.
 
 The canonical measurement record lives in
 `../../9router-integrations/docs/EFFORT_MATRIX.md`. Both `cx/gpt-5.6-luna` and
-`ag/gemini-3.7-flash-high` resolve to wire `max` under the 9Router OpenAI Chat
+`ag/gemini-3.8-flash-high` resolve to wire `max` under the 9Router OpenAI Chat
 Completions adapter.
 
 Pi's model contract supports text and image input. Audio, video, and native

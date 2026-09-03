@@ -11,22 +11,22 @@ type Tier struct {
 var TierRegistry = map[string]Tier{
 	"default": {
 		Name:   "default",
-		Model:  "9router/ag/gemini-3.7-flash-high",
+		Model:  "9router/ag/gemini-3.8-flash-high",
 		Effort: "max",
 	},
 	"orbit": {
 		Name:   "orbit",
-		Model:  "9router/ag/gemini-3.7-flash-high",
+		Model:  "9router/ag/gemini-3.8-flash-high",
 		Effort: "max",
 	},
 	"flash": {
 		Name:   "flash",
-		Model:  "9router/ag/gemini-3.7-flash-high",
+		Model:  "9router/ag/gemini-3.8-flash-high",
 		Effort: "max",
 	},
 	"gemini": {
 		Name:   "gemini",
-		Model:  "9router/ag/gemini-3.7-flash-high",
+		Model:  "9router/ag/gemini-3.8-flash-high",
 		Effort: "max",
 	},
 	"strato": {

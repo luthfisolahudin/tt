@@ -28,7 +28,7 @@ Flags:
 
 Available tiers:
   default / orbit  (alias: flash, gemini)
-      Gemini 3.7 Flash High  -- 1M context, quota-efficient, fast.
+      Gemini 3.8 Flash High  -- 1M context, quota-efficient, fast.
   strato  (alias: luna, gpt)
       GPT 5.6 Luna  -- targeted workhorse, precision edits.`,
 	Example:            "  tt pi send --tier default alfa - <<<'TASK: inspect the authentication flow; FILES: internal/auth/; SUCCESS: report findings with file and line.'",
@@ -133,7 +133,7 @@ Flags:
 
 Available tiers:
   default / orbit  (alias: flash, gemini)
-      Gemini 3.7 Flash High  -- 1M context, quota-efficient, fast.
+      Gemini 3.8 Flash High  -- 1M context, quota-efficient, fast.
   strato  (alias: luna, gpt)
       GPT 5.6 Luna  -- targeted workhorse, precision edits.`,
 	Example:            "  tt pi auto --prefer-fresh - <<<'TASK: run the focused tests; SUCCESS: report the command and result.'",

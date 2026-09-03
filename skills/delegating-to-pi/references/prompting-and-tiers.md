@@ -9,7 +9,7 @@ effort is fixed per tier and cannot be set independently — the legacy
 `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with a pointer
 to `--tier`. Stable tiers follow the **Altitude Theme**:
 
-- **`default`** (aliases: **`orbit`**, **`flash`**, **`gemini`**) — `9router/ag/gemini-3.7-flash-high` at `max` effort.
+- **`default`** (aliases: **`orbit`**, **`flash`**, **`gemini`**) — `9router/ag/gemini-3.8-flash-high` at `max` effort.
   The primary, quota-efficient worker with a 1,048,576 (~1M) token context window.
   Handles all general delegated tasks, wide-horizon repo audits, and multi-module refactors.
   See [prompting-default.md](prompting-default.md).

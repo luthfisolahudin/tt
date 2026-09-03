@@ -4,6 +4,12 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.18.2] — 2026-09-03
+
+- **Default worker upgraded to Gemini 3.8 Flash High.** The `default` / `orbit`
+  tier (aliases: `flash`, `gemini`) now routes to `9router/ag/gemini-3.8-flash-high`
+  at `max` thinking effort with 1M token context capacity.
+
 ## [0.18.1] — 2026-08-26
 
 - **Additive project worker prompts.** Every fresh worker now receives the

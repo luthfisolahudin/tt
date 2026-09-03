@@ -5,7 +5,7 @@ history in `CHANGELOG.md`.
 
 ## Current state
 
-- **`tt` is a Go program (0.18.1); the bash tool is retired.** Sources are
+- **`tt` is a Go program (0.18.2); the bash tool is retired.** Sources are
   `main.go` + `cmd/` (cobra CLI) + `internal/` (daemon, worker, session, tmux,
   client). There IS a build step: `go-task build` compiles to `bin/tt` and
   `go-task install` installs it to `~/.local/bin/tt` (restarting `ttd`, which
@@ -61,12 +61,12 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- **Altitude model tiers (0.18.0).** Model tiers adopt the Altitude Theme:
-  `default` / `orbit` (aliases `flash`, `gemini`) routes to Gemini 3.7 Flash High
-  (`9router/ag/gemini-3.7-flash-high:max`) with 1M context as the primary,
+- **Altitude model tiers (0.18.0, updated 0.18.2).** Model tiers adopt the Altitude Theme:
+  `default` / `orbit` (aliases `flash`, `gemini`) routes to Gemini 3.8 Flash High
+  (`9router/ag/gemini-3.8-flash-high:max`) with 1M context as the primary,
   quota-efficient worker; `strato` (aliases `luna`, `gpt`) routes to OpenAI
   Codex GPT 5.6 Luna (`9router/cx/gpt-5.6-luna:max`) for targeted and surgical
-  coding tasks. Normal dispatches omit `--tier` and default to Gemini 3.7 Flash
+  coding tasks. Normal dispatches omit `--tier` and default to Gemini 3.8 Flash
   High. The former `cx/gpt-5.6-terra` model is dropped. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags remain rejected. See
   `docs/MODEL_DECISION.md`.

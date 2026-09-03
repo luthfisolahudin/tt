@@ -10,10 +10,10 @@ func TestTierRegistry(t *testing.T) {
 		model  string
 		effort string
 	}{
-		"default": {model: "9router/ag/gemini-3.7-flash-high", effort: "max"},
-		"orbit":   {model: "9router/ag/gemini-3.7-flash-high", effort: "max"},
-		"flash":   {model: "9router/ag/gemini-3.7-flash-high", effort: "max"},
-		"gemini":  {model: "9router/ag/gemini-3.7-flash-high", effort: "max"},
+		"default": {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"orbit":   {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"flash":   {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"gemini":  {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
 		"strato":  {model: "9router/cx/gpt-5.6-luna", effort: "max"},
 		"luna":    {model: "9router/cx/gpt-5.6-luna", effort: "max"},
 		"gpt":     {model: "9router/cx/gpt-5.6-luna", effort: "max"},

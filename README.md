@@ -162,7 +162,7 @@ current tier (a fresh worker starts on the default):
 
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
-| `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.7-flash-high` | `max` | Primary worker — 1M context, quota-efficient, fast, repo-wide sweeps, and general delegate tasks. |
+| `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.8-flash-high` | `max` | Primary worker — 1M context, quota-efficient, fast, repo-wide sweeps, and general delegate tasks. |
 | `strato` (alias: `luna`, `gpt`) | `9router/cx/gpt-5.6-luna` | `max` | Targeted workhorse — bounded code tasks, precision edits, and surgical refactoring. |
 
 The worker runtime discovers models from active 9Router connections. Pi, like
