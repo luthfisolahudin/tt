@@ -323,7 +323,7 @@ extension change.
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
 | `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.8-flash-high` | `max` | Default worker — 1M context, quota-efficient, repo-wide sweeps, and general delegate tasks. |
-| `strato` (alias: `luna`, `gpt`) | `9router/cx/gpt-5.6-luna` | `max` | Targeted workhorse — bounded code tasks, precision edits, and surgical refactoring. |
+| `deepseek` (alias: `strato`) | `9router/cbcn/deepseek-v4.1-flash` | `max` | Secondary workhorse — CodeBuddy CN DeepSeek V4.1 Flash, 1M context, bounded code tasks and surgical refactoring. |
 
 `<cs>.tier` stores the tier name. `StartRepl` derives
 `--model <model>:<effort>` from it. The extension never changes the model,
@@ -358,7 +358,7 @@ A fresh worker launch synchronizes the private runtime and installs the package
 when its managed manifest changed. Successful discovery replaces the startup
 fallback with exactly the active 9Router membership. Once at least one
 connection exists, 9Router filters that catalog to models owned by active
-connections. Provider/model IDs and the client-facing `strato`/`luna`/`gpt` and
+connections. Provider/model IDs and the client-facing `deepseek`/`strato` and
 `orbit`/`flash`/`gemini` tiers resolve to wire `max`. Text, read-tool, and image
 turns are live-verified through standalone Pi, OpenCode, and a tracked tt worker.
 All completed requested `max` turns, but the route exposes no safe metadata

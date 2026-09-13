@@ -13,9 +13,9 @@ to `--tier`. Stable tiers follow the **Altitude Theme**:
   The primary, quota-efficient worker with a 1,048,576 (~1M) token context window.
   Handles all general delegated tasks, wide-horizon repo audits, and multi-module refactors.
   See [prompting-default.md](prompting-default.md).
-- **`strato`** (aliases: **`luna`**, **`gpt`**) — `9router/cx/gpt-5.6-luna` at `max` effort (272K context).
-  Dedicated workhorse for bounded code tasks, precision edits, and surgical refactoring.
-  See [prompting-strato.md](prompting-strato.md).
+- **`deepseek`** (alias: **`strato`**) — `9router/cbcn/deepseek-v4.1-flash` at `max` effort (1M context).
+  CodeBuddy CN DeepSeek V4.1 Flash, the secondary workhorse for bounded code tasks, precision edits, and surgical refactoring.
+  See [prompting-deepseek.md](prompting-deepseek.md).
 
 Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
 auto`. Omit `--tier` to keep the worker's current tier (a fresh worker

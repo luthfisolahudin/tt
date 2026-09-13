@@ -29,8 +29,8 @@ Flags:
 Available tiers:
   default / orbit  (alias: flash, gemini)
       Gemini 3.8 Flash High  -- 1M context, quota-efficient, fast.
-  strato  (alias: luna, gpt)
-      GPT 5.6 Luna  -- targeted workhorse, precision edits.`,
+  deepseek  (alias: strato)
+      DeepSeek V4.1 Flash  -- CodeBuddy CN, 1M context, surgical work.`,
 	Example:            "  tt pi send --tier default alfa - <<<'TASK: inspect the authentication flow; FILES: internal/auth/; SUCCESS: report findings with file and line.'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -134,8 +134,8 @@ Flags:
 Available tiers:
   default / orbit  (alias: flash, gemini)
       Gemini 3.8 Flash High  -- 1M context, quota-efficient, fast.
-  strato  (alias: luna, gpt)
-      GPT 5.6 Luna  -- targeted workhorse, precision edits.`,
+  deepseek  (alias: strato)
+      DeepSeek V4.1 Flash  -- CodeBuddy CN, 1M context, surgical work.`,
 	Example:            "  tt pi auto --prefer-fresh - <<<'TASK: run the focused tests; SUCCESS: report the command and result.'",
 	DisableFlagParsing: true,
 	Run: func(cmd *cobra.Command, args []string) {

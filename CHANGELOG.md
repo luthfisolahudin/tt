@@ -4,6 +4,25 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.19.0] — 2026-09-13
+
+- **Secondary tier switches to CodeBuddy CN DeepSeek V4.1 Flash.** The retired
+  GPT 5.6 Luna tier (`strato`, plus the model-specific `luna`/`gpt` aliases) is
+  replaced by a `deepseek` tier routing to `9router/cbcn/deepseek-v4.1-flash` at
+  `max` thinking effort with a 1M-token context window. The Altitude Theme name
+  `strato` is retained as the tier's alias, so `--tier strato` now resolves to
+  DeepSeek. `luna` and `gpt` are removed as GPT-specific names.
+- `default` / `orbit` (aliases `flash`, `gemini`) remains Gemini 3.8 Flash High
+  and the default worker; normal dispatches still omit `--tier`.
+- **Integration pin bumped** to `9router-integrations#f2f4ab7`, which measures
+  `cbcn/deepseek-v4.1-flash` (client `max` → wire `xhigh`) and
+  `ag/gemini-3.8-flash-high`; the previous revision threw on unmeasured
+  reasoning models, so it could not resolve the new tier's model.
+- Existing workers still on the removed `luna`/`gpt` tier show `stale:<name>`
+  and reject new work until `tt pi clear <cs>`. A worker whose stored tier is
+  `strato` is not stale and simply respawns onto DeepSeek. See
+  `docs/MODEL_DECISION.md`.
+
 ## [0.18.2] — 2026-09-03
 
 - **Default worker upgraded to Gemini 3.8 Flash High.** The `default` / `orbit`

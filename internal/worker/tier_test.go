@@ -10,13 +10,12 @@ func TestTierRegistry(t *testing.T) {
 		model  string
 		effort string
 	}{
-		"default": {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
-		"orbit":   {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
-		"flash":   {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
-		"gemini":  {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
-		"strato":  {model: "9router/cx/gpt-5.6-luna", effort: "max"},
-		"luna":    {model: "9router/cx/gpt-5.6-luna", effort: "max"},
-		"gpt":     {model: "9router/cx/gpt-5.6-luna", effort: "max"},
+		"default":  {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"orbit":    {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"flash":    {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"gemini":   {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
+		"deepseek": {model: "9router/cbcn/deepseek-v4.1-flash", effort: "max"},
+		"strato":   {model: "9router/cbcn/deepseek-v4.1-flash", effort: "max"},
 	}
 
 	for name, exp := range expectedTiers {
@@ -47,9 +46,20 @@ func TestTierRegistry(t *testing.T) {
 		t.Errorf("GetTier('terra') should return error")
 	}
 
+	// The GPT 5.6 Luna tier and its model-specific aliases are retired; only the
+	// theme name `strato` survives, re-pointed at the DeepSeek secondary tier.
+	for _, removed := range []string{"luna", "gpt"} {
+		if IsKnownTier(removed) {
+			t.Errorf("%q should not be a known tier", removed)
+		}
+		if _, err := GetTier(removed); err == nil {
+			t.Errorf("GetTier(%q) should return error", removed)
+		}
+	}
+
 	names := TierNames()
 	sort.Strings(names)
-	wantNames := []string{"default", "flash", "gemini", "gpt", "luna", "orbit", "strato"}
+	wantNames := []string{"deepseek", "default", "flash", "gemini", "orbit", "strato"}
 	if len(names) != len(wantNames) {
 		t.Fatalf("TierNames() length = %d, want %d", len(names), len(wantNames))
 	}

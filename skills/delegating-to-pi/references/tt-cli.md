@@ -24,7 +24,7 @@ effort is fixed by the registry, not independently settable. Active presets
 follow the **Altitude Theme**:
 
 - `--tier default` / `--tier orbit` (aliases: `flash`, `gemini`) — `9router/ag/gemini-3.8-flash-high` at max effort (1M context). Primary worker.
-- `--tier strato` (aliases: `luna`, `gpt`) — `9router/cx/gpt-5.6-luna` at max effort (272K context). Targeted surgical worker.
+- `--tier deepseek` (alias: `strato`) — `9router/cbcn/deepseek-v4.1-flash` at max effort (1M context). CodeBuddy CN secondary surgical worker.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
 `default`). `--tier NAME` is refused on a worker already running on a

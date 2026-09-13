@@ -131,7 +131,7 @@ reference. Summary:
 | `tt pi clear [--force] <cs>` | Wipe a worker's pi-session context. Refuses while the worker is `busy`. |
 | `tt pi resume <cs>` | Recover an **interrupted** worker without a context wipe: re-drive its task to completion (`interrupted → busy → done`). Needs the REPL alive. In the worker's own pane, `/tt-resume` does the same. |
 | `tt pi send [--tier NAME] [--notify] <cs> (FILE\|-)` | Send a prompt; print task ID. Lazy-spawns an absent worker; queues behind a busy one (run-next). `--tier NAME`: pick a model preset (see [Model tier](#model-tier)) — **refused** if the worker already runs a different tier. `--notify`: ping the orchestrator on completion. |
-| `tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. The only accepted tier is `default`, so normally omit `--tier`. `--prefer-fresh`: spawn a new worker before reusing an idle one (parallelism + clean context), under the cap. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. `--json`: emit `{worker,task_id,routed}` (routed = `idle\|spawn\|pool\|ephemeral`). |
+| `tt pi auto [--tier NAME] [--prefer-fresh] [--rm] [--notify] [--json] (FILE\|-)` | Dispatch without naming a worker: reuse idle → spawn → shared pool. Echoes `using pi-<cs>`; prints the task ID. Omit `--tier` to use the `default` worker; a mismatched idle worker is skipped and a fresh one spawned under the cap. `--prefer-fresh`: spawn a new worker before reusing an idle one (parallelism + clean context), under the cap. `--rm`: fresh ephemeral worker, reaped after. `--notify`: ping the orchestrator on completion. `--json`: emit `{worker,task_id,routed}` (routed = `idle\|spawn\|pool\|ephemeral`). |
 | `tt pi steer <cs\|all> (FILE\|-)` | Inject a message NOW into the current turn (run-now), bypassing the queue. Untracked. |
 | `tt pi steer-all (FILE\|-)` | Steer every live worker. Same as `tt pi steer all`. |
 | `tt pi wait [--timeout N] [--json] <cs\|task-id\|pool-id\|all> [task-id]` | Block until `WORKER_DONE`/`BLOCKED:`. Accepts a callsign (latest task), a bare task-id (any id resolves, even an old one), a pool id, or `all` (join all busy). `--json`: result envelope(s). `all` prints a one-line tally on stderr and exits non-zero if any worker ended error/other/down/timeout. |
@@ -163,7 +163,7 @@ current tier (a fresh worker starts on the default):
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
 | `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.8-flash-high` | `max` | Primary worker — 1M context, quota-efficient, fast, repo-wide sweeps, and general delegate tasks. |
-| `strato` (alias: `luna`, `gpt`) | `9router/cx/gpt-5.6-luna` | `max` | Targeted workhorse — bounded code tasks, precision edits, and surgical refactoring. |
+| `deepseek` (alias: `strato`) | `9router/cbcn/deepseek-v4.1-flash` | `max` | Secondary workhorse — CodeBuddy CN DeepSeek V4.1 Flash, 1M context, bounded code tasks and surgical refactoring. |
 
 The worker runtime discovers models from active 9Router connections. Pi, like
 OpenCode, uses the OpenAI-compatible adapter base `<root>/v1` and sends inference
@@ -176,8 +176,8 @@ provider and effort policy from the pinned GitHub
 pi auto-load migration; its current adapter is OpenAI Chat Completions.
 
 Text, read-tool, and image turns are live-verified through standalone Pi,
-OpenCode, and a tracked tt worker. Each client completed a requested Terra
-`max` turn; the route exposes no safe metadata proving a distinct effective
+OpenCode, and a tracked tt worker. Each client completed a requested `max`
+turn; the route exposes no safe metadata proving a distinct effective
 effort beyond that requested wire value. Audio, video, and native document
 inputs are not exposed by `tt`. The dated benchmark, price snapshot, and
 re-evaluation rules live in

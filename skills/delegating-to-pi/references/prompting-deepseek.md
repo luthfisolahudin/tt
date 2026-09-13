@@ -1,8 +1,9 @@
-# Prompting the Strato worker (Luna / GPT 5.6)
+# Prompting the secondary worker (DeepSeek V4.1 Flash / Strato)
 
-The `strato` tier (aliases: `luna`, `gpt`) runs `9router/cx/gpt-5.6-luna` at
-**max** effort (272K context window). Use `--tier strato` (or `--tier luna` /
-`--tier gpt`) on `tt pi send` / `tt pi auto` to dispatch to this tier.
+The `deepseek` tier (alias: `strato`) runs `9router/cbcn/deepseek-v4.1-flash` at
+**max** effort (1,000,000-token / ~1M context window) through CodeBuddy CN. Use
+`--tier deepseek` (or `--tier strato`) on `tt pi send` / `tt pi auto` to dispatch
+to this tier.
 
 The worker accepts text and image input. It is designed for surgical,
 high-precision edits, bounded code tasks, and deep logical refactoring.
@@ -13,7 +14,8 @@ see [prompting-and-tiers.md#prompt-contract](prompting-and-tiers.md#prompt-contr
 
 ## Model-specific
 
-- **Surgical & bounded precision.** GPT 5.6 Luna excels at adhering strictly to bounded file edits and complex logic constraints without unintended regressions in neighboring code.
+- **Surgical & bounded precision.** DeepSeek V4.1 Flash excels at adhering strictly to bounded file edits and complex logic constraints without unintended regressions in neighboring code.
+- **1M token context capacity.** It can ingest large files, deep directory trees, and comprehensive logs, so broader `FILES / SCOPE` and reference context are safe.
 - **Max effort is already configured.** Do not ask the model to "think step by step". Spend prompt space on **scope precision** and **verifiability**.
 - **VERIFY is essential.** Keep requirements explicit and enumerate each check under `SUCCESS` and `VERIFY`.
 

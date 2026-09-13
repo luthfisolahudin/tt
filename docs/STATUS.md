@@ -61,13 +61,15 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- **Altitude model tiers (0.18.0, updated 0.18.2).** Model tiers adopt the Altitude Theme:
+- **Altitude model tiers (0.18.0, updated 0.19.0).** Model tiers adopt the Altitude Theme:
   `default` / `orbit` (aliases `flash`, `gemini`) routes to Gemini 3.8 Flash High
   (`9router/ag/gemini-3.8-flash-high:max`) with 1M context as the primary,
-  quota-efficient worker; `strato` (aliases `luna`, `gpt`) routes to OpenAI
-  Codex GPT 5.6 Luna (`9router/cx/gpt-5.6-luna:max`) for targeted and surgical
-  coding tasks. Normal dispatches omit `--tier` and default to Gemini 3.8 Flash
-  High. The former `cx/gpt-5.6-terra` model is dropped. The legacy
+  quota-efficient worker; `deepseek` (alias `strato`) routes to CodeBuddy CN
+  DeepSeek V4.1 Flash (`9router/cbcn/deepseek-v4.1-flash:max`) with 1M context for
+  targeted and surgical coding tasks, replacing the former GPT 5.6 Luna tier
+  (`strato`/`luna`/`gpt`). Normal dispatches omit `--tier` and default to Gemini
+  3.8 Flash High. Workers still on the removed `luna`/`gpt` tier show
+  `stale:<name>` until `tt pi clear`. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags remain rejected. See
   `docs/MODEL_DECISION.md`.
 - **Hardened Worker Mode (0.18.1).** Fresh REPLs receive one composed system
@@ -120,17 +122,17 @@ history in `CHANGELOG.md`.
   OpenAI-compatible route as OpenCode, which tt does not manage: catalog
   `<root>/v1/models`, adapter base `<root>/v1`, and inference
   `/v1/chat/completions`. The adapter sends `reasoning_effort` and replays
-  `reasoning_content`; provider/model IDs and the Terra `max` default are
-  unchanged. Its startup fallback contains DeepSeek V4 Flash plus Terra, and a
-  successful catalog refresh replaces that fallback with exactly the active
-  membership. A fresh worker launch synchronizes the private runtime: unchanged
-  managed package and provider-loader copies refresh safely, customized copies
-  persist and warn every run, and `.tt-version` records desired, actual, and
-  installed hashes. `go-task install` does not respawn existing workers; use
-  `tt pi clear <cs>` or respawn one to load the update. Text, read-tool, and
-  image turns are live-verified through standalone Pi, OpenCode, and a tracked
-  tt worker. Each completed a requested Terra `max` turn; no safe metadata
-  exposes a distinct effective effort.
+  `reasoning_content`; provider/model IDs and the pinned `max` default are
+  unchanged. Its startup fallback contains DeepSeek V4 Flash plus a Codex
+  fallback, and a successful catalog refresh replaces that fallback with exactly
+  the active membership. A fresh worker launch synchronizes the private runtime:
+  unchanged managed package and provider-loader copies refresh safely,
+  customized copies persist and warn every run, and `.tt-version` records
+  desired, actual, and installed hashes. `go-task install` does not respawn
+  existing workers; use `tt pi clear <cs>` or respawn one to load the update.
+  Text, read-tool, and image turns are live-verified through standalone Pi,
+  OpenCode, and a tracked tt worker. Each completed a requested `max` turn;
+  no safe metadata exposes a distinct effective effort.
 
 ## Verified (manual)
 

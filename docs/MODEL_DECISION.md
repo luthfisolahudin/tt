@@ -18,20 +18,20 @@ second configuration surface.
   - Role: Default worker and wide-horizon tier — 1M context, high speed/quota efficiency, repo-wide sweeps, and multi-module refactoring.
   - Decided: 2026-09-03
 
-- **Strato Tier (`strato`, `luna`, `gpt`):**
-  - Provider/model: `9router/cx/gpt-5.6-luna`
+- **DeepSeek Tier (`deepseek`, `strato`):**
+  - Provider/model: `9router/cbcn/deepseek-v4.1-flash`
   - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
-  - Context window: 272,000 tokens
-  - Max completion tokens: 128,000 tokens
+  - Context window: 1,000,000 tokens (~1M tokens)
+  - Max completion tokens: 384,000 tokens
   - Client thinking effort: `max`
-  - Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
-  - Input: text and image (live-verified)
-  - Role: Alternate tier for surgical refactoring, bounded code tasks, and deep reasoning.
-  - Decided: 2026-08-26
+  - Resolver wire effort: `xhigh` (measured; client `max` normalizes to it)
+  - Input: text and image (natively multimodal; live-verifiable)
+  - Role: Secondary tier for bounded code tasks, precision edits, and surgical refactoring.
+  - Decided: 2026-09-13
 
-The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse) while dropping `cx/gpt-5.6-terra`. `gemini-3.8-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. `gpt-5.6-luna` provides an alternate tier for bounded and surgical coding tasks. 9Router discovers models from active provider connections, but tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
+The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse). `gemini-3.8-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. The former GPT 5.6 Luna secondary tier is replaced by CodeBuddy CN DeepSeek V4.1 Flash, retaining the `strato` theme name as its alias while dropping the GPT-specific `luna`/`gpt` names. 9Router discovers models from active provider connections, but tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
 
-### Current setup: 2026-08-26
+### Current setup: 2026-09-13
 
 Pi follows OpenCode through the OpenAI-compatible route: catalog
 `<root>/v1/models`, adapter base `<root>/v1`, and inference
@@ -43,9 +43,11 @@ duplicate pi auto-load migration. OpenCode already uses this route and is not
 managed by tt.
 
 The canonical measurement record lives in
-`../../9router-integrations/docs/EFFORT_MATRIX.md`. Both `cx/gpt-5.6-luna` and
-`ag/gemini-3.8-flash-high` resolve to wire `max` under the 9Router OpenAI Chat
-Completions adapter.
+`../../9router-integrations/docs/EFFORT_MATRIX.md`. Under the 9Router OpenAI
+Chat Completions adapter, `ag/gemini-3.8-flash-high` resolves to wire `max`,
+while `cbcn/deepseek-v4.1-flash` normalizes client `max` to wire `xhigh`.
+The private worker installs this provider and effort policy from the pinned
+`9router-integrations` revision, which measures both active tier models.
 
 Pi's model contract supports text and image input. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model
