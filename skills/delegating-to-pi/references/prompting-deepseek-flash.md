@@ -1,9 +1,9 @@
-# Prompting the secondary worker (DeepSeek V4.1 Flash / Strato)
+# Prompting the DeepSeek Flash worker (strato / deepseek)
 
-The `deepseek` tier (alias: `strato`) runs `9router/cbcn/deepseek-v4.1-flash` at
-**max** effort (1,000,000-token / ~1M context window) through CodeBuddy CN. Use
-`--tier deepseek` (or `--tier strato`) on `tt pi send` / `tt pi auto` to dispatch
-to this tier.
+The `strato` tier (alias: `deepseek`) runs
+`commandcode/deepseek/deepseek-v4.1-flash` at **high** effort (1,000,000-token /
+~1M context window) through the Command Code Provider API. Use `--tier strato`
+(or `--tier deepseek`) on `tt pi send` / `tt pi auto` to dispatch to this tier.
 
 The worker accepts text and image input. It is designed for surgical,
 high-precision edits, bounded code tasks, and deep logical refactoring.
@@ -16,7 +16,7 @@ see [prompting-and-tiers.md#prompt-contract](prompting-and-tiers.md#prompt-contr
 
 - **Surgical & bounded precision.** DeepSeek V4.1 Flash excels at adhering strictly to bounded file edits and complex logic constraints without unintended regressions in neighboring code.
 - **1M token context capacity.** It can ingest large files, deep directory trees, and comprehensive logs, so broader `FILES / SCOPE` and reference context are safe.
-- **Max effort is already configured.** Do not ask the model to "think step by step". Spend prompt space on **scope precision** and **verifiability**.
+- **High effort is already configured.** Do not ask the model to "think step by step". Spend prompt space on **scope precision** and **verifiability**.
 - **VERIFY is essential.** Keep requirements explicit and enumerate each check under `SUCCESS` and `VERIFY`.
 
 ## Sample prompt: Surgical bugfix

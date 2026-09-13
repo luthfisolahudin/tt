@@ -14,8 +14,8 @@ func TestTierRegistry(t *testing.T) {
 		"orbit":    {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
 		"flash":    {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
 		"gemini":   {model: "9router/ag/gemini-3.8-flash-high", effort: "max"},
-		"deepseek": {model: "9router/cbcn/deepseek-v4.1-flash", effort: "max"},
-		"strato":   {model: "9router/cbcn/deepseek-v4.1-flash", effort: "max"},
+		"deepseek": {model: "commandcode/deepseek/deepseek-v4.1-flash", effort: "high"},
+		"strato":   {model: "commandcode/deepseek/deepseek-v4.1-flash", effort: "high"},
 	}
 
 	for name, exp := range expectedTiers {
@@ -46,8 +46,8 @@ func TestTierRegistry(t *testing.T) {
 		t.Errorf("GetTier('terra') should return error")
 	}
 
-	// The GPT 5.6 Luna tier and its model-specific aliases are retired; only the
-	// theme name `strato` survives, re-pointed at the DeepSeek secondary tier.
+	// The GPT 5.6 Luna tier and its GPT-specific aliases are retired. `strato` is
+	// the canonical secondary tier name; `deepseek` is its model alias.
 	for _, removed := range []string{"luna", "gpt"} {
 		if IsKnownTier(removed) {
 			t.Errorf("%q should not be a known tier", removed)

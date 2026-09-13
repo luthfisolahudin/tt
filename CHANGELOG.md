@@ -4,6 +4,24 @@ Notable changes to `tt`, newest first. Versions follow the `Version` constant
 in `internal/version/version.go`; each is tagged `v<x.y.z>` (annotated). Use
 `git diff v<x.y.z> v<x.y.z>` to inspect a range.
 
+## [0.19.1] — 2026-09-13
+
+- **Secondary tier routes through the Command Code Provider API.** `strato`
+  (alias `deepseek`) now uses `commandcode/deepseek/deepseek-v4.1-flash` at
+  `high` thinking effort instead of `9router/cbcn/deepseek-v4.1-flash` at `max`.
+  The worker runtime auto-registers a `commandcode` provider against
+  `https://api.commandcode.ai/provider/v1` (OpenAI Chat Completions) through the
+  new managed template `pi-worker/extensions/commandcode.ts`, discovering models
+  from `/provider/v1/models`. It authenticates from `COMMANDCODE_API_KEY`, which
+  `TT_PI_ENV_VARS` must copy into the worker's tmux environment. DeepSeek V4.1
+  Flash accepts text and image input.
+- **`strato` is the canonical secondary tier name,** with `deepseek` as its
+  alias. Docs and prompting guidance lead with `strato`.
+- Gemini default-tier docs record the applied effort and output ceiling: the
+  worker transmits `reasoning_effort=max`, 9Router logs `THINK:high`, and the
+  Antigravity executor clamps `maxOutputTokens` to 64,000, below the declared
+  65,536.
+
 ## [0.19.0] — 2026-09-13
 
 - **Secondary tier switches to CodeBuddy CN DeepSeek V4.1 Flash.** The retired

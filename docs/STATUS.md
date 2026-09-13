@@ -61,15 +61,15 @@ history in `CHANGELOG.md`.
 - `tt pi wait` and `tt x send` wait forever by default; `--timeout N` bounds
   them. Internal health guards stay finite — notably a 20 s fast-fail on an
   unconsumed trigger.
-- **Altitude model tiers (0.18.0, updated 0.19.0).** Model tiers adopt the Altitude Theme:
+- **Altitude model tiers (0.18.0, updated 0.19.1).** Model tiers adopt the Altitude Theme:
   `default` / `orbit` (aliases `flash`, `gemini`) routes to Gemini 3.8 Flash High
   (`9router/ag/gemini-3.8-flash-high:max`) with 1M context as the primary,
-  quota-efficient worker; `deepseek` (alias `strato`) routes to CodeBuddy CN
-  DeepSeek V4.1 Flash (`9router/cbcn/deepseek-v4.1-flash:max`) with 1M context for
-  targeted and surgical coding tasks, replacing the former GPT 5.6 Luna tier
-  (`strato`/`luna`/`gpt`). Normal dispatches omit `--tier` and default to Gemini
-  3.8 Flash High. Workers still on the removed `luna`/`gpt` tier show
-  `stale:<name>` until `tt pi clear`. The legacy
+  quota-efficient worker; `strato` (alias `deepseek`) routes to DeepSeek V4.1
+  Flash (`commandcode/deepseek/deepseek-v4.1-flash:high`) through the Command
+  Code Provider API with 1M context for targeted and surgical coding tasks,
+  replacing the former GPT 5.6 Luna tier (`luna`/`gpt`). Normal dispatches omit
+  `--tier` and default to Gemini 3.8 Flash High. Workers still on the removed
+  `luna`/`gpt` tier show `stale:<name>` until `tt pi clear`. The legacy
   `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags remain rejected. See
   `docs/MODEL_DECISION.md`.
 - **Hardened Worker Mode (0.18.1).** Fresh REPLs receive one composed system
@@ -131,8 +131,17 @@ history in `CHANGELOG.md`.
   desired, actual, and installed hashes. `go-task install` does not respawn
   existing workers; use `tt pi clear <cs>` or respawn one to load the update.
   Text, read-tool, and image turns are live-verified through standalone Pi,
-  OpenCode, and a tracked tt worker. Each completed a requested `max` turn;
-  no safe metadata exposes a distinct effective effort.
+  OpenCode, and a tracked tt worker. On the Gemini default tier the worker
+  transmits `reasoning_effort=max` and 9Router logs the applied `THINK:high`
+  (Gemini's highest tier), the effective-effort evidence the route exposes.
+
+- **Command Code provider (0.19.1).** The `strato`/`deepseek` tier registers a
+  `commandcode` provider (`pi-worker/extensions/commandcode.ts`) against
+  `https://api.commandcode.ai/provider/v1` (OpenAI Chat Completions), discovers
+  models from `/provider/v1/models`, and authenticates from `COMMANDCODE_API_KEY`,
+  carried into the worker tmux environment through `TT_PI_ENV_VARS`. DeepSeek
+  V4.1 Flash accepts text and image input and transmits `reasoning_effort=high`
+  literally.
 
 ## Verified (manual)
 

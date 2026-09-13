@@ -29,15 +29,15 @@ var TierRegistry = map[string]Tier{
 		Model:  "9router/ag/gemini-3.8-flash-high",
 		Effort: "max",
 	},
-	"deepseek": {
-		Name:   "deepseek",
-		Model:  "9router/cbcn/deepseek-v4.1-flash",
-		Effort: "max",
-	},
 	"strato": {
 		Name:   "strato",
-		Model:  "9router/cbcn/deepseek-v4.1-flash",
-		Effort: "max",
+		Model:  "commandcode/deepseek/deepseek-v4.1-flash",
+		Effort: "high",
+	},
+	"deepseek": {
+		Name:   "deepseek",
+		Model:  "commandcode/deepseek/deepseek-v4.1-flash",
+		Effort: "high",
 	},
 }
 

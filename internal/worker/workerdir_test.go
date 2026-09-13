@@ -36,8 +36,9 @@ func newWorkerDirFixture(t *testing.T) workerDirFixture {
 	packageSrc := filepath.Join(repo, "pi-worker", "package.json")
 	providerSrc := filepath.Join(repo, "pi-worker", "extensions", "anthropic-compatible-providers.ts")
 	for path, content := range map[string]string{
-		filepath.Join(repo, "pi-worker", "APPEND_SYSTEM.md"):           "worker rules\n",
-		filepath.Join(repo, "pi-worker", "extensions", "tt-worker.ts"): "export {};\n",
+		filepath.Join(repo, "pi-worker", "APPEND_SYSTEM.md"):             "worker rules\n",
+		filepath.Join(repo, "pi-worker", "extensions", "tt-worker.ts"):   "export {};\n",
+		filepath.Join(repo, "pi-worker", "extensions", "commandcode.ts"): "export {};\n",
 		providerSrc: "export const provider = 'one';\n",
 		packageSrc:  "{\"name\":\"tt-pi-worker\",\"version\":\"one\"}\n",
 		filepath.Join(repo, "pi-worker", "settings.json"): "{}\n",

@@ -11,30 +11,30 @@ second configuration surface.
   - Provider/model: `9router/ag/gemini-3.8-flash-high`
   - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
   - Context window: 1,048,576 tokens (~1M tokens)
-  - Max completion tokens: 65,536 tokens
+  - Max completion tokens: 65,536 declared; effective 64,000 (the Antigravity executor clamps `maxOutputTokens` to 64,000)
   - Client thinking effort: `max`
-  - Resolver wire effort: `max` (requested live; no safe effective-effort metadata)
+  - Applied effort: pi transmits `reasoning_effort=max`; 9Router translates it to Gemini `thinkingLevel:high` (Gemini's highest tier), observable as `THINK:high` in the router request log
   - Input: text and image (live-verified)
   - Role: Default worker and wide-horizon tier — 1M context, high speed/quota efficiency, repo-wide sweeps, and multi-module refactoring.
   - Decided: 2026-09-03
 
-- **DeepSeek Tier (`deepseek`, `strato`):**
-  - Provider/model: `9router/cbcn/deepseek-v4.1-flash`
-  - API: OpenAI Chat Completions (`<root>/v1/chat/completions`; adapter base `<root>/v1`)
+- **Strato Tier (`strato`, alias `deepseek`):**
+  - Provider/model: `commandcode/deepseek/deepseek-v4.1-flash`
+  - API: Command Code Provider API, OpenAI Chat Completions (`https://api.commandcode.ai/provider/v1/chat/completions`)
   - Context window: 1,000,000 tokens (~1M tokens)
-  - Max completion tokens: 384,000 tokens
-  - Client thinking effort: `max`
-  - Resolver wire effort: `xhigh` (measured; client `max` normalizes to it)
-  - Input: text and image (natively multimodal; live-verifiable)
+  - Max completion tokens: 64,000
+  - Client thinking effort: `high`
+  - Input: text and image (live-verified through the Command Code Provider API)
+  - Auth: `COMMANDCODE_API_KEY`, copied into the worker tmux environment through `TT_PI_ENV_VARS`
   - Role: Secondary tier for bounded code tasks, precision edits, and surgical refactoring.
   - Decided: 2026-09-13
 
-The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse). `gemini-3.8-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. The former GPT 5.6 Luna secondary tier is replaced by CodeBuddy CN DeepSeek V4.1 Flash, retaining the `strato` theme name as its alias while dropping the GPT-specific `luna`/`gpt` names. 9Router discovers models from active provider connections, but tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
+The operator-directed update adopts an **Altitude Theme** (`orbit` as default / wide-horizon workhorse and `strato` as targeted/bounded workhorse). `gemini-3.8-flash-high` serves as the default worker with an expansive 1M-token context window, excellent agentic coding benchmarks, and favorable quota capacity. The former GPT 5.6 Luna secondary tier is replaced by DeepSeek V4.1 Flash, keeping `strato` as the canonical theme name with `deepseek` as its model alias and dropping the GPT-specific `luna`/`gpt` names. The secondary tier moved from 9Router's CodeBuddy CN connection to the Command Code Provider API because `COMMANDCODE_API_KEY` provides a direct, plan-metered route to the same model. Tier model IDs remain pinned so a changing catalog cannot silently change worker behavior.
 
 ### Current setup: 2026-09-13
 
-Pi follows OpenCode through the OpenAI-compatible route: catalog
-`<root>/v1/models`, adapter base `<root>/v1`, and inference
+The `default` tier follows OpenCode through the 9Router OpenAI-compatible route:
+catalog `<root>/v1/models`, adapter base `<root>/v1`, and inference
 `/v1/chat/completions`. The adapter sends `reasoning_effort` and replays
 `reasoning_content`. The startup fallback is replaced by exact active membership
 after a successful catalog refresh. The legacy
@@ -42,12 +42,22 @@ after a successful catalog refresh. The legacy
 duplicate pi auto-load migration. OpenCode already uses this route and is not
 managed by tt.
 
-The canonical measurement record lives in
-`../../9router-integrations/docs/EFFORT_MATRIX.md`. Under the 9Router OpenAI
-Chat Completions adapter, `ag/gemini-3.8-flash-high` resolves to wire `max`,
-while `cbcn/deepseek-v4.1-flash` normalizes client `max` to wire `xhigh`.
-The private worker installs this provider and effort policy from the pinned
-`9router-integrations` revision, which measures both active tier models.
+The `strato` tier uses the Command Code Provider API through
+`pi-worker/extensions/commandcode.ts`: base
+`https://api.commandcode.ai/provider/v1`, catalog `/provider/v1/models`, Bearer
+auth from `COMMANDCODE_API_KEY`. The provider is tool-compatible and accepts
+`reasoning_effort`; the `high` level is transmitted literally.
+
+The canonical 9Router measurement record lives in
+`../../9router-integrations/docs/EFFORT_MATRIX.md`. On the 9Router route,
+`ag/gemini-3.8-flash-high` is transmitted as `reasoning_effort=max` and
+translated by the router to Gemini `thinkingLevel:high`, logged as `THINK:high`.
+The registry's upstream suffix `(high)` is stripped before dispatch, so the
+applied thinking comes from the client `reasoning_effort`, not the suffix. The
+Gemini route exposes no client-side proof of effective effort beyond that router
+log; `maxOutputTokens` is set by the thinking-level floor and then clamped to
+64,000 by the Antigravity executor, so pi's `max_completion_tokens` does not
+raise the ceiling.
 
 Pi's model contract supports text and image input. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model

@@ -323,7 +323,7 @@ extension change.
 | Tier | Model | Effort | Role |
 |------|-------|--------|------|
 | `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.8-flash-high` | `max` | Default worker — 1M context, quota-efficient, repo-wide sweeps, and general delegate tasks. |
-| `deepseek` (alias: `strato`) | `9router/cbcn/deepseek-v4.1-flash` | `max` | Secondary workhorse — CodeBuddy CN DeepSeek V4.1 Flash, 1M context, bounded code tasks and surgical refactoring. |
+| `deepseek` (alias: `strato`) | `commandcode/deepseek/deepseek-v4.1-flash` | `high` | Secondary workhorse — DeepSeek V4.1 Flash through the Command Code Provider API, 1M context, bounded code tasks and surgical refactoring. |
 
 `<cs>.tier` stores the tier name. `StartRepl` derives
 `--model <model>:<effort>` from it. The extension never changes the model,
@@ -354,26 +354,36 @@ pinned GitHub `@luthfisolahudin/9router-integrations` revision declared by
 `pi-worker/package.json`; the provider never traverses to a sibling source
 directory.
 
+The `strato`/`deepseek` tier instead auto-registers a `commandcode` provider
+through `pi-worker/extensions/commandcode.ts`. Its base is
+`https://api.commandcode.ai/provider/v1` (OpenAI Chat Completions), its catalog
+is `/provider/v1/models`, and it authenticates from the `COMMANDCODE_API_KEY`
+environment variable, which `TT_PI_ENV_VARS` must carry into the worker's tmux
+session. The file is a copied, tt-managed template like the 9Router loader.
+
 A fresh worker launch synchronizes the private runtime and installs the package
 when its managed manifest changed. Successful discovery replaces the startup
 fallback with exactly the active 9Router membership. Once at least one
 connection exists, 9Router filters that catalog to models owned by active
-connections. Provider/model IDs and the client-facing `deepseek`/`strato` and
-`orbit`/`flash`/`gemini` tiers resolve to wire `max`. Text, read-tool, and image
-turns are live-verified through standalone Pi, OpenCode, and a tracked tt worker.
-All completed requested `max` turns, but the route exposes no safe metadata
-proving a distinct effective effort. Audio, video, and native document input
-remain outside the worker contract.
+connections. Provider/model IDs and per-tier effort are managed by the tier
+registry: `9router/ag/gemini-3.8-flash-high:max` and
+`commandcode/deepseek/deepseek-v4.1-flash:high`. Text, read-tool, and image
+turns are live-verified through standalone Pi, OpenCode, and a tracked tt
+worker. For Gemini 3.8 Flash High the worker transmits `reasoning_effort=max`
+and 9Router's request log records the applied `THINK:high`; that router log is
+the effective-effort evidence the route exposes. Audio, video, and native
+document input remain outside the worker contract.
 
 9Router keeps upstream provider credentials behind a loopback-only compatibility
-key, so worker processes receive no upstream credential. Model selection
-evidence and re-evaluation rules live in `docs/MODEL_DECISION.md`.
+key, so worker processes receive no upstream credential; Command Code is the
+one environment-authenticated provider. Model selection evidence and
+re-evaluation rules live in `docs/MODEL_DECISION.md`.
 
 Before worker spawn, `sync_pi_env` copies only names explicitly listed in
 `TT_PI_ENV_VARS` from the calling shell into the tmux session environment. The
-default allowlist is empty. This handles tmux servers whose global environment
-predates a custom-provider credential without persisting credentials in tt
-state.
+default allowlist is empty; `COMMANDCODE_API_KEY` is added to it for the
+`strato` tier. This handles tmux servers whose global environment predates a
+custom-provider credential without persisting credentials in tt state.
 
 **Tier change on a running worker is refused.** The model is
 baked into the REPL's `--model` at launch. `tt pi send` / `auto`

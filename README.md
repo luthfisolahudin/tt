@@ -163,25 +163,31 @@ current tier (a fresh worker starts on the default):
 | Tier | Model | Thinking effort | Role |
 |------|-------|-----------------|------|
 | `default` / `orbit` (alias: `flash`, `gemini`) | `9router/ag/gemini-3.8-flash-high` | `max` | Primary worker — 1M context, quota-efficient, fast, repo-wide sweeps, and general delegate tasks. |
-| `deepseek` (alias: `strato`) | `9router/cbcn/deepseek-v4.1-flash` | `max` | Secondary workhorse — CodeBuddy CN DeepSeek V4.1 Flash, 1M context, bounded code tasks and surgical refactoring. |
+| `strato` (alias: `deepseek`) | `commandcode/deepseek/deepseek-v4.1-flash` | `high` | Secondary workhorse — DeepSeek V4.1 Flash through the Command Code Provider API, 1M context, bounded code tasks and surgical refactoring. |
 
-The worker runtime discovers models from active 9Router connections. Pi, like
+The `default` tier discovers models from active 9Router connections. Pi, like
 OpenCode, uses the OpenAI-compatible adapter base `<root>/v1` and sends inference
 to `/v1/chat/completions`, with `reasoning_effort` and replayed
-`reasoning_content`; provider/model IDs and the `max` effort default are
-managed via the tier registry. The private worker installs the canonical
-provider and effort policy from the pinned GitHub
-`@luthfisolahudin/9router-integrations` revision. The legacy filename
-`anthropic-compatible-providers.ts` remains solely to avoid a duplicate
-pi auto-load migration; its current adapter is OpenAI Chat Completions.
+`reasoning_content`; provider/model IDs and per-tier effort are managed via the
+tier registry. The private worker installs the canonical 9Router provider and
+effort policy from the pinned GitHub `@luthfisolahudin/9router-integrations`
+revision. The legacy filename `anthropic-compatible-providers.ts` remains solely
+to avoid a duplicate pi auto-load migration; its current adapter is OpenAI Chat
+Completions.
+
+The `strato` tier (alias `deepseek`) uses the Command Code Provider API. The
+worker runtime auto-registers a `commandcode` provider against
+`https://api.commandcode.ai/provider/v1` (OpenAI Chat Completions), discovering
+its catalog from `/provider/v1/models` and authenticating with the
+`COMMANDCODE_API_KEY` environment variable.
 
 Text, read-tool, and image turns are live-verified through standalone Pi,
-OpenCode, and a tracked tt worker. Each client completed a requested `max`
-turn; the route exposes no safe metadata proving a distinct effective
-effort beyond that requested wire value. Audio, video, and native document
-inputs are not exposed by `tt`. The dated benchmark, price snapshot, and
-re-evaluation rules live in
-[`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
+OpenCode, and a tracked tt worker. For Gemini 3.8 Flash High the worker
+transmits `reasoning_effort=max`, and 9Router's request log records the applied
+effort (`THINK:high`, Gemini's highest tier), which is the effective-effort
+evidence the route exposes. Audio, video, and native document inputs are not
+exposed by `tt`. The dated benchmark, price snapshot, and re-evaluation rules
+live in [`docs/MODEL_DECISION.md`](docs/MODEL_DECISION.md).
 
 The legacy `--low`/`--medium`/`--high`/`--xhigh`/`--max` flags are rejected with
 a pointer to `--tier`. See the prompting guide in
@@ -198,9 +204,11 @@ After a tier is removed, existing workers on it show `stale:<name>` and reject
 new work until `tt pi clear <cs>` respawns them on the current default.
 
 9Router keeps upstream credentials behind its loopback-only compatibility key;
-worker processes receive no upstream provider credential. `TT_PI_ENV_VARS`
-remains an opt-in, space-separated allowlist for environment-authenticated
-custom providers; values are not written to tt state files.
+the Command Code provider authenticates from `COMMANDCODE_API_KEY`. Worker
+processes otherwise receive no upstream provider credential. `TT_PI_ENV_VARS`
+is a space-separated allowlist (default empty) that copies named environment
+variables into the tmux session at spawn; set it to `COMMANDCODE_API_KEY` for
+the `strato` tier. Values are never written to tt state files.
 
 On each fresh worker launch, tt synchronizes its private runtime. Untouched
 managed `package.json` and provider-loader copies refresh safely; custom copies

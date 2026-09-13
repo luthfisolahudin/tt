@@ -12,10 +12,10 @@ to `--tier`. Stable tiers follow the **Altitude Theme**:
 - **`default`** (aliases: **`orbit`**, **`flash`**, **`gemini`**) — `9router/ag/gemini-3.8-flash-high` at `max` effort.
   The primary, quota-efficient worker with a 1,048,576 (~1M) token context window.
   Handles all general delegated tasks, wide-horizon repo audits, and multi-module refactors.
-  See [prompting-default.md](prompting-default.md).
-- **`deepseek`** (alias: **`strato`**) — `9router/cbcn/deepseek-v4.1-flash` at `max` effort (1M context).
-  CodeBuddy CN DeepSeek V4.1 Flash, the secondary workhorse for bounded code tasks, precision edits, and surgical refactoring.
-  See [prompting-deepseek.md](prompting-deepseek.md).
+  See [prompting-gemini-flash.md](prompting-gemini-flash.md).
+- **`strato`** (alias: **`deepseek`**) — `commandcode/deepseek/deepseek-v4.1-flash` at `high` effort (1M context).
+  DeepSeek V4.1 Flash through the Command Code Provider API, the secondary workhorse for bounded code tasks, precision edits, and surgical refactoring.
+  See [prompting-deepseek-flash.md](prompting-deepseek-flash.md).
 
 Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
 auto`. Omit `--tier` to keep the worker's current tier (a fresh worker

@@ -166,6 +166,19 @@ func EnsurePiWorkerDir(err io.Writer) error {
 		note("pi-worker provider extension is customized at " + providerDst + "; remove it to restore the tt-managed template")
 	}
 
+	// extensions/commandcode.ts follows the same copied-template policy.
+	commandCodeKey := "file.extensions/commandcode.ts"
+	commandCodeSrc := filepath.Join(repo, "pi-worker", "extensions", "commandcode.ts")
+	commandCodeDst := filepath.Join(dir, "extensions", "commandcode.ts")
+	commandCodeSHA, commandCodeActualSHA, _, commandCodeCustomized, e := syncManagedCopy(commandCodeSrc, commandCodeDst, commandCodeKey, prev, nil)
+	if e != nil {
+		return e
+	}
+	recordCopiedTemplate(prev, commandCodeKey, commandCodeSHA, commandCodeActualSHA, commandCodeCustomized)
+	if commandCodeCustomized {
+		note("pi-worker Command Code provider extension is customized at " + commandCodeDst + "; remove it to restore the tt-managed template")
+	}
+
 	// settings.json — copy when missing.
 	settingsSrc := filepath.Join(repo, "pi-worker", "settings.json")
 	settingsDst := filepath.Join(dir, "settings.json")

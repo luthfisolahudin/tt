@@ -1,4 +1,4 @@
-# Prompting the default worker (Orbit / Gemini 3.8 Flash)
+# Prompting the Gemini Flash worker (default / Orbit)
 
 The default worker runs `9router/ag/gemini-3.8-flash-high` at **max** effort
 with a 1,048,576 (~1M) token context window for all delegated work. Normal

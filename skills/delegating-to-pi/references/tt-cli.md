@@ -24,7 +24,7 @@ effort is fixed by the registry, not independently settable. Active presets
 follow the **Altitude Theme**:
 
 - `--tier default` / `--tier orbit` (aliases: `flash`, `gemini`) — `9router/ag/gemini-3.8-flash-high` at max effort (1M context). Primary worker.
-- `--tier deepseek` (alias: `strato`) — `9router/cbcn/deepseek-v4.1-flash` at max effort (1M context). CodeBuddy CN secondary surgical worker.
+- `--tier strato` (alias: `deepseek`) — `commandcode/deepseek/deepseek-v4.1-flash` at high effort (1M context, text+image). Secondary surgical worker through the Command Code Provider API.
 
 Omit `--tier` to keep the worker's current tier (a fresh worker starts on
 `default`). `--tier NAME` is refused on a worker already running on a
@@ -33,7 +33,7 @@ the error points at `tt pi clear <cs>`, which respawns the REPL on a
 fresh session-dir (context is lost, like a normal `clear`). For
 `auto --tier NAME`, a non-matching idle worker is skipped and a fresh
 worker is spawned (under cap) instead, so dispatch always lands on the
-requested tier. See [prompting-default.md](prompting-default.md) for how to
+requested tier. See [prompting-gemini-flash.md](prompting-gemini-flash.md) for how to
 structure prompts.
 
 ## Send + wait
