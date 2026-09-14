@@ -33,6 +33,10 @@ this file only covers what the current default specifically needs.
   takes the literal reading and reports `notes: none`, so name every
   invariant the gates cannot see (what a hash covers, when a record is
   taken) in `TARGET STATE` or `SUCCESS`, and keep the acceptance cross-check.
+- **Directory discipline needs a step, not a path.** After `tt pi clear` it
+  starts in the session directory and one run edited that checkout for most
+  of its turn despite absolute worktree paths in every field; make `cd` the
+  first instruction and `pwd` part of `VERIFY`.
 
 ## Sample prompts
 

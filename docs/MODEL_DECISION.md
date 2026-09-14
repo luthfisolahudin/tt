@@ -95,12 +95,27 @@ Results:
 - Both trees passed every stated check; the one correctness difference was
   found only by the orchestrator's cross-check, so gate-green from either
   tier is evidence and not acceptance.
-- Routing derived from this run: DeepSeek for scopes where a silent semantic
+- Second round, four disjoint scopes on the winning tree, two per tier, each
+  in its own worktree: DeepSeek delivered the update/merge family and the
+  doctor port in 8 minutes each with no drops; its doctor matched the Node
+  reference finding for finding (188 of 188), and its update family put the
+  package-manager run before the lock write although the spec listed
+  write, record, wire in that order, which surfaced only when a real
+  `pnpm install` failed. Gemini delivered the release wiring in 14 minutes
+  and the harvest port in 12, both green; the release worker spent most of
+  its turn in the session directory instead of the absolute worktree path in
+  its prompt and moved its files at the end, and reported `notes: none`;
+  the harvest worker listed every JSON key it verified.
+- Routing derived from these runs: DeepSeek for scopes where a silent semantic
   misread costs more than wall-clock time (state, provenance, merge, and
   port-fidelity work); Gemini for mechanical, wiring, configuration, and
-  broad-sweep work and when speed matters. A 15-minute-plus DeepSeek task is
-  watched through the pane state, because the daemon reports `interrupted`
-  while the REPL is still working.
+  broad-sweep work and when speed matters. Neither tier reads an explicit
+  ordering or invariant reliably enough to skip the orchestrator's own
+  end-to-end run against real data. A DeepSeek task is watched through the
+  pane state, because the daemon reports `interrupted` while the REPL is
+  still working. A worker respawned by `tt pi clear` starts in the session
+  directory, so a prompt that targets another worktree states the `cd` as
+  the first step.
 
 ## Benchmark: 2026-08-14
 

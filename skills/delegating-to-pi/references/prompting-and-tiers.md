@@ -38,7 +38,14 @@ took 19 with two upstream drops recovered by `tt pi resume`.
 - Either: ask `OUTPUT` for `checks:` per requirement and `notes:` listing
   every resolved ambiguity; the notes are where a hidden decision surfaces,
   and `notes: none` from either tier is a weaker signal than a list.
-- Acceptance for both includes one check the prompt did not name.
+- Acceptance for both includes one check the prompt did not name; in the
+  second round, two scopes per tier, the only defect that reached the merge
+  (package-manager run before the lock write, against an explicit spec
+  order) was found by an end-to-end run on real data, not by any gate.
+- A worker respawned by `tt pi clear` starts in the session directory. When
+  the scope is another worktree, make `cd <absolute path>` the first
+  instruction and require `pwd` in `VERIFY`; one Gemini run edited the
+  session checkout for most of its turn before moving its files.
 
 There is no escalation tier. Do not compensate for a bad prompt by inventing a
 model override: sharpen the prompt, retry fresh when needed, and keep product or

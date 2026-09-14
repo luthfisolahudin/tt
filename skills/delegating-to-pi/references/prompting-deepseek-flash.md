@@ -19,7 +19,8 @@ see [prompting-and-tiers.md#prompt-contract](prompting-and-tiers.md#prompt-contr
 - **High effort is already configured.** Do not ask the model to "think step by step". Spend prompt space on **scope precision** and **verifiability**.
 - **VERIFY is essential.** Keep requirements explicit and enumerate each check under `SUCCESS` and `VERIFY`.
 - **Reads the spec for intent, and says what it decided.** On the same build as the default tier (2026-09-14) it resolved an implicit invariant correctly and listed six resolved ambiguities in `notes`; prefer it for state, provenance, merge, and reference-fidelity scopes.
-- **Slower, and the stream drops.** Expect roughly double the wall-clock of the default tier on a long build and one or two `Upstream stream ended before terminal chunk` drops per 20 minutes; `tt pi resume <cs>` continues with context intact. The daemon shows `interrupted` while the REPL is still working, so watch the pane (`tt peek <cs>`) rather than the status line before resuming.
+- **Slower on long builds, and the stream can drop.** Roughly double the default tier's wall-clock on a 20-minute build, level with it on 8-minute scopes; `Upstream stream ended before terminal chunk` appeared twice in one long run and not in two short ones. `tt pi resume <cs>` continues with context intact. The daemon shows `interrupted` while the REPL is still working, so watch the pane (`tt peek <cs>`) rather than the status line before resuming.
+- **Explicit order is not a guarantee.** It placed the package-manager run before the lock write against a spec that listed write, record, wire in that order; put sequencing invariants in `SUCCESS` as a falsifiable case (a failing install still leaves the lock written), not only in prose.
 
 ## Sample prompt: Surgical bugfix
 
