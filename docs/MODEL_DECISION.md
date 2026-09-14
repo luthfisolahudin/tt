@@ -116,6 +116,24 @@ Results:
   still working. A worker respawned by `tt pi clear` starts in the session
   directory, so a prompt that targets another worktree states the `cd` as
   the first step.
+- Third round, the same day, twenty dispatches for a universal-tier batch
+  (items, contracts, doctor rules, a 177-sentence prose sweep, compositions,
+  self-adoption, a fresh-consumer proof): the Gemini route never answered
+  its first request in three attempts (`Request timed out`, context stuck at
+  0.2%), so every dispatch ran on DeepSeek, including the sweep and wiring
+  work the routing rule had assigned to Gemini; DeepSeek handled all of it,
+  with two mid-turn drops (`Stream ended without finish_reason`, a 502) that
+  the REPL retried on its own while the daemon showed `interrupted`, and one
+  drop that left the REPL idle without a result, recovered with `tt pi
+  steer` naming the task nonce. Two workers reported `BLOCKED` with a
+  precise cause instead of working around a contradiction in their contract
+  (a cwd-dependent test, a guard refusing git's hook arguments, history-only
+  scanner findings); both were right and the contract was the defect.
+  Operational traps recorded: a worker whose editor opened a file in the
+  orchestrator's main checkout left an auto-fixed, syntactically broken
+  version of it there twice, so a file the orchestrator relies on is
+  checked with `git status` before every gate; a preset proof that keeps its
+  scratch tree exhausted /tmp's inodes after a day of runs.
 
 ## Benchmark: 2026-08-14
 
