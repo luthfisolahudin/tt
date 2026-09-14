@@ -27,6 +27,12 @@ this file only covers what the current default specifically needs.
 - **Strong on structure.** Labeled fields, explicit scope, and
   concrete CHANGE clauses work better than prose. The prompt contract
   in the overview doc is the floor; lean into it.
+- **Fast and steady on large builds.** A 4.5k-line build from an on-disk
+  spec with twenty enumerated cases lands in about ten minutes without
+  provider drops (2026-09-14). Where the spec leaves a silent choice it
+  takes the literal reading and reports `notes: none`, so name every
+  invariant the gates cannot see (what a hash covers, when a record is
+  taken) in `TARGET STATE` or `SUCCESS`, and keep the acceptance cross-check.
 
 ## Sample prompts
 

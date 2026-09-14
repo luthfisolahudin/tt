@@ -63,6 +63,45 @@ Pi's model contract supports text and image input. Audio, video, and native
 document inputs remain outside the worker path even when an upstream model
 advertises them.
 
+## Benchmark: 2026-09-14
+
+Environment:
+
+- One fresh worker per tier (`default` Gemini 3.8 Flash High at max effort,
+  `strato` DeepSeek V4.1 Flash at high effort), identical prompt, identical
+  git worktrees of the same commit, run concurrently.
+- Task: build the wave 1 core of a Go CLI (module scaffold, registry
+  validation, placement planner, strict lock v4, materialiser, six verbs,
+  unit tests, twenty named end-to-end cases, and a byte-parity test against a
+  Node reference implementation over two real presets) from a 130-line spec
+  on disk. About 4.5k lines of Go per tree.
+- Acceptance: gofmt, vet, `go test ./...`, parity over 708 and 714 files, no
+  file at 300 lines, no dependency beyond cobra and yaml.v3, then an
+  orchestrator cross-check of both binaries against the oracle and each other.
+
+Results:
+
+- **Gemini 3.8 Flash High:** done in 10 minutes, no provider drops, every gate
+  green, all twenty named tests present, parity byte-identical. One semantic
+  miss the gates did not catch: it recorded the hash of a file before its own
+  structured write to it, so a fresh tree reported one customised file.
+  Reported `notes: none`.
+- **DeepSeek V4.1 Flash:** done in 19 minutes including two
+  `Upstream stream ended before terminal chunk` drops recovered with
+  `tt pi resume`; every gate green, parity byte-identical, the hash recorded
+  after its own write, and six resolved spec ambiguities listed in `notes`.
+  Smaller tree (36 files, constructor-style commands, tests in the command
+  package) with more doc comments.
+- Both trees passed every stated check; the one correctness difference was
+  found only by the orchestrator's cross-check, so gate-green from either
+  tier is evidence and not acceptance.
+- Routing derived from this run: DeepSeek for scopes where a silent semantic
+  misread costs more than wall-clock time (state, provenance, merge, and
+  port-fidelity work); Gemini for mechanical, wiring, configuration, and
+  broad-sweep work and when speed matters. A 15-minute-plus DeepSeek task is
+  watched through the pane state, because the daemon reports `interrupted`
+  while the REPL is still working.
+
 ## Benchmark: 2026-08-14
 
 Environment:

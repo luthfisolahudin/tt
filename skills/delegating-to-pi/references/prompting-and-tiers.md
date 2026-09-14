@@ -21,6 +21,25 @@ Pick a tier per dispatch with `--tier NAME` on `tt pi send` / `tt pi
 auto`. Omit `--tier` to keep the worker's current tier (a fresh worker
 starts on `default`).
 
+### Routing rule (measured 2026-09-14)
+
+Same prompt, same commit, one worker per tier, a 4.5k-line Go build with an
+objective oracle: both passed every stated gate. `strato` recorded the file
+hash after its own structured write and listed six resolved ambiguities;
+`default` recorded it before the write (one customised file on a fresh tree)
+and reported `notes: none`. `default` took 10 minutes with no drops; `strato`
+took 19 with two upstream drops recovered by `tt pi resume`.
+
+- `strato`: state and provenance records, merge and update semantics, ports
+  that must match a reference, anything where the spec leaves a silent
+  choice the gates will not catch.
+- `default`: wiring, configuration, release and CI files, broad sweeps,
+  mechanical refactors, and anything where wall-clock matters more.
+- Either: ask `OUTPUT` for `checks:` per requirement and `notes:` listing
+  every resolved ambiguity; the notes are where a hidden decision surfaces,
+  and `notes: none` from either tier is a weaker signal than a list.
+- Acceptance for both includes one check the prompt did not name.
+
 There is no escalation tier. Do not compensate for a bad prompt by inventing a
 model override: sharpen the prompt, retry fresh when needed, and keep product or
 architecture judgment with the orchestrator. The
@@ -144,6 +163,7 @@ Read your prompt one more time and check each:
 7. **VERIFY: is there a shell command or review step you can add?** Type-check,
    grep for stale refs, re-read the diff — include it.
 8. **Would you send a follow-up to fix this?** If yes, fix the prompt instead.
+9. **Is the assembled prompt whole?** When the prompt is built from files or templates, `rg -c '^TASK:' <file>` and a placeholder search (`rg __WT__`) before dispatch; a worker that receives only the common block starts working on it.
 
 ### Follow-ups
 
