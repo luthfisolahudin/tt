@@ -1,7 +1,12 @@
 ---
 name: delegating-to-pi
 description: >
-  Load when deciding whether to delegate to pi workers: substantial bounded code work, parallel fan-out, dead-code/refactor/audit sweeps, focused debugging, or explicit mentions of pi, tt workers, subagents, offloading, worker pool, or the project tmux session. NOT for one-file reads, one precise grep, known tiny edits, open-ended product/architecture judgment, or final safety review. Default: delegate bounded execution; keep goal/product/architecture judgment and verification.
+  Load when deciding whether to delegate to pi workers: substantial bounded code work, parallel
+  fan-out, dead-code/refactor/audit sweeps, focused debugging, or explicit mentions of pi, tt
+  workers, subagents, offloading, worker pool, or the project tmux session. NOT for one-file reads,
+  one precise grep, known tiny edits, open-ended product/architecture judgment, or final safety
+  review. Default: delegate bounded execution; keep goal/product/architecture judgment and
+  verification.
 ---
 
 # Delegating to pi
