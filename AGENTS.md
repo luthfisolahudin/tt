@@ -118,10 +118,9 @@ orchestrator times out), and a `cat` stand-in never classifies as safe.
 
 ## Consumers
 
-Consumer projects reference `tt` via a `delegating-to-pi` skill
-(`SKILL.md`, `AGENTS.md`, `CLAUDE.md`) that tells the orchestrator to
-delegate via `tt pi send` / `tt pi wait`. If you change the `tt pi`
-interface, update that skill too.
+Consumer projects drive `tt` through the `delegating-to-pi` skill in
+`skills/delegating-to-pi/`; the "consumer skill" in the table below is that
+directory. If you change the `tt pi` interface, update that skill too.
 
 ## Command reference
 
