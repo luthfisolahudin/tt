@@ -123,36 +123,10 @@ Consumer projects reference `tt` via a `delegating-to-pi` skill
 delegate via `tt pi send` / `tt pi wait`. If you change the `tt pi`
 interface, update that skill too.
 
-## AI quick reference
+## Command reference
 
-```sh
-tt pi send alfa - <<'P'
-TASK: ...
-FILES: path/to/file
-CHANGE: ...
-SUCCESS: ...
-P
-                               # dispatch; prints task-id like "alfa-3"
-                               # (queues behind a busy worker; lazy-spawns absent)
-tt pi wait alfa                # block on alfa's latest task (task-id optional)
-TID=$(tt pi auto - <<<'...')   # let tt pick a worker (idle→spawn→pool); echoes "using pi-X"
-TID=$(tt pi auto --rm - <<<'...')  # fresh ephemeral worker, reaped after
-tt pi send --notify alfa - <<<'...'  # fire-and-forget; pings orchestrator on done
-tt pi wait "$TID"              # waits on alfa-3 or pool-3 alike
-tt pi steer alfa - <<<'...'    # inject NOW into the current turn (run-now)
-tt pi wait all                 # fan-out join across all busy workers
-tt pi collect --digest         # join a fan-out as one line per result
-tt peek dev                    # read any window's pane content (read-only)
-tt pipeline run spec.json      # declarative fan-out + review-gate pipeline
-tt pi status                   # show all workers: state, last task, tier, gen
-tt pi clear alfa               # wipe context; required before reuse
-go-task check                     # build + vet + test after editing
-```
-
-Inline prompts use `-` (stdin) with a heredoc/here-string — `tt pi send alfa -
-<<<'TASK: ...'` — not process substitution.
-
-Worker states: `idle` · `busy` · `blocked` · `interrupted` · `starting` · `down` · `missing`
+`tt <verb> --help` and the `README.md` command table are the reference; the
+orchestrator-facing guide is `skills/delegating-to-pi/references/tt-cli.md`.
 
 ## Versioning
 
