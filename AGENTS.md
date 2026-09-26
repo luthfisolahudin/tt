@@ -154,10 +154,6 @@ Inline prompts use `-` (stdin) with a heredoc/here-string — `tt pi send alfa -
 
 Worker states: `idle` · `busy` · `blocked` · `interrupted` · `starting` · `down` · `missing`
 
-## Commit etiquette
-
-Commit only when the user asks.
-
 ## Versioning
 
 `tt` carries `MAJOR.MINOR.PATCH` in `internal/version/version.go` (pre-1.0, so
