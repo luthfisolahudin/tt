@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@luthfisolahudin/9router-integrations": "github:luthfisolahudin/9router-integrations#691be01a18671d9069b90ecfdc1e95f737cc756c"
+    "@luthfisolahudin/9router-integrations": "github:luthfisolahudin/9router-integrations#semver:^0.1.0"
   }
 }

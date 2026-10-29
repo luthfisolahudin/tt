@@ -185,7 +185,7 @@ importers:
   pi-worker:
     dependencies:
       '@luthfisolahudin/9router-integrations':
-        specifier: github:luthfisolahudin/9router-integrations#691be01a18671d9069b90ecfdc1e95f737cc756c
+        specifier: github:luthfisolahudin/9router-integrations#semver:^0.1.0
         version: https://codeload.github.com/luthfisolahudin/9router-integrations/tar.gz/691be01a18671d9069b90ecfdc1e95f737cc756c
 
 packages:
