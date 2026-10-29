@@ -1,5 +1,7 @@
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
+type ChatProviderModelConfig = Extract<ProviderModelConfig, { type?: "chat" }>;
+
 const BASE_URL = "https://api.commandcode.ai/provider/v1";
 const DEFAULT_MAX_TOKENS = 65_536;
 
@@ -35,7 +37,7 @@ const THINKING_LEVEL_MAP = {
 	high: "high",
 	xhigh: "high",
 	max: "high",
-} satisfies NonNullable<ProviderModelConfig["thinkingLevelMap"]>;
+} satisfies NonNullable<ChatProviderModelConfig["thinkingLevelMap"]>;
 
 interface CommandCodeRecord {
 	id?: unknown;

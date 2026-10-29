@@ -46,12 +46,25 @@ tasks:
     cmds:
       - go test ./...
 
-  check:
-    desc: Build + vet + test — run this after every change
+  setup:
+    desc: Install Go and Node.js dependencies
     cmds:
+      - go mod download
+      - pnpm install --frozen-lockfile
+
+  typecheck:
+    desc: Typecheck the TypeScript extensions
+    cmds:
+      - pnpm typecheck
+
+  check:
+    desc: Build, vet, test, and typecheck — run this after every change
+    cmds:
+      - task: setup
       - task: build
       - task: vet
       - task: test
+      - task: typecheck
 
   vuln:
     desc: Scan dependencies for known vulnerabilities

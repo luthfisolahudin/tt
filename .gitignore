@@ -23,5 +23,8 @@ skills/*-workspace/
 # Go build output (see Taskfile.yaml)
 /bin/
 
+# Node dependencies
+node_modules/
+
 # go-task fingerprint cache
 .task/
