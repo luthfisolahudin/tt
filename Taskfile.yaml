@@ -53,6 +53,11 @@ tasks:
       - task: vet
       - task: test
 
+  vuln:
+    desc: Scan dependencies for known vulnerabilities
+    cmds:
+      - go tool govulncheck ./...
+
   fmt:
     desc: gofmt the tree
     cmds:

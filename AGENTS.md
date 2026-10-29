@@ -154,7 +154,7 @@ first), commit, then tag the commit — `git tag -a v<x.y.z> -m "tt v<x.y.z> —
 | trigger/result file format or nonce protocol | `docs/DESIGN.md` control channel + task IDs sections · `pi-worker/extensions/tt-worker.ts` |
 | worker states | `docs/DESIGN.md` worker state detection section |
 | daemon ops or socket protocol | `docs/DESIGN.md` |
-| install layout (`~/.local/share/tt/`, `Taskfile.yml`) | `docs/STATUS.md` current state |
+| install layout (`~/.local/share/tt/`, `Taskfile.yaml`) | `docs/STATUS.md` current state |
 | completion markers (`WORKER_DONE` / `BLOCKED`) | `docs/DESIGN.md` · consumer skill `SKILL.md` · `pi-worker/APPEND_SYSTEM.md` |
 | model tiers or provider | `docs/DESIGN.md` model tier · `docs/MODEL_DECISION.md` · `README.md` model tier table · consumer skill `references/prompting-and-tiers.md` + `references/prompting-<tier>.md` |
 | version bump | `CHANGELOG.md` entry · `git tag -a v<x.y.z>` (see Versioning) |
