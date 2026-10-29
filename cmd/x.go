@@ -175,20 +175,20 @@ Flags:
 				if i >= len(args) {
 					die("x observe: --interval requires seconds")
 				}
-			if !worker.ValidTimeoutArg(args[i]) {
-				die("x observe: --interval must be a non-negative integer")
-			}
-			if atoi(args[i]) <= 0 {
-				die("x observe: --interval must be greater than 0")
-			}
-			interval = atoi(args[i])
-		case a == "--duration":
-			i++
-			if i >= len(args) {
-				die("x observe: --duration requires seconds")
-			}
-			if !worker.ValidTimeoutArg(args[i]) {
-				die("x observe: --duration must be a non-negative integer")
+				if !worker.ValidTimeoutArg(args[i]) {
+					die("x observe: --interval must be a non-negative integer")
+				}
+				if atoi(args[i]) <= 0 {
+					die("x observe: --interval must be greater than 0")
+				}
+				interval = atoi(args[i])
+			case a == "--duration":
+				i++
+				if i >= len(args) {
+					die("x observe: --duration requires seconds")
+				}
+				if !worker.ValidTimeoutArg(args[i]) {
+					die("x observe: --duration must be a non-negative integer")
 				}
 				duration = atoi(args[i])
 			case a == "--all":

@@ -68,8 +68,8 @@ func parseUpArgs(args []string) (attach, continued bool, err error) {
 // attachCmd is `tt attach` / `tt a` — enter without creating; errors if the
 // session is missing.
 var attachCmd = &cobra.Command{
-	Use:     "attach",
-	Short:   "Attach to the project's tmux session (without creating)",
+	Use:   "attach",
+	Short: "Attach to the project's tmux session (without creating)",
 	Long: `Enter an existing session without creating or healing it. Errors if
 the session does not exist (use "tt up" to create).
 
