@@ -42,9 +42,10 @@ tasks:
       - go vet ./...
 
   test:
-    desc: Run the unit tests
+    desc: Run Go and TypeScript tests
     cmds:
       - go test ./...
+      - pnpm test
 
   setup:
     desc: Install Go and Node.js dependencies
@@ -58,13 +59,13 @@ tasks:
       - pnpm typecheck
 
   check:
-    desc: Build, vet, test, and typecheck — run this after every change
+    desc: Build, vet, typecheck, and test — run this after every change
     cmds:
       - task: setup
       - task: build
       - task: vet
-      - task: test
       - task: typecheck
+      - task: test
 
   vuln:
     desc: Scan dependencies for known vulnerabilities

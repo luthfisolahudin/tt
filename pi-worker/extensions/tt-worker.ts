@@ -84,7 +84,7 @@ type ContextStripResult = {
 const PI_WORKER_EXCLUDE_START = "<!-- pi-worker:exclude-start -->";
 const PI_WORKER_EXCLUDE_END = "<!-- pi-worker:exclude-end -->";
 
-function stripPiWorkerExcludedBlocks(input: string): StripResult {
+export function stripPiWorkerExcludedBlocks(input: string): StripResult {
 	const startRe = /<!--\s*pi-worker:exclude-start\s*-->/g;
 	const endRe = /<!--\s*pi-worker:exclude-end\s*-->/g;
 	let text = "";
@@ -132,7 +132,7 @@ function stripPiWorkerExcludedBlocks(input: string): StripResult {
 	return { text, stripped, unterminated };
 }
 
-function stripPiWorkerExcludedContext(
+export function stripPiWorkerExcludedContext(
 	systemPrompt: string,
 	contextFiles: ContextFile[],
 ): ContextStripResult {

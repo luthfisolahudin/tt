@@ -49,7 +49,7 @@ function matches(id: string, patterns: RegExp[]): boolean {
 	return patterns.some((pattern) => pattern.test(id));
 }
 
-function toModel(record: CommandCodeRecord): ProviderModelConfig {
+export function toModel(record: CommandCodeRecord): ChatProviderModelConfig {
 	const id = String(record.id ?? "").trim();
 	const contextWindow = Number.isFinite(record.context_length) ? Number(record.context_length) : 128_000;
 	const reasoning = matches(id, REASONING_ID);
@@ -70,12 +70,12 @@ function toModel(record: CommandCodeRecord): ProviderModelConfig {
 	};
 }
 
-const FALLBACK_MODELS: ProviderModelConfig[] = [
+const FALLBACK_MODELS: ChatProviderModelConfig[] = [
 	{ id: "deepseek/deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", context_length: 1_000_000 },
 	{ id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash", context_length: 1_000_000 },
 ].map(toModel);
 
-async function fetchModels(apiKey: string, signal: AbortSignal): Promise<ProviderModelConfig[]> {
+async function fetchModels(apiKey: string, signal: AbortSignal): Promise<ChatProviderModelConfig[]> {
 	const response = await fetch(`${BASE_URL}/models`, {
 		headers: { Authorization: `Bearer ${apiKey}` },
 		signal,
