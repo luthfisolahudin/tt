@@ -102,14 +102,9 @@ export function stripPiWorkerExcludedBlocks(input: string): StripResult {
 
 		let removeStart = start.index;
 		let lineStart = start.index;
-		while (
-			lineStart > cursor &&
-			input[lineStart - 1] !== "\n" &&
-			input[lineStart - 1] !== "\r"
-		)
+		while (lineStart > cursor && input[lineStart - 1] !== "\n" && input[lineStart - 1] !== "\r")
 			lineStart--;
-		if (/^[ \t]*$/.test(input.slice(lineStart, start.index)))
-			removeStart = lineStart;
+		if (/^[ \t]*$/.test(input.slice(lineStart, start.index))) removeStart = lineStart;
 		text += input.slice(cursor, removeStart);
 		endRe.lastIndex = start.index + start[0].length;
 		const end = endRe.exec(input);
@@ -120,11 +115,7 @@ export function stripPiWorkerExcludedBlocks(input: string): StripResult {
 		}
 
 		cursor = end.index + end[0].length;
-		while (
-			cursor < input.length &&
-			(input[cursor] === " " || input[cursor] === "\t")
-		)
-			cursor++;
+		while (cursor < input.length && (input[cursor] === " " || input[cursor] === "\t")) cursor++;
 		if (input[cursor] === "\r" && input[cursor + 1] === "\n") cursor += 2;
 		else if (input[cursor] === "\n") cursor++;
 	}
@@ -152,11 +143,7 @@ export function stripPiWorkerExcludedContext(
 	let fallbackUsed = false;
 
 	for (const contextFile of contextFiles) {
-		if (
-			typeof contextFile?.path !== "string" ||
-			typeof contextFile?.content !== "string"
-		)
-			continue;
+		if (typeof contextFile?.path !== "string" || typeof contextFile?.content !== "string") continue;
 		const result = stripPiWorkerExcludedBlocks(contextFile.content);
 		if (result.stripped === 0) continue;
 
@@ -360,14 +347,7 @@ export default function (pi: ExtensionAPI) {
 		pendingNotify = notify;
 		pendingStartedAt = Math.floor(Date.now() / 1000);
 		setBusy(true);
-		writeResult(
-			id,
-			"id: " +
-				id +
-				"\nstatus: running\nstarted_at: " +
-				pendingStartedAt +
-				"\n---\n",
-		);
+		writeResult(id, "id: " + id + "\nstatus: running\nstarted_at: " + pendingStartedAt + "\n---\n");
 		pi.sendUserMessage(text + completionContract(nonce));
 	}
 
@@ -427,8 +407,7 @@ reason: <concise reason>`;
 
 	function notifyUI(msg: string) {
 		try {
-			if (agentCtx?.hasUI)
-				agentCtx.ui.notify(`tt-worker ${cs}: ${msg}`, "info");
+			if (agentCtx?.hasUI) agentCtx.ui.notify(`tt-worker ${cs}: ${msg}`, "info");
 		} catch {}
 	}
 
@@ -466,8 +445,7 @@ reason: <concise reason>`;
 	// Slash command the human can type in this worker's own pi pane.
 	try {
 		pi.registerCommand("tt-resume", {
-			description:
-				"Resume this worker's interrupted task to completion (no context wipe)",
+			description: "Resume this worker's interrupted task to completion (no context wipe)",
 			handler: async () => {
 				resumeInterruptedTask();
 			},
@@ -479,15 +457,10 @@ reason: <concise reason>`;
 	pi.on("before_agent_start", async (event: any) => {
 		try {
 			if (typeof event?.systemPrompt !== "string") return;
-			const contextFiles = Array.isArray(
-				event?.systemPromptOptions?.contextFiles,
-			)
+			const contextFiles = Array.isArray(event?.systemPromptOptions?.contextFiles)
 				? event.systemPromptOptions.contextFiles
 				: [];
-			const result = stripPiWorkerExcludedContext(
-				event.systemPrompt,
-				contextFiles,
-			);
+			const result = stripPiWorkerExcludedContext(event.systemPrompt, contextFiles);
 			for (const filePath of result.unterminatedPaths) {
 				const key = `unterminated:${filePath}`;
 				if (warnedContextExclude.has(key)) continue;
@@ -498,12 +471,9 @@ reason: <concise reason>`;
 			}
 			if (result.fallbackUsed && !warnedContextExclude.has("fallback")) {
 				warnedContextExclude.add("fallback");
-				logLine(
-					"context exclude: used full-system-prompt fallback for marker stripping",
-				);
+				logLine("context exclude: used full-system-prompt fallback for marker stripping");
 			}
-			if (result.systemPrompt !== event.systemPrompt)
-				return { systemPrompt: result.systemPrompt };
+			if (result.systemPrompt !== event.systemPrompt) return { systemPrompt: result.systemPrompt };
 		} catch (e) {
 			logLine("context exclude: " + String(e));
 		}
@@ -647,34 +617,21 @@ reason: <concise reason>`;
 				// multi-line field values and trailing prose: the worker contract
 				// (APPEND_SYSTEM.md) still asks for one clean block, but a formatting
 				// slip must not discard genuinely completed work.
-				if (
-					wdStart >= 0 &&
-					wdStart >= blkStart &&
-					text.slice(wdStart).includes(nonceField)
-				) {
+				if (wdStart >= 0 && wdStart >= blkStart && text.slice(wdStart).includes(nonceField)) {
 					status = "done";
 				} else if (blkStart >= 0 && text.slice(blkStart).includes(nonceField)) {
 					status = "blocked";
 				}
 			}
 			const tsBlock = `started_at: ${pendingStartedAt}\nended_at: ${Math.floor(Date.now() / 1000)}\n`;
-			writeResult(
-				pendingId,
-				`id: ${pendingId}\nstatus: ${status}\n${tsBlock}---\n${text}\n`,
-			);
+			writeResult(pendingId, `id: ${pendingId}\nstatus: ${status}\n${tsBlock}---\n${text}\n`);
 			if (pendingNotify) fireNotify(pendingId, status);
 		} catch (e) {
 			logLine("agent_end: " + String(e));
 			const tsBlock = `started_at: ${pendingStartedAt}\nended_at: ${Math.floor(Date.now() / 1000)}\n`;
 			writeResult(
 				pendingId,
-				"id: " +
-					pendingId +
-					"\nstatus: error\n" +
-					tsBlock +
-					"---\n" +
-					String(e) +
-					"\n",
+				"id: " + pendingId + "\nstatus: error\n" + tsBlock + "---\n" + String(e) + "\n",
 			);
 			if (pendingNotify) fireNotify(pendingId, "error");
 		} finally {

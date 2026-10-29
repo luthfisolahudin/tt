@@ -58,13 +58,32 @@ tasks:
     cmds:
       - pnpm typecheck
 
+  lint:
+    desc: Lint the TypeScript extensions
+    cmds:
+      - pnpm lint
+
+  fmt:
+    desc: Format Go and TypeScript sources
+    cmds:
+      - gofmt -w .
+      - pnpm format
+
+  fmt-check:
+    desc: Check Go and TypeScript formatting
+    cmds:
+      - test -z "$(gofmt -l .)"
+      - pnpm format:check
+
   check:
-    desc: Build, vet, typecheck, and test — run this after every change
+    desc: Build, vet, typecheck, lint, format-check, and test
     cmds:
       - task: setup
       - task: build
       - task: vet
       - task: typecheck
+      - task: lint
+      - task: fmt-check
       - task: test
 
   vuln:

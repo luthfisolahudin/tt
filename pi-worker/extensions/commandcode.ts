@@ -51,7 +51,9 @@ function matches(id: string, patterns: RegExp[]): boolean {
 
 export function toModel(record: CommandCodeRecord): ChatProviderModelConfig {
 	const id = String(record.id ?? "").trim();
-	const contextWindow = Number.isFinite(record.context_length) ? Number(record.context_length) : 128_000;
+	const contextWindow = Number.isFinite(record.context_length)
+		? Number(record.context_length)
+		: 128_000;
 	const reasoning = matches(id, REASONING_ID);
 	return {
 		id,
@@ -75,19 +77,25 @@ const FALLBACK_MODELS: ChatProviderModelConfig[] = [
 	{ id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash", context_length: 1_000_000 },
 ].map(toModel);
 
-async function fetchModels(apiKey: string, signal: AbortSignal): Promise<ChatProviderModelConfig[]> {
+async function fetchModels(
+	apiKey: string,
+	signal: AbortSignal,
+): Promise<ChatProviderModelConfig[]> {
 	const response = await fetch(`${BASE_URL}/models`, {
 		headers: { Authorization: `Bearer ${apiKey}` },
 		signal,
 	});
-	if (!response.ok) throw new Error(`Command Code model discovery failed (HTTP ${response.status})`);
+	if (!response.ok)
+		throw new Error(`Command Code model discovery failed (HTTP ${response.status})`);
 	const payload: unknown = await response.json();
 	const data = Array.isArray(payload)
 		? payload
 		: Array.isArray((payload as { data?: unknown })?.data)
 			? (payload as { data: unknown[] }).data
 			: [];
-	const models = data.map((entry) => toModel((entry ?? {}) as CommandCodeRecord)).filter((model) => model.id.length > 0);
+	const models = data
+		.map((entry) => toModel((entry ?? {}) as CommandCodeRecord))
+		.filter((model) => model.id.length > 0);
 	if (models.length === 0) throw new Error("Command Code returned an empty model catalog");
 	return models;
 }
@@ -116,7 +124,9 @@ export default function registerCommandCode(pi: ExtensionAPI): void {
 			try {
 				models = await fetchModels(apiKey, signal);
 			} catch (error) {
-				warn(`Command Code model discovery failed: ${error instanceof Error ? error.message : String(error)}`);
+				warn(
+					`Command Code model discovery failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
 			}
 			return models;
 		},

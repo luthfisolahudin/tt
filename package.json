@@ -14,12 +14,17 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
+    "lint": "oxlint pi-worker/extensions test",
+    "format": "oxfmt pi-worker/extensions test",
+    "format:check": "oxfmt --check pi-worker/extensions test",
     "test": "node --test test/*.test.ts",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.4.0",
     "@types/node": "^26.6.5",
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.89.0",
     "typescript": "^7.0.2"
   }
 }
